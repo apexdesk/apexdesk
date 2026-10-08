@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ApexDesk's own file type: notebooks (Cuaderno). -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-apexnote">
+    <comment>ApexDesk notebook</comment>
+    <comment xml:lang="es">Cuaderno de ApexDesk</comment>
+    <glob pattern="*.apexnote"/>
+  </mime-type>
+</mime-info>

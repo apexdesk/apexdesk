@@ -26,6 +26,13 @@ This repository holds only the installers. They are under
 
 Linux needs glibc 2.31 or newer (Ubuntu 20.04, Debian 11, Fedora 32 and later).
 
+Arch Linux and Manjaro: build the package from [`aur/apexdesk-bin`](aur/apexdesk-bin) with makepkg:
+
+```sh
+git clone https://github.com/apexdesk/apexdesk.git
+cd apexdesk/aur/apexdesk-bin && makepkg -si
+```
+
 ### Windows SmartScreen
 
 The program isn't signed yet, so Windows may say "Windows protected your
@@ -69,6 +76,13 @@ Este repositorio solo contiene los instaladores. Están en
 | Linux, portable (USB) | `apexdesk-<versión>-linux-x86_64-portable.tar.gz`: descomprime y ejecuta `./apexdesk` |
 
 Linux necesita glibc 2.31 o posterior (Ubuntu 20.04, Debian 11, Fedora 32 y posteriores).
+
+Arch Linux y Manjaro: crea el paquete desde [`aur/apexdesk-bin`](aur/apexdesk-bin) con makepkg:
+
+```sh
+git clone https://github.com/apexdesk/apexdesk.git
+cd apexdesk/aur/apexdesk-bin && makepkg -si
+```
 
 **Windows SmartScreen:** el programa todavía no está firmado, así que
 Windows puede mostrar «Windows protegió su PC». Pulsa **Más información**

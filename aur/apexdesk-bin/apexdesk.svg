@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F6FEB"/>
+      <stop offset="1" stop-color="#12A37A"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="48" fill="url(#bg)"/>
+  <!-- document -->
+  <path d="M62 50h82l34 34v122a10 10 0 0 1-10 10H62a10 10 0 0 1-10-10V60a10 10 0 0 1 10-10z" fill="#fff"/>
+  <path d="M144 50v26a8 8 0 0 0 8 8h26z" fill="#D6E2FB"/>
+  <rect x="72" y="96" width="70" height="9" rx="4.5" fill="#2F6FEB"/>
+  <rect x="72" y="116" width="88" height="7" rx="3.5" fill="#B9C6DA"/>
+  <rect x="72" y="132" width="80" height="7" rx="3.5" fill="#B9C6DA"/>
+  <!-- spreadsheet -->
+  <rect x="122" y="140" width="96" height="76" rx="10" fill="#0E7E5E"/>
+  <rect x="128" y="146" width="84" height="64" rx="5" fill="#fff"/>
+  <path d="M128 167h84M128 188h84M156 146v64M184 146v64" stroke="#12A37A" stroke-width="4"/>
+  <rect x="128" y="146" width="84" height="21" rx="5" fill="#12A37A" opacity="0.35"/>
+</svg>

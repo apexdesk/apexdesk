@@ -1,0 +1,32 @@
+[Desktop Entry]
+Type=Application
+Name=ApexDesk
+GenericName=Office Suite
+GenericName[es]=Suite ofimática
+Comment=Lightweight spreadsheet and word processor
+Comment[es]=Hoja de cálculo y procesador de textos ligeros
+Exec=apexdesk %F
+Icon=apexdesk
+Terminal=false
+Categories=Office;Spreadsheet;WordProcessor;
+Keywords=spreadsheet;word;document;xlsx;docx;odt;ods;csv;markdown;
+Keywords[es]=hoja;cálculo;documento;texto;xlsx;docx;odt;ods;csv;markdown;
+MimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.oasis.opendocument.spreadsheet;application/vnd.oasis.opendocument.text;application/vnd.oasis.opendocument.spreadsheet-flat-xml;application/vnd.oasis.opendocument.text-flat-xml;text/csv;text/tab-separated-values;application/rtf;text/rtf;text/markdown;text/x-markdown;text/plain;application/msword;application/vnd.ms-excel;application/wps-office.wps;application/wps-office.et;application/vnd.openxmlformats-officedocument.presentationml.presentation;application/vnd.ms-powerpoint.presentation.macroEnabled.12;application/vnd.openxmlformats-officedocument.presentationml.template;application/vnd.openxmlformats-officedocument.presentationml.slideshow;application/vnd.oasis.opendocument.presentation;application/vnd.oasis.opendocument.presentation-template;application/vnd.ms-powerpoint;application/x-apexnote;
+StartupNotify=true
+StartupWMClass=apexdesk
+Actions=new-document;new-spreadsheet;new-presentation;
+
+[Desktop Action new-document]
+Name=New document
+Name[es]=Nuevo documento
+Exec=apexdesk --new-doc
+
+[Desktop Action new-spreadsheet]
+Name=New spreadsheet
+Name[es]=Nueva hoja de cálculo
+Exec=apexdesk --new-sheet
+
+[Desktop Action new-presentation]
+Name=New presentation
+Name[es]=Nueva presentación
+Exec=apexdesk --new-slides
