@@ -22,6 +22,9 @@ This repository holds only the installers. They are under
 | Windows, portable (USB) | `apexdesk-<version>-windows-x86_64-portable.zip`: keeps its settings next to the program |
 | Debian, Ubuntu, Mint | `apexdesk_<version>_amd64.deb`: `sudo apt install ./apexdesk_*.deb` |
 | Fedora, openSUSE | `apexdesk-<version>-1.x86_64.rpm`: `sudo dnf install ./apexdesk-*.rpm` |
+| Linux, portable (USB) | `apexdesk-<version>-linux-x86_64-portable.tar.gz`: unpack and run `./apexdesk` |
+
+Linux needs glibc 2.31 or newer (Ubuntu 20.04, Debian 11, Fedora 32 and later).
 
 ### Windows SmartScreen
 
@@ -63,6 +66,9 @@ Este repositorio solo contiene los instaladores. Están en
 | Windows, portable (USB) | `apexdesk-<versión>-windows-x86_64-portable.zip`: guarda sus ajustes junto al programa |
 | Debian, Ubuntu, Mint | `apexdesk_<versión>_amd64.deb`: `sudo apt install ./apexdesk_*.deb` |
 | Fedora, openSUSE | `apexdesk-<versión>-1.x86_64.rpm`: `sudo dnf install ./apexdesk-*.rpm` |
+| Linux, portable (USB) | `apexdesk-<versión>-linux-x86_64-portable.tar.gz`: descomprime y ejecuta `./apexdesk` |
+
+Linux necesita glibc 2.31 o posterior (Ubuntu 20.04, Debian 11, Fedora 32 y posteriores).
 
 **Windows SmartScreen:** el programa todavía no está firmado, así que
 Windows puede mostrar «Windows protegió su PC». Pulsa **Más información**
