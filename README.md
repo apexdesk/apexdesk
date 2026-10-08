@@ -22,11 +22,18 @@ This repository holds only the installers. They are under
 | Windows, portable (USB) | `apexdesk-<version>-windows-x86_64-portable.zip`: keeps its settings next to the program |
 | Debian, Ubuntu, Mint | `apexdesk_<version>_amd64.deb`: `sudo apt install ./apexdesk_*.deb` |
 | Fedora, openSUSE | `apexdesk-<version>-1.x86_64.rpm`: `sudo dnf install ./apexdesk-*.rpm` |
+| Arch Linux, Manjaro | `apexdesk-bin-<version>-1-x86_64.pkg.tar.zst`: `sudo pacman -U ./apexdesk-bin-*.pkg.tar.zst` |
 | Linux, portable (USB) | `apexdesk-<version>-linux-x86_64-portable.tar.gz`: unpack and run `./apexdesk` |
 
 Linux needs glibc 2.31 or newer (Ubuntu 20.04, Debian 11, Fedora 32 and later).
 
-Arch Linux and Manjaro: build the package from [`aur/apexdesk-bin`](aur/apexdesk-bin) with makepkg:
+Or install it straight from the release:
+
+```sh
+sudo pacman -U https://github.com/apexdesk/apexdesk/releases/download/v0.8.0/apexdesk-bin-0.8.0-1-x86_64.pkg.tar.zst
+```
+
+The package is built from [`aur/apexdesk-bin`](aur/apexdesk-bin); to build it yourself with makepkg:
 
 ```sh
 git clone https://github.com/apexdesk/apexdesk.git
@@ -73,11 +80,18 @@ Este repositorio solo contiene los instaladores. Están en
 | Windows, portable (USB) | `apexdesk-<versión>-windows-x86_64-portable.zip`: guarda sus ajustes junto al programa |
 | Debian, Ubuntu, Mint | `apexdesk_<versión>_amd64.deb`: `sudo apt install ./apexdesk_*.deb` |
 | Fedora, openSUSE | `apexdesk-<versión>-1.x86_64.rpm`: `sudo dnf install ./apexdesk-*.rpm` |
+| Arch Linux, Manjaro | `apexdesk-bin-<versión>-1-x86_64.pkg.tar.zst`: `sudo pacman -U ./apexdesk-bin-*.pkg.tar.zst` |
 | Linux, portable (USB) | `apexdesk-<versión>-linux-x86_64-portable.tar.gz`: descomprime y ejecuta `./apexdesk` |
 
 Linux necesita glibc 2.31 o posterior (Ubuntu 20.04, Debian 11, Fedora 32 y posteriores).
 
-Arch Linux y Manjaro: crea el paquete desde [`aur/apexdesk-bin`](aur/apexdesk-bin) con makepkg:
+O instálalo directamente desde la versión publicada:
+
+```sh
+sudo pacman -U https://github.com/apexdesk/apexdesk/releases/download/v0.8.0/apexdesk-bin-0.8.0-1-x86_64.pkg.tar.zst
+```
+
+El paquete se crea desde [`aur/apexdesk-bin`](aur/apexdesk-bin); para crearlo tú con makepkg:
 
 ```sh
 git clone https://github.com/apexdesk/apexdesk.git
