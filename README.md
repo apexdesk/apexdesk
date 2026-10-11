@@ -30,7 +30,7 @@ Linux needs glibc 2.31 or newer (Ubuntu 20.04, Debian 11, Fedora 32 and later).
 Or install it straight from the release:
 
 ```sh
-sudo pacman -U https://github.com/apexdesk/apexdesk/releases/download/v0.8.0/apexdesk-bin-0.8.0-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/apexdesk/apexdesk/releases/download/v1.0.0/apexdesk-bin-1.0.0-1-x86_64.pkg.tar.zst
 ```
 
 The package is built from [`aur/apexdesk-bin`](aur/apexdesk-bin); to build it yourself with makepkg:
@@ -88,7 +88,7 @@ Linux necesita glibc 2.31 o posterior (Ubuntu 20.04, Debian 11, Fedora 32 y post
 O instálalo directamente desde la versión publicada:
 
 ```sh
-sudo pacman -U https://github.com/apexdesk/apexdesk/releases/download/v0.8.0/apexdesk-bin-0.8.0-1-x86_64.pkg.tar.zst
+sudo pacman -U https://github.com/apexdesk/apexdesk/releases/download/v1.0.0/apexdesk-bin-1.0.0-1-x86_64.pkg.tar.zst
 ```
 
 El paquete se crea desde [`aur/apexdesk-bin`](aur/apexdesk-bin); para crearlo tú con makepkg:
