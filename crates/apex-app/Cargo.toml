@@ -95,3 +95,7 @@ smithay-clipboard = "0.7"
 [dev-dependencies]
 # Test databases for mail merge (apex-query already builds it).
 rusqlite = { version = "0.40", features = ["bundled"] }
+
+[lints.rust]
+# Set by crates/apex-android, which builds src/main.rs as Android's library.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(apex_android)"] }

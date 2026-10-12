@@ -100,6 +100,8 @@ impl App {
             if item(ui, a, Icon::Slides, tr("menu.new_slides"), "") {
                 *cmd = Some(AppCmd::NewSlides);
             }
+            // Android leaves the database tab out.
+            #[cfg(not(target_os = "android"))]
             if tip_item(ui, a, Icon::Table, &dots("db.new_database"), tr("db.new_database_tip")) {
                 self.new_database();
             }

@@ -691,6 +691,7 @@ fn designer_for(db: &Db, name: Option<&str>) -> Result<design::Designer, apex_db
 }
 
 /// Makes a new database file at `path` (replacing one there).
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub fn create(path: &Path) -> Result<DbView, apex_db::Error> {
     // Made new here (not through a link), then opened as any other.
     drop(apex_db::sqlite::Db::create(path)?);

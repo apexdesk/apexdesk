@@ -1,0 +1,64 @@
+[package]
+name = "apex-android"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "ApexDesk for Android: apex-app's code built as the NativeActivity's library"
+
+# The same source as the desktop program (crates/apex-app/src/main.rs),
+# its Android parts under cfg(target_os = "android"). Built for another
+# system the library is empty (build.rs sets cfg(apex_android)), so the
+# workspace's builds and tests don't build it twice.
+[lib]
+name = "apexdesk"
+path = "../apex-app/src/main.rs"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+# The desktop program's optional features its code tests for (off here),
+# and ApexDesk Empresa, on as in crates/apex-app.
+[features]
+default = []
+empresa = ["apex-io/empresa"]
+ffmpeg = []
+pdfium = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(apex_android)"] }
+
+# The desktop program's dependencies (crates/apex-app/Cargo.toml) without
+# the system's file dialogs (rfd) and clipboard (arboard), and without the
+# database clients and web sources of Get Data (apex-query's features).
+[target.'cfg(target_os = "android")'.dependencies]
+apex-sheet.workspace = true
+apex-doc.workspace = true
+apex-slides.workspace = true
+apex-io.workspace = true
+apex-pdf.workspace = true
+apex-sign.workspace = true
+apex-spell.workspace = true
+apex-i18n.workspace = true
+apex-tui.workspace = true
+apex-query = { path = "../apex-query", default-features = false }
+apex-db.workspace = true
+apex-vba.workspace = true
+eframe = { version = "0.36.2", default-features = false, features = ["wgpu", "glow", "default_fonts", "android-native-activity"] }
+# Its clipboard takes the system's (vendor/egui-winit, see vendor/README.md).
+egui-winit = { version = "0.36.2", default-features = false }
+winit = { version = "0.30", default-features = false, features = ["android-native-activity"] }
+jni = "0.22"
+raw-window-handle = "0.6"
+png = "0.18.1"
+zune-jpeg = "0.5.15"
+weezl = "0.1.12"
+image-webp = "0.2.4"
+qrcode = { version = "0.14.1", default-features = false }
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+unicode-width = "0.2"
+serde_json = "1"
+libloading = "0.8"
+cpal = "0.18"
+libc = "0.2"

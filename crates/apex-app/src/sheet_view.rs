@@ -1376,10 +1376,12 @@ impl SheetView {
             let c = g.col_at(sh, p.x);
             let left = g.x(sh, c);
             let right = g.x_end(sh, c);
-            if (right - p.x).abs() <= 4.0 {
+            // Wider for a finger.
+            let near = if cfg!(target_os = "android") { 10.0 } else { 4.0 };
+            if (right - p.x).abs() <= near {
                 return Hit::ColBorder(c);
             }
-            if (p.x - left).abs() <= 4.0 && c > 0 {
+            if (p.x - left).abs() <= near && c > 0 {
                 return Hit::ColBorder(c - 1);
             }
             return Hit::ColHeader(c);
@@ -1388,10 +1390,11 @@ impl SheetView {
             let r = g.row_at(sh, p.y);
             let top = g.y(sh, r);
             let bottom = g.y_end(sh, r);
-            if (bottom - p.y).abs() <= 3.0 {
+            let near = if cfg!(target_os = "android") { 7.0 } else { 3.0 };
+            if (bottom - p.y).abs() <= near {
                 return Hit::RowBorder(r);
             }
-            if (p.y - top).abs() <= 3.0 && r > 0 {
+            if (p.y - top).abs() <= near && r > 0 {
                 return Hit::RowBorder(r - 1);
             }
             return Hit::RowHeader(r);
@@ -2404,6 +2407,10 @@ impl SheetView {
         let row_hdr = Rect::from_min_max(pos2(rect.min.x, g.origin.y), pos2(g.origin.x, g.view.max.y));
         p.rect_filled(col_hdr, 0.0, bg);
         p.rect_filled(row_hdr, 0.0, bg);
+        // A finger on the headers selects columns and rows, or resizes
+        // them at a border, instead of scrolling.
+        crate::touch::grip(p, col_hdr, 0.0, None);
+        crate::touch::grip(p, row_hdr, 0.0, None);
         let fx = g.origin.x + g.fx * g.z;
         let fy = g.origin.y + g.fy * g.z;
         // Row numbers of filtered data are blue, like other spreadsheets.

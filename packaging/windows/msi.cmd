@@ -14,7 +14,7 @@ rem and the package, with a timestamp.
 setlocal enabledelayedexpansion
 set here=%~dp0
 pushd "%here%..\.."
-for /f "tokens=3 delims== " %%v in ('findstr /b "version" Cargo.toml') do if not defined version set version=%%~v
+for /f "tokens=2 delims== " %%v in ('findstr /b "version" Cargo.toml') do if not defined version set version=%%~v
 cargo build --release -p apex-app || exit /b 1
 set stage=%CD%\target\msi-stage
 if exist "%stage%" rmdir /s /q "%stage%"

@@ -67,9 +67,9 @@ over this folder, then apply the change again: the diff against the
 original is small. If a new epaint already caches shaping, remove this folder
 and the `[patch.crates-io]` entry instead.
 
-## egui-winit 0.36.2 (launch activation token)
+## egui-winit 0.36.2 (launch activation token, Android's clipboard)
 
-A copy of `egui-winit` 0.36.2 from crates.io with one change, used through
+A copy of `egui-winit` 0.36.2 from crates.io with two changes, used through
 `[patch.crates-io]` in the workspace `Cargo.toml`.
 
 **Why.** A dock or launcher (GNOME Shell, a file manager) starts a program
@@ -84,8 +84,13 @@ reopened soon after closing, ApexDesk didn't open.
 (`with_activation_token`) and the variables are cleared, so no later window
 or program started from ApexDesk uses it again.
 
+**Android's clipboard** (`src/clipboard.rs`, marked "ApexDesk patch"):
+without arboard there, egui-winit kept copied text to itself. The program
+hands in the system clipboard's read and write (`clipboard::ANDROID`, through
+Java), so text crosses to and from other apps. Other systems are unchanged.
+
 **Updating egui.** Copy the new `egui-winit` over this folder and apply the
-change again. If egui-winit reads the token itself, remove this folder and
+changes again. If egui-winit reads the token itself, remove this folder and
 its `[patch.crates-io]` entry.
 
 ## arboard 3.6.1 (clipboard in several formats)

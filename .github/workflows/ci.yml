@@ -1,0 +1,191 @@
+# Tests on every push and pull request, and the programs for every platform:
+# Linux (x86-64 and ARM: portable, .deb, .rpm), Windows (x86-64 and ARM zip,
+# x86-64 MSI and MSIX), macOS (Apple silicon and Intel in one .dmg) and
+# Android (APK signed with a debug key made here). Each build is kept as a
+# workflow artifact; a tag v* also puts them in a draft release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: cargo test --workspace --no-fail-fast
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev rpm
+      - run: cargo install --locked cargo-zigbuild
+      - name: Portable
+        run: packaging/linux/portable.sh
+      - name: deb and rpm
+        run: |
+          export APEXDESK_BIN=$PWD/target/${{ matrix.arch }}-unknown-linux-gnu/release/apexdesk
+          packaging/linux/deb.sh
+          packaging/linux/rpm.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch }}-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        shell: pwsh
+        run: |
+          # rc.exe, from the Windows SDK, gives the program its icon.
+          $rc = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\rc.exe" | Sort-Object FullName | Select-Object -Last 1
+          if ($rc) { $env:RC = $rc.FullName }
+          cargo build --release -p apex-app --target ${{ matrix.arch }}-pc-windows-msvc
+      - name: Zip
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches.Groups[1].Value
+          $name = "apexdesk-$version-windows-${{ matrix.arch }}"
+          $stage = "target\pack\$name"
+          New-Item -ItemType Directory -Force $stage, dist | Out-Null
+          Copy-Item "target\${{ matrix.arch }}-pc-windows-msvc\release\apexdesk.exe" "$stage\ApexDesk.exe"
+          Copy-Item packaging\windows\README.txt, THIRD-PARTY-NOTICES.md, LICENSE, EULA.md, EULA.es.md $stage
+          Compress-Archive -Path $stage -DestinationPath "dist\$name.zip"
+          # The portable copy keeps its settings in a "data" folder next to it.
+          $pstage = "target\pack\$name-portable"
+          Copy-Item -Recurse $stage $pstage
+          Set-Content -NoNewline "$pstage\portable" "ApexDesk keeps its settings and data in the `"data`" folder here.`r`n"
+          Compress-Archive -Path $pstage -DestinationPath "dist\$name-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: dist/*.zip
+
+  windows-installers:
+    name: Windows MSI and MSIX
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tools
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          "$env:USERPROFILE\.dotnet\tools" >> $env:GITHUB_PATH
+          # rc (the program's icon) and makeappx, from the Windows SDK.
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" | Sort-Object FullName | Select-Object -Last 1
+          $sdk.DirectoryName >> $env:GITHUB_PATH
+      - run: wix extension add --global WixToolset.UI.wixext/5.0.2
+      - run: packaging\windows\msi.cmd
+        shell: cmd
+      - run: packaging\windows\msix.cmd
+        shell: cmd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            dist/*.msi
+            dist/*.msix
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --no-fail-fast
+      - run: packaging/macos/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.dmg
+
+  android:
+    name: Android
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Debug key
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -keypass android \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+      - run: packaging/android/apk.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*.apk
+
+  release:
+    name: Draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, linux, windows, windows-installers, macos, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --draft --title "$GITHUB_REF_NAME" --generate-notes

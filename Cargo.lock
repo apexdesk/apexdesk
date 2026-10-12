@@ -217,6 +217,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "apex-android"
+version = "1.0.0"
+dependencies = [
+ "apex-db",
+ "apex-doc",
+ "apex-i18n",
+ "apex-io",
+ "apex-pdf",
+ "apex-query",
+ "apex-sheet",
+ "apex-sign",
+ "apex-slides",
+ "apex-spell",
+ "apex-tui",
+ "apex-vba",
+ "cpal",
+ "eframe",
+ "egui-winit",
+ "image-webp",
+ "jni",
+ "libc",
+ "libloading",
+ "png",
+ "qrcode",
+ "raw-window-handle",
+ "regex",
+ "serde_json",
+ "skrifa",
+ "unicode-width",
+ "weezl",
+ "winit",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "apex-app"
 version = "1.0.0"
 dependencies = [

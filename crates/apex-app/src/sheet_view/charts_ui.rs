@@ -22,7 +22,7 @@ use crate::icons::Icon;
 use crate::theme;
 use crate::widgets::{self, DialogResult};
 
-const HANDLE: f32 = 7.0;
+const HANDLE: f32 = crate::touch::size(7.0);
 const GRAB: f32 = 6.0;
 const MIN_SIZE: f32 = 40.0;
 
@@ -457,6 +457,7 @@ impl SheetView {
         let p = painter.with_clip_rect(g.view);
         let accent = theme::SHEET_ACCENT;
         p.rect_stroke(r, 0.0, Stroke::new(1.0, accent), egui::StrokeKind::Middle);
+        crate::touch::grip(&p, r, crate::touch::reach(GRAB), Some((r.right_bottom(), r.left_top())));
         for (_, at) in handles(r) {
             p.rect(Rect::from_center_size(at, Vec2::splat(HANDLE)), 1.0, Color32::WHITE, Stroke::new(1.0, accent), egui::StrokeKind::Middle);
         }
@@ -469,10 +470,8 @@ impl SheetView {
         if let Some(stored) = self.selected_chart() {
             let c = self.shown_chart(stored);
             let r = screen_rect(g, home_pane(g, sh, c), sh, c);
-            for (h, at) in handles(r) {
-                if (at - p).length() <= GRAB {
-                    return Some((c.id, h));
-                }
+            if let Some(h) = crate::touch::nearest(handles(r), p, GRAB) {
+                return Some((c.id, h));
             }
         }
         let pane = pane_at(g, p);

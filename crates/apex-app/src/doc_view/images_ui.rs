@@ -260,6 +260,11 @@ impl DocView {
     }
 }
 
+/// The handle (an index of `handles`) of a picture in `r` under `q`.
+fn handle_at(r: Rect, q: Pos2) -> Option<usize> {
+    crate::touch::nearest(handles(r).into_iter().enumerate(), q, 7.0)
+}
+
 fn handles(r: Rect) -> [Pos2; 8] {
     let c = r.center();
     [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), pos2(c.x, r.top()), pos2(r.right(), c.y), pos2(c.x, r.bottom()), pos2(r.left(), c.y)]
@@ -314,7 +319,7 @@ impl DocView {
     /// A click at `local` would take a picture (or a handle of the
     /// selected one).
     pub(super) fn picture_grab_at(&self, local: Pos2) -> bool {
-        let on_selected = self.selected_picture().is_some_and(|(_, rect, _)| rect.contains(local) || handles(rect).iter().any(|h| (local - *h).length() <= 7.0));
+        let on_selected = self.selected_picture().is_some_and(|(_, rect, _)| rect.contains(local) || handle_at(rect, local).is_some());
         on_selected || self.picture_at(local).is_some()
     }
 
@@ -343,9 +348,8 @@ impl DocView {
         if !pressed || !resp.hovered() {
             return false;
         }
-        let hs = 5.0;
         if let Some((at, rect, img)) = self.selected_picture() {
-            if let Some(h) = handles(rect).iter().position(|h| (local - *h).length() <= hs + 2.0) {
+            if let Some(h) = handle_at(rect, local) {
                 self.pics.drag = Some(Drag { at, handle: h, start: local, rect, cur: rect });
                 return true;
             }
@@ -417,9 +421,11 @@ impl DocView {
             crate::images::outline(p, r, img.rotation, Stroke::new(1.0, blue));
         }
         p.rect_stroke(r, 0.0, Stroke::new(1.0, blue), egui::StrokeKind::Middle);
+        crate::touch::grip(p, r, crate::touch::reach(7.0), Some((r.right_bottom(), r.left_top())));
+        let radius = crate::touch::size(4.5);
         for h in handles(r) {
-            p.circle_filled(h, 4.5, Color32::WHITE);
-            p.circle_stroke(h, 4.5, Stroke::new(1.0, blue));
+            p.circle_filled(h, radius, Color32::WHITE);
+            p.circle_stroke(h, radius, Stroke::new(1.0, blue));
         }
     }
 
@@ -430,7 +436,7 @@ impl DocView {
             return Some(if d.handle == 8 { C::Grabbing } else { handle_cursor(d.handle) });
         }
         if let Some((_, rect, _)) = self.selected_picture() {
-            if let Some(h) = handles(rect).iter().position(|h| (local - *h).length() <= 7.0) {
+            if let Some(h) = handle_at(rect, local) {
                 return Some(handle_cursor(h));
             }
             if rect.contains(local) {

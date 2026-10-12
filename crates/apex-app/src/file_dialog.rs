@@ -21,14 +21,16 @@ use crate::app::{App, View};
 
 /// Asks for files or a folder.
 pub struct FileDialog {
-    #[cfg(not(test))]
+    #[cfg(not(any(test, target_os = "android")))]
     inner: rfd::AsyncFileDialog,
-    #[cfg(test)]
+    #[cfg(any(test, target_os = "android"))]
     title: String,
-    #[cfg(test)]
+    #[cfg(any(test, target_os = "android"))]
     file_name: String,
-    #[cfg(test)]
+    #[cfg(any(test, target_os = "android"))]
     exts: Vec<String>,
+    #[cfg(target_os = "android")]
+    dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,24 +66,26 @@ thread_local! {
 impl FileDialog {
     pub fn new() -> FileDialog {
         FileDialog {
-            #[cfg(not(test))]
+            #[cfg(not(any(test, target_os = "android")))]
             inner: rfd::AsyncFileDialog::new(),
-            #[cfg(test)]
+            #[cfg(any(test, target_os = "android"))]
             title: String::new(),
-            #[cfg(test)]
+            #[cfg(any(test, target_os = "android"))]
             file_name: String::new(),
-            #[cfg(test)]
+            #[cfg(any(test, target_os = "android"))]
             exts: Vec::new(),
+            #[cfg(target_os = "android")]
+            dir: None,
         }
     }
 
     pub fn set_title(mut self, title: impl Into<String>) -> FileDialog {
         let title = title.into();
-        #[cfg(test)]
+        #[cfg(any(test, target_os = "android"))]
         {
             self.title = title;
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, target_os = "android")))]
         {
             self.inner = self.inner.set_title(title);
         }
@@ -89,12 +93,12 @@ impl FileDialog {
     }
 
     pub fn add_filter(mut self, name: impl Into<String>, exts: &[impl ToString]) -> FileDialog {
-        #[cfg(test)]
+        #[cfg(any(test, target_os = "android"))]
         {
             let _ = name.into();
             self.exts.extend(exts.iter().map(|e| e.to_string()));
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, target_os = "android")))]
         {
             self.inner = self.inner.add_filter(name, exts);
         }
@@ -103,11 +107,11 @@ impl FileDialog {
 
     pub fn set_file_name(mut self, name: impl Into<String>) -> FileDialog {
         let name = name.into();
-        #[cfg(test)]
+        #[cfg(any(test, target_os = "android"))]
         {
             self.file_name = name;
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, target_os = "android")))]
         {
             self.inner = self.inner.set_file_name(name);
         }
@@ -115,9 +119,13 @@ impl FileDialog {
     }
 
     pub fn set_directory(#[allow(unused_mut)] mut self, dir: impl AsRef<Path>) -> FileDialog {
-        #[cfg(not(test))]
+        #[cfg(not(any(test, target_os = "android")))]
         {
             self.inner = self.inner.set_directory(dir);
+        }
+        #[cfg(target_os = "android")]
+        {
+            self.dir = Some(dir.as_ref().to_path_buf());
         }
         #[cfg(test)]
         let _ = dir;
@@ -189,7 +197,9 @@ impl FileDialog {
             let req = test::Request { kind, title: self.title, file_name: self.file_name, exts: self.exts };
             test::reply(tx, test::answer(req));
         }
-        #[cfg(not(test))]
+        #[cfg(all(target_os = "android", not(test)))]
+        crate::android::files::ask(crate::android::files::Request { kind, title: self.title, file_name: self.file_name, exts: self.exts, dir: self.dir }, tx);
+        #[cfg(not(any(test, target_os = "android")))]
         if std::env::var_os("APEXDESK_SCRIPT").is_some() {
             // A scripted run never opens a dialog: the answer is the path
             // in APEXDESK_DIALOG, else cancelled.
@@ -227,13 +237,13 @@ impl FileDialog {
 }
 
 /// A single file's answer as a list.
-#[cfg(not(test))]
+#[cfg(not(any(test, target_os = "android")))]
 async fn one(f: impl std::future::Future<Output = Option<rfd::FileHandle>>) -> Option<Vec<PathBuf>> {
     f.await.map(|h| vec![h.path().to_path_buf()])
 }
 
 /// Runs a future to its end on this thread.
-#[cfg(not(test))]
+#[cfg(not(any(test, target_os = "android")))]
 fn block_on<T>(mut f: std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>) -> T {
     use std::task::{Context, Poll, Wake, Waker};
     struct Unpark(std::thread::Thread);

@@ -15,6 +15,10 @@ What each script makes, and whether it has been tried:
   linux/aur/           Arch PKGBUILD (apexdesk-bin, from the portable)  built with makepkg, installed with pacman; the .pkg.tar.zst is a release asset
   linux/flatpak/       Flatpak manifest and AppStream metadata         UNTESTED
 
+.github/workflows/ci.yml builds on GitHub Actions, from the public (GPL)
+code, the zips, portables, deb, rpm, dmg, MSI, MSIX (unsigned: for the
+Store, or to sign) and the APK (signed with a debug key made there).
+
 "built and inspected": packages made with a stand-in program and their
 contents and dependencies listed (dpkg-deb -c, rpm -qlp); not installed.
 

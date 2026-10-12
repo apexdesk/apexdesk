@@ -19,9 +19,10 @@ pub const PX_PT: f32 = 96.0 / 72.0;
 const INSET_X: f32 = 7.2;
 const INSET_Y: f32 = 3.6;
 /// Handle size, hit distance and the rotation handle's arm, screen points.
-pub const HANDLE: f32 = 7.0;
+/// (Bigger and farther with fingers: crate::touch.)
+pub const HANDLE: f32 = crate::touch::size(7.0);
 pub const GRAB: f32 = 6.0;
-pub const ROT_ARM: f32 = 22.0;
+pub const ROT_ARM: f32 = if cfg!(target_os = "android") { 34.0 } else { 22.0 };
 
 // --- geometry ------------------------------------------------------------------------
 
@@ -699,7 +700,7 @@ pub fn handles(shape: &Shape, rect: Rect) -> Vec<(Handle, Pos2)> {
 
 /// The handle of the selected shape under screen point `q`.
 pub fn handle_at(shape: &Shape, rect: Rect, q: Pos2) -> Option<Handle> {
-    handles(shape, rect).into_iter().find(|(_, at)| (*at - q).length() <= GRAB).map(|(h, _)| h)
+    crate::touch::nearest(handles(shape, rect), q, GRAB)
 }
 
 pub fn cursor(h: Handle, rotation: f32) -> CursorIcon {
@@ -722,6 +723,9 @@ pub fn cursor(h: Handle, rotation: f32) -> CursorIcon {
 /// Outline and handles of the selected shape drawn in `rect`.
 pub fn paint_handles(p: &Painter, shape: &Shape, rect: Rect, accent: Color32) {
     let hs = handles(shape, rect);
+    let at = |h: Handle| hs.iter().find(|(k, _)| *k == h).map(|(_, a)| *a);
+    let scale = if shape.kind.is_line() { at(Handle::End).zip(at(Handle::Start)) } else { at(Handle::Resize(1, 1)).zip(at(Handle::Resize(-1, -1))) };
+    crate::touch::grip(p, hs.iter().fold(rect, |r, (_, a)| r.union(Rect::from_center_size(*a, Vec2::ZERO))), crate::touch::reach(GRAB), scale);
     if !shape.kind.is_line() {
         crate::images::outline(p, rect, shape.rotation, Stroke::new(1.0, accent));
         if let (Some((_, top)), Some((_, rot))) = (hs.iter().find(|(h, _)| *h == Handle::Resize(0, -1)), hs.last()) {

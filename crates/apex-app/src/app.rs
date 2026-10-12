@@ -543,6 +543,8 @@ impl App {
             return;
         }
         // SQLite keeps several users of a database apart itself.
+        // Android leaves the database tab out.
+        #[cfg(not(target_os = "android"))]
         if crate::db_view::is_db_file(&canon) {
             self.open_db_tab(&canon);
             return;
@@ -618,6 +620,9 @@ impl App {
                 self.settings.add_recent(canon.clone());
                 self.settings.save();
                 let ms = t0.elapsed().as_secs_f32() * 1000.0;
+                // For `adb logcat -s ApexDesk`.
+                #[cfg(target_os = "android")]
+                crate::android::log(&format!("opened {} in {ms:.0} ms", canon.display()));
                 if truncated {
                     self.opened_in_part(&canon);
                 } else if fmt == apex_io::Format::Pdf {
@@ -1540,6 +1545,8 @@ impl App {
                     self.new_slides();
                     ui.close();
                 }
+                // Android leaves the database tab out.
+                #[cfg(not(target_os = "android"))]
                 if ui.button(format!("{}…", tr("menu.new_database"))).on_hover_text(tr("db.new_database_tip")).clicked() {
                     ui.close();
                     self.new_database();
@@ -1617,8 +1624,12 @@ impl App {
             ui.horizontal(|ui| {
                 // Narrower buttons in a small window (their names wrap).
                 let gap = ui.spacing().item_spacing.x;
-                let w = ((ui.available_width() - gap * 5.0) / 6.0).clamp(90.0, 190.0);
-                let total = w * 6.0 + gap * 5.0;
+                // Android leaves the database button out.
+                #[cfg(not(target_os = "android"))]
+                let (n, w) = (6.0, ((ui.available_width() - gap * 5.0) / 6.0).clamp(90.0, 190.0));
+                #[cfg(target_os = "android")]
+                let (n, w) = (5.0, ((ui.available_width() - gap * 4.0) / 5.0).clamp(90.0, 190.0));
+                let total = w * n + gap * (n - 1.0);
                 ui.add_space(((ui.available_width() - total) / 2.0).max(0.0));
                 if big_button(ui, Icon::Doc, tr("start.new_doc"), theme::DOC_ACCENT, w).clicked() {
                     self.new_doc();
@@ -1629,6 +1640,8 @@ impl App {
                 if big_button(ui, Icon::Slides, tr("start.new_slides"), theme::SLIDES_ACCENT, w).clicked() {
                     self.new_slides();
                 }
+                // Android leaves the database tab out.
+                #[cfg(not(target_os = "android"))]
                 if big_button(ui, Icon::Table, tr("start.new_database"), theme::DB_ACCENT, w).on_hover_text(tr("db.new_database_tip")).clicked() {
                     self.new_database();
                 }
@@ -1642,7 +1655,11 @@ impl App {
             ui.add_space(8.0);
             // The other ways in of the File menu, as links.
             ui.horizontal(|ui| {
+                #[cfg(not(target_os = "android"))]
                 let labels = [format!("{}…", tr("tpl.new_menu")), format!("{}…", tr("pdf.open_title")), format!("{}…", tr("db.open_database"))];
+                // Android leaves the database tab out.
+                #[cfg(target_os = "android")]
+                let labels = [format!("{}…", tr("tpl.new_menu")), format!("{}…", tr("pdf.open_title"))];
                 let gap = ui.spacing().item_spacing.x * 4.0;
                 let font = egui::TextStyle::Body.resolve(ui.style());
                 let total: f32 = labels.iter().map(|l| ui.ctx().fonts_mut(|f| f.layout_no_wrap(l.clone(), font.clone(), Color32::WHITE).size().x) + gap).sum::<f32>() - gap;
@@ -1654,6 +1671,7 @@ impl App {
                     if ui.link(&labels[1]).on_hover_text(tr("pdf.open_tip")).clicked() {
                         self.open_pdf_view();
                     }
+                    #[cfg(not(target_os = "android"))]
                     if ui.link(&labels[2]).on_hover_text(tr("db.open_database_tip")).clicked() {
                         self.open_database();
                     }
@@ -1946,8 +1964,15 @@ impl eframe::App for App {
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         use crate::script::Step;
+        #[cfg(target_os = "android")]
+        {
+            crate::android::visible(raw, ctx.pixels_per_point());
+            crate::android::touch(ctx, raw);
+        }
         // A file dialog is open: the window paints but, like under a modal
-        // dialog, takes no clicks or keys until it's answered.
+        // dialog, takes no clicks or keys until it's answered. Android's
+        // file browser is inside the window and takes them.
+        #[cfg(not(target_os = "android"))]
         if crate::file_dialog::busy() {
             // Releases still count, or a key or button would stay down.
             raw.events.retain(|e| {
@@ -2068,6 +2093,16 @@ impl eframe::App for App {
         // A file dialog answered since the last frame: do what it was for.
         crate::file_dialog::frame(&ctx, frame);
         crate::file_dialog::poll(self);
+        #[cfg(target_os = "android")]
+        {
+            crate::android::frame(&ctx);
+            // Two fingers zoom (the spreadsheet zooms itself, as with Ctrl+wheel).
+            if let Some(z) = crate::android::pinch(&ctx)
+                && self.tabs.get(self.active).is_some_and(|t| t.view.kind() != Kind::Sheet)
+            {
+                self.zoom(Some(z));
+            }
+        }
         if let Some(t) = self.tabs.get(self.active) {
             crate::file_dialog::set_owner(t.id);
         }

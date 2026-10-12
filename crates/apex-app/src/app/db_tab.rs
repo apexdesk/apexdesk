@@ -24,6 +24,8 @@ fn with_db_ext(mut path: PathBuf) -> PathBuf {
 
 impl App {
     /// File > New database: asks where, then opens it empty.
+    // Android leaves the database tab out.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     pub(super) fn new_database(&mut self) {
         crate::file_dialog::FileDialog::new().set_title(tr("db.new_database")).add_filter(tr("db.filter_db"), db_view::EXTS).set_file_name(format!("{}.apexdb", tr("db.default_name"))).save_file(|app, path| {
             let path = with_db_ext(path);
@@ -41,6 +43,8 @@ impl App {
 
     /// File > Open database: SQLite files open; Access and dBase files are
     /// imported into a new database next to them.
+    // Android leaves the database tab out.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     pub(super) fn open_database(&mut self) {
         let exts: Vec<&str> = db_view::EXTS.iter().chain(apex_db::ACCESS_EXTS).chain(apex_db::DBASE_EXTS).copied().collect();
         crate::file_dialog::FileDialog::new().set_title(tr("db.open_database")).add_filter(tr("dialog.filter_databases"), &exts).pick_file(|app, path| app.open_database_file(path));

@@ -3,7 +3,12 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 // Helpers only ApexDesk Empresa uses (checks, brands) stay in the free build.
 #![cfg_attr(not(feature = "empresa"), allow(dead_code))]
+// crates/apex-android builds this same file as Android's library; built
+// for another system it is empty.
+#![cfg(any(target_os = "android", not(apex_android)))]
 
+#[cfg(target_os = "android")]
+mod android;
 mod app;
 mod autocorrect;
 mod barcode;
@@ -71,6 +76,7 @@ mod symbols;
 mod sysclip;
 mod templates;
 mod theme;
+mod touch;
 mod themes_ui;
 mod widgets;
 
@@ -82,6 +88,7 @@ use eframe::egui;
 /// in System32, the program's folder and the ones it adds, never in the
 /// working folder: opening a document from a folder sets it there, and a
 /// DLL may have come in the same ZIP.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 fn safe_library_search() {
     #[cfg(windows)]
     {
@@ -100,6 +107,7 @@ fn safe_library_search() {
     }
 }
 
+#[cfg_attr(target_os = "android", allow(dead_code))]
 fn main() -> eframe::Result<()> {
     let started = std::time::Instant::now();
     safe_library_search();

@@ -271,7 +271,7 @@ fn decode_bmp(b: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
 }
 
 /// Shrinks (box filter, alpha weighted) to fit `max_side` and `max_px`.
-fn fit(w: u32, h: u32, rgba: Vec<u8>, max_side: u32, max_px: u64) -> (u32, u32, Vec<u8>) {
+pub(crate) fn fit(w: u32, h: u32, rgba: Vec<u8>, max_side: u32, max_px: u64) -> (u32, u32, Vec<u8>) {
     let px = w as f64 * h as f64;
     let s = (max_side as f64 / w.max(h) as f64).min((max_px as f64 / px).sqrt());
     if s >= 1.0 {

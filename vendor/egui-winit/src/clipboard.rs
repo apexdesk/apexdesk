@@ -1,5 +1,10 @@
 use raw_window_handle::RawDisplayHandle;
 
+/// ApexDesk patch: on Android the program hands in the system clipboard
+/// (read, write), reached through Java, which this crate doesn't do.
+#[cfg(target_os = "android")]
+pub static ANDROID: std::sync::OnceLock<(fn() -> Option<String>, fn(&str))> = std::sync::OnceLock::new();
+
 /// Handles interfacing with the OS clipboard.
 ///
 /// If the "clipboard" feature is off, or we cannot connect to the OS clipboard,
@@ -87,6 +92,14 @@ impl Clipboard {
             };
         }
 
+        // ApexDesk patch: the system clipboard on Android.
+        #[cfg(target_os = "android")]
+        if let Some((get, _)) = ANDROID.get()
+            && let Some(text) = get()
+        {
+            return Some(text);
+        }
+
         Some(self.clipboard.clone())
     }
 
@@ -115,6 +128,12 @@ impl Clipboard {
                 log::error!("arboard copy/cut error: {err}");
             }
             return;
+        }
+
+        // ApexDesk patch: the system clipboard on Android.
+        #[cfg(target_os = "android")]
+        if let Some((_, set)) = ANDROID.get() {
+            set(&text);
         }
 
         self.clipboard = text;

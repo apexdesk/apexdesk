@@ -23,10 +23,10 @@ use crate::widgets::{self, DialogResult};
 static CLIP: std::sync::Mutex<Option<(SheetImage, u64)>> = std::sync::Mutex::new(None);
 
 /// Handle size and hit distance, in screen points.
-const HANDLE: f32 = 7.0;
+const HANDLE: f32 = crate::touch::size(7.0);
 const GRAB: f32 = 6.0;
 /// Distance of the rotation handle above the top edge.
-const ROT_ARM: f32 = 22.0;
+const ROT_ARM: f32 = crate::shapes::ROT_ARM;
 const MIN_SIZE: f32 = 4.0;
 /// Centimeters per sheet pixel (96 dpi).
 const CM: f32 = 2.54 / 96.0;
@@ -275,6 +275,8 @@ impl SheetView {
         let accent = theme::SHEET_ACCENT;
         images::outline(&p, rect, img.rotation, Stroke::new(1.0, accent));
         let hs = handles(rect, img.rotation);
+        let at = |h: Handle| hs.iter().find(|(k, _)| *k == h).map(|(_, a)| *a);
+        crate::touch::grip(&p, hs.iter().fold(rect, |r, (_, a)| r.union(Rect::from_center_size(*a, Vec2::ZERO))), crate::touch::reach(GRAB), at(Handle::Resize(1, 1)).zip(at(Handle::Resize(-1, -1))));
         if let Some((_, top)) = hs.iter().find(|(h, _)| *h == Handle::Resize(0, -1)) {
             let rot = hs.last().map_or(*top, |(_, r)| *r);
             p.line_segment([*top, rot], Stroke::new(1.0, accent));
@@ -300,10 +302,8 @@ impl SheetView {
         if let Some(stored) = self.selected_image() {
             let img = self.shown(stored);
             let rect = screen_rect(g, home_pane(g, sh, img), sh, img);
-            for (h, at) in handles(rect, img.rotation) {
-                if (at - p).length() <= GRAB {
-                    return Some((img.id, h));
-                }
+            if let Some(h) = crate::touch::nearest(handles(rect, img.rotation), p, GRAB) {
+                return Some((img.id, h));
             }
         }
         let pane = pane_at(g, p);

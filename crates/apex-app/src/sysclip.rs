@@ -7,8 +7,11 @@
 //! backend through the clipboard egui-winit runs (vendor/smithay-clipboard).
 //! Formats are named by MIME type; on Windows `text/html` and `text/rtf`
 //! are "HTML Format" and "Rich Text Format".
+//!
+//! Android's clipboard takes the text; the other formats stay in the
+//! program, given back while the clipboard still holds that text.
 
-#[cfg(not(test))]
+#[cfg(not(any(test, target_os = "android")))]
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -26,7 +29,7 @@ pub const CELLS: &str = "application/x-apexdesk-cells";
 /// How long an owner of the clipboard has to answer.
 const WAIT: Duration = Duration::from_millis(1500);
 
-#[cfg(not(test))]
+#[cfg(not(any(test, target_os = "android")))]
 fn arboard() -> std::sync::MutexGuard<'static, Option<arboard::Clipboard>> {
     static CLIP: Mutex<Option<arboard::Clipboard>> = Mutex::new(None);
     let mut c = CLIP.lock().unwrap_or_else(|e| e.into_inner());
@@ -35,6 +38,10 @@ fn arboard() -> std::sync::MutexGuard<'static, Option<arboard::Clipboard>> {
     }
     c
 }
+
+/// What was last copied on Android, in each format.
+#[cfg(all(target_os = "android", not(test)))]
+static OWN: std::sync::Mutex<Vec<(String, Vec<u8>)>> = std::sync::Mutex::new(Vec::new());
 
 // Tests never touch the desktop's clipboard: one per test (thread) stands
 // for it.
@@ -58,6 +65,14 @@ pub fn write(formats: &[(&str, &[u8])]) -> bool {
         if smithay_clipboard::active() {
             return smithay_clipboard::store_formats(formats.iter().map(|(n, b)| (n.to_string(), b.to_vec())).collect());
         }
+        #[cfg(target_os = "android")]
+        {
+            let Some((_, text)) = formats.iter().find(|(n, _)| *n == TEXT) else { return false };
+            crate::android::set_clipboard_text(&text_of(text));
+            *OWN.lock().unwrap_or_else(|e| e.into_inner()) = formats.iter().map(|(n, b)| (n.to_string(), b.to_vec())).collect();
+            true
+        }
+        #[cfg(not(target_os = "android"))]
         arboard().as_mut().is_some_and(|c| c.set().formats(formats).is_ok())
     }
 }
@@ -82,7 +97,14 @@ pub fn read(names: &[&str]) -> Option<(String, Vec<u8>)> {
     {
         #[cfg(target_os = "linux")]
         let got = if smithay_clipboard::active() { smithay_clipboard::load_format(&all, WAIT).ok() } else { arboard().as_mut().and_then(|c| c.get().format(&all).ok()) };
-        #[cfg(not(target_os = "linux"))]
+        // Ours while the clipboard holds the text we put there.
+        #[cfg(target_os = "android")]
+        let got = {
+            let own = OWN.lock().unwrap_or_else(|e| e.into_inner());
+            let ours = crate::android::clipboard_text().is_some_and(|t| own.iter().any(|(n, b)| n == TEXT && text_of(b) == t));
+            if ours { all.iter().find_map(|n| own.iter().find(|(f, _)| f == n).cloned()) } else { None }
+        };
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
         let got = arboard().as_mut().and_then(|c| c.get().format(&all).ok());
         let _ = WAIT;
         got.map(|(n, b)| (if n == "application/rtf" { RTF.to_string() } else { n }, b))
