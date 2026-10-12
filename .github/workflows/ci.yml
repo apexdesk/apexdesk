@@ -34,7 +34,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      # Some tests lay out pages with the system's fonts and play media
+      # with its GStreamer, as on a desktop.
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev fonts-dejavu fonts-liberation fonts-noto-core \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
       - run: cargo test --workspace --no-fail-fast
 
   linux:
