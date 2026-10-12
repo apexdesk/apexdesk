@@ -85,6 +85,24 @@
 				<string>io.github.apexdesk.apexnote</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key><string>Excel 97-2003 workbook</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>CFBundleTypeExtensions</key><array><string>xls</string><string>xlsb</string></array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key><string>Word 97-2003 document</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>CFBundleTypeExtensions</key><array><string>doc</string></array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key><string>PowerPoint 97-2003 slideshow</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>CFBundleTypeExtensions</key><array><string>pps</string><string>pot</string></array>
+		</dict>
 	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
