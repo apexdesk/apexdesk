@@ -1,0 +1,229 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag del Release a crear o actualizar (vacío: solo artefactos)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_VERSION: "1.99.0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Versión
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: v
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag=""
+          if [ -n "${INPUT_TAG:-}" ]; then
+            tag="$INPUT_TAG"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+          fi
+          version="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n1)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Tag: ${tag:-ninguno} · Versión: $version"
+
+  macos:
+    name: macOS (arm64)
+    needs: version
+    runs-on: macos-15
+    env:
+      # packaging/macos/build.sh builds universal by default; Apple silicon only.
+      APEXDESK_ARCHS: aarch64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Liberar espacio en disco
+        run: |
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/* || true
+          sudo rm -rf /Library/Developer/CoreSimulator/Caches/* || true
+          sudo rm -rf ~/Library/Developer/Xcode/DerivedData/* || true
+          df -h /
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-apple-darwin
+
+      - name: Caché de Cargo
+        uses: Swatinem/rust-cache@v2.9.2
+        with:
+          key: macos-arm64
+
+      - name: Compilar y empaquetar
+        run: packaging/macos/build.sh
+
+      - name: Subir el artefacto
+        uses: actions/upload-artifact@v7
+        with:
+          name: apexdesk-${{ needs.version.outputs.version }}-macos-arm64
+          path: dist/*-macos.dmg
+          if-no-files-found: error
+          compression-level: 0
+
+  linux:
+    name: Linux (x86_64)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Instalar Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Caché de Cargo
+        uses: Swatinem/rust-cache@v2.9.2
+        with:
+          key: linux-x86_64
+
+      - name: Instalar cargo-zigbuild y rpmbuild
+        run: |
+          cargo install --locked cargo-zigbuild
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm
+
+      - name: Portable (glibc 2.31)
+        run: packaging/linux/portable.sh
+
+      - name: Paquetes .deb y .rpm
+        env:
+          APEXDESK_BIN: target/x86_64-unknown-linux-gnu/release/apexdesk
+        run: |
+          packaging/linux/deb.sh
+          packaging/linux/rpm.sh
+
+      - name: Subir el artefacto
+        uses: actions/upload-artifact@v7
+        with:
+          name: apexdesk-${{ needs.version.outputs.version }}-linux-x86_64
+          path: |
+            dist/*-linux-x86_64-portable.tar.gz
+            dist/apexdesk_*.deb
+            dist/apexdesk-*.rpm
+          if-no-files-found: error
+          compression-level: 0
+
+  windows:
+    name: Windows (x86_64)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+
+      - name: Caché de Cargo
+        uses: Swatinem/rust-cache@v2.9.2
+        with:
+          key: windows-x86_64
+
+      - name: Instalar cargo-xwin y las herramientas de LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang lld llvm zip
+          cargo install --locked cargo-xwin
+
+      - name: Compilar y empaquetar
+        run: packaging/windows/build.sh
+
+      - name: Subir el artefacto
+        uses: actions/upload-artifact@v7
+        with:
+          name: apexdesk-${{ needs.version.outputs.version }}-windows-x86_64
+          path: dist/*-windows-x86_64*.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publicar Release
+    needs: [version, macos, linux, windows]
+    if: needs.version.outputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar los artefactos
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums y notas
+        run: |
+          set -euo pipefail
+          ( cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS )
+          cat > dist/release-notes.md <<NOTES
+          Binarios de la versión ${{ needs.version.outputs.version }}. macOS sin firmar ni notarizar
+          (la primera vez, clic derecho → **Abrir**).
+
+          ## Instalación
+
+          **macOS (Apple silicon)** — abre el \`.dmg\` y arrastra **ApexDesk** a *Aplicaciones*; o bien
+          \`xattr -dr com.apple.quarantine "/Applications/ApexDesk.app"\`.
+
+          **Windows (x86-64)** — descomprime el \`.zip\` y ejecuta \`ApexDesk.exe\`: no necesita
+          instalación. El \`-portable.zip\` guarda ajustes y datos en una carpeta *data* junto al
+          programa.
+
+          **Linux (x86-64)** — \`-portable.tar.gz\` para descomprimir en cualquier sitio (glibc 2.31+:
+          Ubuntu 20.04, Debian 11, Fedora 32 y posteriores), o el \`.deb\` (Debian/Ubuntu) y el
+          \`.rpm\` (Fedora/RHEL/openSUSE).
+
+          ## Verificar las descargas
+
+          \`\`\`sh
+          sha256sum -c SHA256SUMS          # macOS: shasum -a 256 -c SHA256SUMS
+          \`\`\`
+
+          El uso de los binarios oficiales se rige por el [acuerdo de licencia](https://github.com/${GITHUB_REPOSITORY}/blob/main/EULA.md).
+          NOTES
+
+      - name: Publicar el Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ApexDesk ${{ needs.version.outputs.version }}
+          body_path: dist/release-notes.md
+          files: |
+            dist/apexdesk-*
+            dist/apexdesk_*
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
