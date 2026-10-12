@@ -46,6 +46,7 @@ mod imposition;
 mod pdf_out;
 mod pdf_view;
 mod painter;
+mod opendoc;
 mod palette;
 mod policy;
 mod print;
@@ -127,6 +128,9 @@ fn main() -> eframe::Result<()> {
         let (w, h) = v.split_once('x')?;
         Some([w.trim().parse::<f32>().ok()?, h.trim().parse::<f32>().ok()?])
     });
+    // Documents the Finder opens (a double-clicked document) reach the
+    // application, not the command line: before the window starts.
+    opendoc::install();
     let prefs = settings::Settings::load();
     let renderer = renderer(&prefs);
     if prefs.gpu_high {

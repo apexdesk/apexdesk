@@ -2123,6 +2123,11 @@ impl eframe::App for App {
         for p in sent {
             self.open_arg(&p);
         }
+        // Documents the Finder opened (macOS), as files sent by other
+        // processes are.
+        for p in crate::opendoc::take() {
+            self.open_arg(&p);
+        }
         self.mcp_requests(&ctx);
         drop_overlay(&ctx);
 

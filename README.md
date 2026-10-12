@@ -214,9 +214,8 @@ This makes `ApexDesk.app` for both Apple silicon and Intel, signed ad hoc
 (the first time, open it with right click → Open). `APEXDESK_SIGN_ID` signs
 with a Developer ID instead.
 
-Files dropped on the window open as tabs. Opening a file from the Finder
-(double click or **Open with**) starts ApexDesk but does not yet pass it the
-file: winit does not receive macOS's "open documents" events.
+Files dropped on the window open as tabs. Double clicking a document in the
+Finder (**Open with** → ApexDesk) opens it the same way.
 
 ## Command line and terminal
 
