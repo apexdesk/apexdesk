@@ -51,8 +51,10 @@ ApexDesk is free, but not open source. The terms are in the
 [license agreement](EULA.md):
 
 - **Free with no time limit** for individuals, the self-employed,
-  companies under 10 employees, education, small municipalities,
-  volunteer associations and religious denominations.
+  companies with up to 100 employees and US$1 million in annual revenue,
+  education, small municipalities, volunteer associations and religious
+  denominations. Licenses from larger companies, together with voluntary
+  donations, are what pay for support and updates for everyone else.
 - **Free until 31 December 2027** for other companies and organizations.
 
 The open-source components it uses are listed in

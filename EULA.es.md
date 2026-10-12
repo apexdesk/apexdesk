@@ -1,6 +1,6 @@
 # Contrato de licencia de usuario final de ApexDesk
 
-Versión 1 · 8 de octubre de 2026
+Versión 2 · 12 de octubre de 2026
 
 Este contrato es entre tú y el autor de ApexDesk, titular de sus
 derechos («el autor»). Al instalar o usar ApexDesk lo
@@ -22,7 +22,8 @@ quieras:
 - Un particular, para uso personal y doméstico.
 - Un autónomo cuyos ingresos por esa actividad sean inferiores a 100.000
   dólares estadounidenses al año.
-- Una empresa con menos de 10 empleados.
+- Una empresa con 100 empleados o menos y una facturación anual de
+  1 millón de dólares estadounidenses o menos.
 - Un estudiante o docente, para aprender o enseñar.
 - Los servicios públicos de un municipio de menos de 1.000 habitantes
   (ayuntamiento, escuelas, bibliotecas y similares).

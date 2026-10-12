@@ -1,6 +1,6 @@
 # ApexDesk End User License Agreement
 
-Version 1 · 8 October 2026
+Version 2 · 12 October 2026
 
 This agreement is between you and the author of ApexDesk, who holds its
 copyright ("the author"). By installing or using
@@ -22,7 +22,8 @@ may use ApexDesk for any purpose, for as long as you like:
 - An individual, for personal and household use.
 - A self-employed professional whose income from that activity is under
   100,000 US dollars a year.
-- A company with fewer than 10 employees.
+- A company with 100 employees or fewer and annual revenue of 1 million
+  US dollars or less.
 - A student or teacher, to learn or to teach.
 - The public services of a municipality with fewer than 1,000
   inhabitants (town hall, schools, libraries and similar).
