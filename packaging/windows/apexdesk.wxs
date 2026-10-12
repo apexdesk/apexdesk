@@ -43,7 +43,9 @@
     <StandardDirectory Id="ProgramMenuFolder" />
 
     <Feature Id="Main" Title="ApexDesk" Description="The program." Level="1" AllowAbsent="no" Display="expand">
-      <Component Id="Program" Directory="APPLICATIONFOLDER">
+      <!-- A fixed Guid: ApexDesk.exe has no version resource, so WiX can't
+           make one for a component with several files. -->
+      <Component Id="Program" Directory="APPLICATIONFOLDER" Guid="4D7A1409-5870-4D41-8D4E-35930A9971ED">
         <File Id="ApexDeskExe" Source="$(var.Stage)\ApexDesk.exe" KeyPath="yes">
           <Shortcut Id="StartMenu" Name="ApexDesk" Directory="ProgramMenuFolder" Advertise="yes" Icon="apexdesk.ico" WorkingDirectory="APPLICATIONFOLDER" />
         </File>

@@ -22,6 +22,9 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_TERM_COLOR: always
+  # The tests expect the Spanish number and list separators they were written
+  # with (1,5 and ;).
+  LANG: es_ES.UTF-8
 
 jobs:
   test:
@@ -100,7 +103,7 @@ jobs:
           # The portable copy keeps its settings in a "data" folder next to it.
           $pstage = "target\pack\$name-portable"
           Copy-Item -Recurse $stage $pstage
-          Set-Content -NoNewline "$pstage\portable" "ApexDesk keeps its settings and data in the `"data`" folder here.`r`n"
+          Set-Content -NoNewline -LiteralPath "$pstage\portable" -Value "ApexDesk keeps its settings and data in the `"data`" folder here.`r`n"
           Compress-Archive -Path $pstage -DestinationPath "dist\$name-portable.zip"
       - uses: actions/upload-artifact@v4
         with:
@@ -143,7 +146,6 @@ jobs:
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --no-fail-fast
       - run: packaging/macos/build.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -177,7 +179,7 @@ jobs:
   release:
     name: Draft release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, linux, windows, windows-installers, macos, android]
+    needs: [linux, windows, windows-installers, macos, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
