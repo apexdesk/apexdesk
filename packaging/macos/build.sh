@@ -46,5 +46,11 @@ codesign --force --deep --sign "${APEXDESK_SIGN_ID:--}" "$app"
 
 name=apexdesk-$version-macos
 rm -f "$root/dist/$name.dmg"
-hdiutil create -quiet -volname ApexDesk -srcfolder "$app" -ov -format UDZO "$root/dist/$name.dmg"
+# hdiutil fails now and then with "Resource busy" (Spotlight or XProtect
+# looking at the new app); a few tries get past it.
+for try in 1 2 3 4 5; do
+    hdiutil create -volname ApexDesk -srcfolder "$app" -ov -format UDZO "$root/dist/$name.dmg" && break
+    [ "$try" = 5 ] && exit 1
+    sleep 10
+done
 echo "dist/$name.dmg"
