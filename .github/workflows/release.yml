@@ -6,8 +6,18 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      platforms:
+        description: "Qué compilar en este run manual"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
+          - linux
+          - windows
       tag:
-        description: "Tag del Release a crear o actualizar (vacío: solo artefactos)"
+        description: "Tag del Release (vacío: solo artefactos; el Release necesita plataformas: all)"
         required: false
         type: string
 
@@ -50,6 +60,7 @@ jobs:
   macos:
     name: macOS (arm64)
     needs: version
+    if: github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'macos'
     runs-on: macos-15
     env:
       # packaging/macos/build.sh builds universal by default; Apple silicon only.
@@ -90,6 +101,7 @@ jobs:
   linux:
     name: Linux (x86_64)
     needs: version
+    if: github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'linux'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -142,6 +154,7 @@ jobs:
   windows:
     name: Windows (x86_64)
     needs: version
+    if: github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || inputs.platforms == 'windows'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -178,7 +191,8 @@ jobs:
   release:
     name: Publicar Release
     needs: [version, macos, linux, windows]
-    if: needs.version.outputs.tag != ''
+    # One Release carries every platform, so it only runs for a full build.
+    if: needs.version.outputs.tag != '' && (github.event_name != 'workflow_dispatch' || inputs.platforms == 'all')
     runs-on: ubuntu-24.04
     steps:
       - name: Descargar los artefactos
