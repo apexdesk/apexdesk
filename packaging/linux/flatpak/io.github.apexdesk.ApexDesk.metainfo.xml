@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.apexdesk.ApexDesk</id>
+  <name>ApexDesk</name>
+  <summary>Lightweight spreadsheet and word processor</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary=https://github.com/apexdesk/apexdesk/blob/main/EULA.md</project_license>
+  <description>
+    <p>ApexDesk opens and saves xlsx, docx, ods, odt, csv and Markdown files, with formulas, charts, mail merge, digital signatures and PDF export.</p>
+  </description>
+  <launchable type="desktop-id">io.github.apexdesk.ApexDesk.desktop</launchable>
+  <url type="homepage">https://github.com/apexdesk/apexdesk</url>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Office</category>
+  </categories>
+</component>

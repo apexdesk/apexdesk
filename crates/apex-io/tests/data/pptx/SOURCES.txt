@@ -1,0 +1,2 @@
+The .pptx files here are copied from the python-pptx test suite
+(https://github.com/scanny/python-pptx, MIT license).

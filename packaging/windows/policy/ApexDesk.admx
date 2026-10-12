@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made by the apexdesk policy command: edit the program, not this file. -->
+<policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <policyNamespaces>
+    <target prefix="apexdesk" namespace="ApexDesk.Policies.ApexDesk" />
+    <using prefix="windows" namespace="Microsoft.Policies.Windows" />
+  </policyNamespaces>
+  <resources minRequiredRevision="1.0" />
+  <supportedOn>
+    <definitions>
+      <definition name="SUPPORTED_ApexDesk" displayName="$(string.SUPPORTED_ApexDesk)" />
+    </definitions>
+  </supportedOn>
+  <categories>
+    <category name="ApexDesk" displayName="$(string.ApexDesk)" />
+  </categories>
+  <policies>
+    <policy name="MacroSecurity" class="Both" displayName="$(string.MacroSecurity)" explainText="$(string.MacroSecurity_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.MacroSecurity)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <enum id="MacroSecurity" valueName="MacroSecurity" required="true">
+          <item displayName="$(string.MacroSecurity_disabled)"><value><string>disabled</string></value></item>
+          <item displayName="$(string.MacroSecurity_ask)"><value><string>ask</string></value></item>
+          <item displayName="$(string.MacroSecurity_signed)"><value><string>signed</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+    <policy name="TrustedLocations" class="Both" displayName="$(string.TrustedLocations)" explainText="$(string.TrustedLocations_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.TrustedLocations)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <list id="TrustedLocations" key="Software\Policies\ApexDesk\TrustedLocations" valuePrefix="" />
+      </elements>
+    </policy>
+    <policy name="TemplatesFolder" class="Both" displayName="$(string.TemplatesFolder)" explainText="$(string.TemplatesFolder_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.TemplatesFolder)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="TemplatesFolder" valueName="TemplatesFolder" required="true" expandable="true" />
+      </elements>
+    </policy>
+    <policy name="BuildingBlocksFolder" class="Both" displayName="$(string.BuildingBlocksFolder)" explainText="$(string.BuildingBlocksFolder_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.BuildingBlocksFolder)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="BuildingBlocksFolder" valueName="BuildingBlocksFolder" required="true" expandable="true" />
+      </elements>
+    </policy>
+    <policy name="LibraryFolder" class="Both" displayName="$(string.LibraryFolder)" explainText="$(string.LibraryFolder_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.LibraryFolder)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="LibraryFolder" valueName="LibraryFolder" required="true" expandable="true" />
+      </elements>
+    </policy>
+    <policy name="SeatsFolder" class="Both" displayName="$(string.SeatsFolder)" explainText="$(string.SeatsFolder_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.SeatsFolder)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="SeatsFolder" valueName="SeatsFolder" required="true" expandable="true" />
+      </elements>
+    </policy>
+    <policy name="OnlySharedTemplates" class="Both" displayName="$(string.OnlySharedTemplates)" explainText="$(string.OnlySharedTemplates_Help)" key="Software\Policies\ApexDesk" valueName="OnlySharedTemplates">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DefaultSheetFormat" class="Both" displayName="$(string.DefaultSheetFormat)" explainText="$(string.DefaultSheetFormat_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.DefaultSheetFormat)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <enum id="DefaultSheetFormat" valueName="DefaultSheetFormat" required="true">
+          <item displayName="$(string.DefaultSheetFormat_xlsx)"><value><string>xlsx</string></value></item>
+          <item displayName="$(string.DefaultSheetFormat_xlsm)"><value><string>xlsm</string></value></item>
+          <item displayName="$(string.DefaultSheetFormat_ods)"><value><string>ods</string></value></item>
+          <item displayName="$(string.DefaultSheetFormat_csv)"><value><string>csv</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+    <policy name="DefaultDocFormat" class="Both" displayName="$(string.DefaultDocFormat)" explainText="$(string.DefaultDocFormat_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.DefaultDocFormat)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <enum id="DefaultDocFormat" valueName="DefaultDocFormat" required="true">
+          <item displayName="$(string.DefaultDocFormat_docx)"><value><string>docx</string></value></item>
+          <item displayName="$(string.DefaultDocFormat_docm)"><value><string>docm</string></value></item>
+          <item displayName="$(string.DefaultDocFormat_odt)"><value><string>odt</string></value></item>
+          <item displayName="$(string.DefaultDocFormat_rtf)"><value><string>rtf</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+    <policy name="UILanguage" class="Both" displayName="$(string.UILanguage)" explainText="$(string.UILanguage_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.UILanguage)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="UILanguage" valueName="UILanguage" required="true" />
+      </elements>
+    </policy>
+    <policy name="SpellingLanguage" class="Both" displayName="$(string.SpellingLanguage)" explainText="$(string.SpellingLanguage_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.SpellingLanguage)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="SpellingLanguage" valueName="SpellingLanguage" required="true" />
+      </elements>
+    </policy>
+    <policy name="DictionariesFolder" class="Both" displayName="$(string.DictionariesFolder)" explainText="$(string.DictionariesFolder_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.DictionariesFolder)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="DictionariesFolder" valueName="DictionariesFolder" required="true" expandable="true" />
+      </elements>
+    </policy>
+    <policy name="DisableGetData" class="Both" displayName="$(string.DisableGetData)" explainText="$(string.DisableGetData_Help)" key="Software\Policies\ApexDesk" valueName="DisableGetData">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="Proxy" class="Both" displayName="$(string.Proxy)" explainText="$(string.Proxy_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.Proxy)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="Proxy" valueName="Proxy" required="true" />
+      </elements>
+    </policy>
+    <policy name="ProxyBypass" class="Both" displayName="$(string.ProxyBypass)" explainText="$(string.ProxyBypass_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.ProxyBypass)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="ProxyBypass" valueName="ProxyBypass" required="true" />
+      </elements>
+    </policy>
+    <policy name="SignInSites" class="Both" displayName="$(string.SignInSites)" explainText="$(string.SignInSites_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.SignInSites)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="SignInSites" valueName="SignInSites" required="true" />
+      </elements>
+    </policy>
+    <policy name="SupportEmail" class="Both" displayName="$(string.SupportEmail)" explainText="$(string.SupportEmail_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.SupportEmail)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="SupportEmail" valueName="SupportEmail" required="true" />
+      </elements>
+    </policy>
+    <policy name="FontSubstitutes" class="Both" displayName="$(string.FontSubstitutes)" explainText="$(string.FontSubstitutes_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.FontSubstitutes)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="FontSubstitutes" valueName="FontSubstitutes" required="true" />
+      </elements>
+    </policy>
+    <policy name="CertificateRoots" class="Both" displayName="$(string.CertificateRoots)" explainText="$(string.CertificateRoots_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.CertificateRoots)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="CertificateRoots" valueName="CertificateRoots" required="true" expandable="true" />
+      </elements>
+    </policy>
+    <policy name="SignatureLevel" class="Both" displayName="$(string.SignatureLevel)" explainText="$(string.SignatureLevel_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.SignatureLevel)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <enum id="SignatureLevel" valueName="SignatureLevel" required="true">
+          <item displayName="$(string.SignatureLevel_b)"><value><string>b</string></value></item>
+          <item displayName="$(string.SignatureLevel_t)"><value><string>t</string></value></item>
+          <item displayName="$(string.SignatureLevel_lt)"><value><string>lt</string></value></item>
+          <item displayName="$(string.SignatureLevel_lta)"><value><string>lta</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+    <policy name="TimestampURL" class="Both" displayName="$(string.TimestampURL)" explainText="$(string.TimestampURL_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.TimestampURL)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <text id="TimestampURL" valueName="TimestampURL" required="true" />
+      </elements>
+    </policy>
+    <policy name="Renderer" class="Both" displayName="$(string.Renderer)" explainText="$(string.Renderer_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.Renderer)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <enum id="Renderer" valueName="Renderer" required="true">
+          <item displayName="$(string.Renderer_glow)"><value><string>glow</string></value></item>
+          <item displayName="$(string.Renderer_wgpu)"><value><string>wgpu</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+    <policy name="LockFiles" class="Both" displayName="$(string.LockFiles)" explainText="$(string.LockFiles_Help)" key="Software\Policies\ApexDesk" valueName="LockFiles">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="LinkSecurity" class="Both" displayName="$(string.LinkSecurity)" explainText="$(string.LinkSecurity_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.LinkSecurity)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <enum id="LinkSecurity" valueName="LinkSecurity" required="true">
+          <item displayName="$(string.LinkSecurity_ask)"><value><string>ask</string></value></item>
+          <item displayName="$(string.LinkSecurity_allow)"><value><string>allow</string></value></item>
+          <item displayName="$(string.LinkSecurity_block)"><value><string>block</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+    <policy name="ProtectedView" class="Both" displayName="$(string.ProtectedView)" explainText="$(string.ProtectedView_Help)" key="Software\Policies\ApexDesk" valueName="ProtectedView">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="AllowAIAssistants" class="Both" displayName="$(string.AllowAIAssistants)" explainText="$(string.AllowAIAssistants_Help)" key="Software\Policies\ApexDesk" valueName="AllowAIAssistants">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="AllowAutomationAPI" class="Both" displayName="$(string.AllowAutomationAPI)" explainText="$(string.AllowAutomationAPI_Help)" key="Software\Policies\ApexDesk" valueName="AllowAutomationAPI">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="AutosaveMinutes" class="Both" displayName="$(string.AutosaveMinutes)" explainText="$(string.AutosaveMinutes_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.AutosaveMinutes)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <decimal id="AutosaveMinutes" valueName="AutosaveMinutes" minValue="0" maxValue="120" required="true" />
+      </elements>
+    </policy>
+    <policy name="RequiredProperties" class="Both" displayName="$(string.RequiredProperties)" explainText="$(string.RequiredProperties_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.RequiredProperties)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <list id="RequiredProperties" key="Software\Policies\ApexDesk\RequiredProperties" valuePrefix="" />
+      </elements>
+    </policy>
+    <policy name="CheckBeforeSharing" class="Both" displayName="$(string.CheckBeforeSharing)" explainText="$(string.CheckBeforeSharing_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.CheckBeforeSharing)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <enum id="CheckBeforeSharing" valueName="CheckBeforeSharing" required="true">
+          <item displayName="$(string.CheckBeforeSharing_off)"><value><string>off</string></value></item>
+          <item displayName="$(string.CheckBeforeSharing_warn)"><value><string>warn</string></value></item>
+          <item displayName="$(string.CheckBeforeSharing_block)"><value><string>block</string></value></item>
+        </enum>
+      </elements>
+    </policy>
+    <policy name="BrandFonts" class="Both" displayName="$(string.BrandFonts)" explainText="$(string.BrandFonts_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.BrandFonts)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <list id="BrandFonts" key="Software\Policies\ApexDesk\BrandFonts" valuePrefix="" />
+      </elements>
+    </policy>
+    <policy name="BrandColors" class="Both" displayName="$(string.BrandColors)" explainText="$(string.BrandColors_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.BrandColors)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <list id="BrandColors" key="Software\Policies\ApexDesk\BrandColors" valuePrefix="" />
+      </elements>
+    </policy>
+    <policy name="ForbiddenTerms" class="Both" displayName="$(string.ForbiddenTerms)" explainText="$(string.ForbiddenTerms_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.ForbiddenTerms)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <list id="ForbiddenTerms" key="Software\Policies\ApexDesk\ForbiddenTerms" valuePrefix="" />
+      </elements>
+    </policy>
+  </policies>
+</policyDefinitions>

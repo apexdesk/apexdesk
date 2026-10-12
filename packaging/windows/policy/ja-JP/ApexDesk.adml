@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made by the apexdesk policy command: edit the program, not this file. -->
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>ApexDesk</displayName>
+  <description>組織のポリシー</description>
+  <resources>
+    <stringTable>
+      <string id="ApexDesk">ApexDesk</string>
+      <string id="SUPPORTED_ApexDesk">ApexDesk 0.1 以降</string>
+      <string id="MacroSecurity">マクロのセキュリティ</string>
+      <string id="MacroSecurity_Help">VBA マクロの実行可否: 実行しない、ユーザーに確認する、信頼された証明書で署名されたプロジェクトのみ実行する。</string>
+      <string id="MacroSecurity_disabled">すべてのマクロを無効にする</string>
+      <string id="MacroSecurity_ask">マクロを有効にする前に確認する</string>
+      <string id="MacroSecurity_signed">信頼された証明書で署名されたマクロのみ</string>
+      <string id="TrustedLocations">信頼できる場所</string>
+      <string id="TrustedLocations_Help">開いたときにマクロが有効になるファイルのフォルダー。ユーザーが追加したものを置き換えます。</string>
+      <string id="TemplatesFolder">共有テンプレート フォルダー</string>
+      <string id="TemplatesFolder_Help">[テンプレートから新規作成] にユーザーのテンプレートと並んで表示されるテンプレート (docx、dotx、odt、xlsx、xltx、ods など) のフォルダー。</string>
+      <string id="BuildingBlocksFolder">共有の文書パーツ フォルダー</string>
+      <string id="BuildingBlocksFolder_Help">用語集 (.docx、.dotx、.dotm。Normal.dotm や Building Blocks.dotx など) のフォルダー。その文書パーツをユーザー自身のものと並べて表示します (読み取り専用)。</string>
+      <string id="LibraryFolder">共有画像ライブラリ フォルダー</string>
+      <string id="LibraryFolder_Help">文書、スプレッドシート、プレゼンテーションの [挿入] &gt; [ライブラリ] に表示される画像 (PNG、JPEG、GIF、BMP) のフォルダー。サブフォルダーはカテゴリになります。</string>
+      <string id="SeatsFolder">ライセンス席の記録フォルダー</string>
+      <string id="SeatsFolder_Help">法人ライセンスの各コンピューターが小さなファイル（名前、ユーザー、バージョン、最終使用日）を置く共有フォルダー。［バージョン情報］&gt;［ライセンス］に、過去 30 日間に ApexDesk を使ったコンピューターの数と契約席数が表示されます。何もブロックされず、サーバーも不要です。</string>
+      <string id="OnlySharedTemplates">共有テンプレートのみ</string>
+      <string id="OnlySharedTemplates_Help">[テンプレートから新規作成] に共有フォルダーのテンプレートだけを表示し (組み込みや個人のテンプレートは表示しない)、[テンプレートとして保存] を表示しません。</string>
+      <string id="DefaultSheetFormat">スプレッドシートの既定の形式</string>
+      <string id="DefaultSheetFormat_Help">新しいスプレッドシートで [名前を付けて保存] が最初に提示する形式。</string>
+      <string id="DefaultSheetFormat_xlsx">xlsx</string>
+      <string id="DefaultSheetFormat_xlsm">xlsm</string>
+      <string id="DefaultSheetFormat_ods">ods</string>
+      <string id="DefaultSheetFormat_csv">csv</string>
+      <string id="DefaultDocFormat">文書の既定の形式</string>
+      <string id="DefaultDocFormat_Help">新しい文書で [名前を付けて保存] が最初に提示する形式。</string>
+      <string id="DefaultDocFormat_docx">docx</string>
+      <string id="DefaultDocFormat_docm">docm</string>
+      <string id="DefaultDocFormat_odt">odt</string>
+      <string id="DefaultDocFormat_rtf">rtf</string>
+      <string id="UILanguage">インターフェイスの言語</string>
+      <string id="UILanguage_Help">メニューとダイアログの言語: en、es、de、fr、it、pt、ja、ko、zh、zh-Hant。</string>
+      <string id="SpellingLanguage">スペル チェックの言語</string>
+      <string id="SpellingLanguage_Help">スペル チェックで使う辞書のコード (es_ES、en_US など)。</string>
+      <string id="DictionariesFolder">共有辞書フォルダー</string>
+      <string id="DictionariesFolder_Help">インストール済みのものより先に検索される Hunspell 辞書 (.aff と .dic) と類義語辞典のフォルダー。</string>
+      <string id="DisableGetData">外部ソースからのデータの取得を無効にする</string>
+      <string id="DisableGetData_Help">データの取得のクエリはファイル、Web ページ、データベースを読み込めません。ブック内のテーブルに対するクエリは引き続き動作します。</string>
+      <string id="Proxy">プロキシ</string>
+      <string id="Proxy_Help">Web 要求 (データの取得、失効確認、タイムスタンプ) のプロキシ。空欄でシステムの設定、&quot;direct&quot; でなし、または http://user@proxy:3128 のような URL。</string>
+      <string id="ProxyBypass">プロキシを使わない接続先</string>
+      <string id="ProxyBypass_Help">直接接続する名前または末尾 (.corp.example) をカンマ区切りで指定します。システムの例外に追加されます。</string>
+      <string id="SignInSites">Windows サインインを使うサーバー</string>
+      <string id="SignInSites_Help">Web 要求が現在のセッションでサインインする名前または末尾をカンマ区切りで指定します (Negotiate による Kerberos または NTLM)。</string>
+      <string id="SupportEmail">クラッシュ レポートの送信先</string>
+      <string id="SupportEmail_Help">ユーザーがレポートを送信するときの宛先メール アドレス。レポートが自動的に送信されることはありません。</string>
+      <string id="FontSubstitutes">フォントの置換</string>
+      <string id="FontSubstitutes_Help">インストールされていないときに別のフォントで表示するフォント。例: &quot;Corporate Sans=Liberation Sans; Old Serif=Liberation Serif&quot;。</string>
+      <string id="CertificateRoots">組織のルート証明書</string>
+      <string id="CertificateRoots_Help">システムの証明書に加えて署名で信頼するルート証明書 (.cer、.crt、.der、.pem) のフォルダー。</string>
+      <string id="SignatureLevel">署名レベル</string>
+      <string id="SignatureLevel_Help">新しい署名の長期レベル: B、T (タイムスタンプ)、LT (失効データ付き)、LTA (アーカイブ)。</string>
+      <string id="SignatureLevel_b">B</string>
+      <string id="SignatureLevel_t">T</string>
+      <string id="SignatureLevel_lt">LT</string>
+      <string id="SignatureLevel_lta">LTA</string>
+      <string id="TimestampURL">タイムスタンプ機関</string>
+      <string id="TimestampURL_Help">署名で使うタイムスタンプ サーバー (TSA) の URL。</string>
+      <string id="Renderer">グラフィックス レンダラー</string>
+      <string id="Renderer_Help">ウィンドウの描画方法: 最も速く起動する OpenGL、または wgpu (Direct3D、Metal、Vulkan)。次回起動時に有効になります。</string>
+      <string id="Renderer_glow">OpenGL</string>
+      <string id="Renderer_wgpu">wgpu</string>
+      <string id="LockFiles">ロック ファイル</string>
+      <string id="LockFiles_Help">開いているファイルにロック ファイルを作成し (Office や LibreOffice と同様)、他のユーザーが開いているときに警告します。</string>
+      <string id="LinkSecurity">ドキュメント内のリンク</string>
+      <string id="LinkSecurity_Help">ドキュメント内のファイル、ネットワークフォルダー、他のプログラムへのリンクの扱い。Web とメールのリンクは常に開き、プログラム、スクリプト、危険な種類のリンクは開きません。</string>
+      <string id="LinkSecurity_ask">開く前に確認する</string>
+      <string id="LinkSecurity_allow">確認せずに開く</string>
+      <string id="LinkSecurity_block">開かない</string>
+      <string id="ProtectedView">ダウンロードしたファイルの保護ビュー</string>
+      <string id="ProtectedView_Help">1: インターネットからダウンロードしたと印の付いたファイルは、ユーザーが編集を有効にするまで読み取り専用でマクロなしで開きます (信頼できる場所のファイルを除く)。0: 他のファイルと同様に開きます。</string>
+      <string id="AllowAIAssistants">AI アシスタントを許可 (MCP)</string>
+      <string id="AllowAIAssistants_Help">「apexdesk mcp」で接続した AI アシスタントが ApexDesk で開いているファイルを読み取り・編集できるかどうか。0 でオフになり、ユーザーはオンにできません。</string>
+      <string id="AllowAutomationAPI">自動化 API を許可</string>
+      <string id="AllowAutomationAPI_Help">スクリプトが「apexdesk api」でファイルを変換・読み取り・書き込みできるかどうか (ビジネスライセンス)。0 でオフになりユーザーはオンにできません。1 で全員に対してオンになります。</string>
+      <string id="AutosaveMinutes">回復用コピーの間隔 (分)</string>
+      <string id="AutosaveMinutes_Help">開いているファイルの回復用コピーを保存する間隔 (0 で無効)。</string>
+      <string id="RequiredProperties">必須プロパティ</string>
+      <string id="RequiredProperties_Help">ブック、文書、プレゼンテーションを保存する前に必要なプロパティ (タイトルなどの組み込み、または顧客などのユーザー設定)。保存時に空のものを尋ねます。</string>
+      <string id="CheckBeforeSharing">共有前のチェック</string>
+      <string id="CheckBeforeSharing_Help">ファイルを PDF としてエクスポートする前やメールで送信する前に、個人データ (メール アドレス、身分証番号、IBAN、カード番号、電話番号)、空の必須プロパティ、数式エラー、コメント、変更履歴を探します。「警告」は続行でき、「ブロック」は何か見つかる間は続行できません。</string>
+      <string id="CheckBeforeSharing_off">オフ</string>
+      <string id="CheckBeforeSharing_warn">警告</string>
+      <string id="CheckBeforeSharing_block">ブロック</string>
+      <string id="BrandFonts">ブランド フォント</string>
+      <string id="BrandFonts_Help">組織のフォント (1 項目に 1 つ)。フォント ボックスの先頭に表示され、共有前にチェックされます。ブランドを適用すると、最初のフォントが他のフォントに置き換わります。</string>
+      <string id="BrandColors">ブランド カラー</string>
+      <string id="BrandColors_Help">組織の色を #RRGGBB で指定 (1 項目に 1 つ)。色メニューの先頭に表示され、共有前にチェックされます (黒、白、グレーは常に許可)。</string>
+      <string id="ForbiddenTerms">禁止用語</string>
+      <string id="ForbiddenTerms_Help">文書に含めてはいけない語句 (旧社名、社内コード名など、1 項目に 1 つ)。共有前のチェックで検出されます。</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="MacroSecurity">
+        <dropdownList refId="MacroSecurity" noSort="true">マクロのセキュリティ</dropdownList>
+      </presentation>
+      <presentation id="TrustedLocations">
+        <listBox refId="TrustedLocations">信頼できる場所</listBox>
+      </presentation>
+      <presentation id="TemplatesFolder">
+        <textBox refId="TemplatesFolder"><label>共有テンプレート フォルダー</label></textBox>
+      </presentation>
+      <presentation id="BuildingBlocksFolder">
+        <textBox refId="BuildingBlocksFolder"><label>共有の文書パーツ フォルダー</label></textBox>
+      </presentation>
+      <presentation id="LibraryFolder">
+        <textBox refId="LibraryFolder"><label>共有画像ライブラリ フォルダー</label></textBox>
+      </presentation>
+      <presentation id="SeatsFolder">
+        <textBox refId="SeatsFolder"><label>ライセンス席の記録フォルダー</label></textBox>
+      </presentation>
+      <presentation id="DefaultSheetFormat">
+        <dropdownList refId="DefaultSheetFormat" noSort="true">スプレッドシートの既定の形式</dropdownList>
+      </presentation>
+      <presentation id="DefaultDocFormat">
+        <dropdownList refId="DefaultDocFormat" noSort="true">文書の既定の形式</dropdownList>
+      </presentation>
+      <presentation id="UILanguage">
+        <textBox refId="UILanguage"><label>インターフェイスの言語</label></textBox>
+      </presentation>
+      <presentation id="SpellingLanguage">
+        <textBox refId="SpellingLanguage"><label>スペル チェックの言語</label></textBox>
+      </presentation>
+      <presentation id="DictionariesFolder">
+        <textBox refId="DictionariesFolder"><label>共有辞書フォルダー</label></textBox>
+      </presentation>
+      <presentation id="Proxy">
+        <textBox refId="Proxy"><label>プロキシ</label></textBox>
+      </presentation>
+      <presentation id="ProxyBypass">
+        <textBox refId="ProxyBypass"><label>プロキシを使わない接続先</label></textBox>
+      </presentation>
+      <presentation id="SignInSites">
+        <textBox refId="SignInSites"><label>Windows サインインを使うサーバー</label></textBox>
+      </presentation>
+      <presentation id="SupportEmail">
+        <textBox refId="SupportEmail"><label>クラッシュ レポートの送信先</label></textBox>
+      </presentation>
+      <presentation id="FontSubstitutes">
+        <textBox refId="FontSubstitutes"><label>フォントの置換</label></textBox>
+      </presentation>
+      <presentation id="CertificateRoots">
+        <textBox refId="CertificateRoots"><label>組織のルート証明書</label></textBox>
+      </presentation>
+      <presentation id="SignatureLevel">
+        <dropdownList refId="SignatureLevel" noSort="true">署名レベル</dropdownList>
+      </presentation>
+      <presentation id="TimestampURL">
+        <textBox refId="TimestampURL"><label>タイムスタンプ機関</label></textBox>
+      </presentation>
+      <presentation id="Renderer">
+        <dropdownList refId="Renderer" noSort="true">グラフィックス レンダラー</dropdownList>
+      </presentation>
+      <presentation id="LinkSecurity">
+        <dropdownList refId="LinkSecurity" noSort="true">ドキュメント内のリンク</dropdownList>
+      </presentation>
+      <presentation id="AutosaveMinutes">
+        <decimalTextBox refId="AutosaveMinutes">回復用コピーの間隔 (分)</decimalTextBox>
+      </presentation>
+      <presentation id="RequiredProperties">
+        <listBox refId="RequiredProperties">必須プロパティ</listBox>
+      </presentation>
+      <presentation id="CheckBeforeSharing">
+        <dropdownList refId="CheckBeforeSharing" noSort="true">共有前のチェック</dropdownList>
+      </presentation>
+      <presentation id="BrandFonts">
+        <listBox refId="BrandFonts">ブランド フォント</listBox>
+      </presentation>
+      <presentation id="BrandColors">
+        <listBox refId="BrandColors">ブランド カラー</listBox>
+      </presentation>
+      <presentation id="ForbiddenTerms">
+        <listBox refId="ForbiddenTerms">禁止用語</listBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

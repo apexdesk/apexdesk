@@ -1,0 +1,76 @@
+# cargo-deny: what the dependencies may be. Checked before each release
+# by scripts/security-check.sh (see docs/security.md).
+#
+#   cargo deny check              everything
+#   cargo deny check advisories   only known vulnerabilities
+
+[graph]
+# The platforms ApexDesk ships for: what only other platforms pull in
+# doesn't count.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+all-features = false
+
+[advisories]
+# RustSec: vulnerabilities fail the check; so do crates yanked from
+# crates.io. An advisory that doesn't apply goes in `ignore`, with why.
+yanked = "deny"
+unmaintained = "workspace"
+# cargo audit reads .cargo/audit.toml: it has these and the warnings
+# only cargo audit reports (unmaintained or unsound indirect crates).
+ignore = [
+    # Marvin: timing of RSA private-key operations, measured by an
+    # attacker over many of them. ApexDesk only signs with a local key the
+    # user chose (apex-sign); it never decrypts with RSA. No fixed rsa yet.
+    { id = "RUSTSEC-2023-0071", reason = "RSA only signs locally, never decrypts; no fix released" },
+]
+
+[licenses]
+# Licenses that let ApexDesk ship as a closed program (with the notices
+# of THIRD-PARTY-NOTICES.md). Anything else needs a look first.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+confidence-threshold = 0.9
+
+# The workspace's own crates are not published.
+[licenses.private]
+ignore = true
+
+# webpki 0.22 (through mysql) states no SPDX expression; its LICENSE is
+# the ISC-style license of ring's code.
+[[licenses.clarify]]
+crate = "webpki"
+expression = "ISC"
+license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
+
+[bans]
+# Several versions of a crate cost size, not safety: shown, not failed.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# Only crates.io; our own patches live in vendor/ (path dependencies).
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

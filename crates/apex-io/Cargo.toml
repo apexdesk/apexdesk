@@ -1,0 +1,51 @@
+[package]
+name = "apex-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# ApexDesk Empresa: bank statements and signing circuits (see apex-app).
+empresa = []
+
+[dependencies]
+apex-sheet.workspace = true
+# The labels of a message opened as a document (From, To...).
+apex-i18n.workspace = true
+apex-doc.workspace = true
+apex-slides.workspace = true
+apex-db.workspace = true
+miniz_oxide = "0.9"
+memchr = "2"
+# Password-protected Office files (MS-OFFCRYPTO) in OLE compound files.
+aes = "0.8"
+sha1 = "0.10"
+sha2 = "0.10"
+cfb = "0.10"
+getrandom = "0.3"
+# Password-protected .xls/.doc (RC4 keys) and .odt/.ods (ODF encryption:
+# PBKDF2, the old Blowfish and LibreOffice's newer Argon2id).
+md-5 = "0.11"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+blowfish = "0.9"
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+# 8-bit text of old binary files (.xls, .doc) in their code page.
+encoding_rs = "0.8"
+# Notebooks (.apexnote) are SQLite files (the same build apex-db uses).
+rusqlite = { version = "0.40", features = ["bundled"] }
+# PDF pages drawn without pdfium: the rasterizer, font outlines (TrueType,
+# CFF, Type 1) and JPEG pictures (the versions the app already builds).
+vello_cpu = { version = "0.1.0", default-features = false, features = ["std", "u8_pipeline", "f32_pipeline", "multithreading"] }
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+zune-jpeg = "0.5.15"
+hayro-jpeg2000 = { version = "0.4.1", default-features = false }
+hayro-jbig2 = { version = "0.3.1", default-features = false }
+hayro-ccitt = { version = "0.4.0", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+# Well-formedness checks of the parts written, in tests.
+quick-xml = "0.41"

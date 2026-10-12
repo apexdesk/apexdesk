@@ -1,6 +1,6 @@
 # ApexDesk End User License Agreement
 
-Version 2 · 12 October 2026
+Version 3 · 12 October 2026
 
 This agreement is between you and the author of ApexDesk, who holds its
 copyright ("the author"). By installing or using
@@ -39,6 +39,12 @@ may use ApexDesk for any purpose, for as long as you like:
 or organization may use and test ApexDesk free of charge until
 31 December 2027, or until a later date the author announces publicly.
 After that date it needs a business license to keep using it.
+
+**Source code.** The source code of ApexDesk, without the business
+features, is also published under the GNU General Public License,
+version 3 or later, at https://github.com/apexdesk/apexdesk. Nothing in
+this agreement limits what that license lets you do with that code or
+with programs built from it.
 
 ## 2. Business features
 

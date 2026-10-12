@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made by the apexdesk policy command: edit the program, not this file. -->
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>ApexDesk</displayName>
+  <description>组织策略</description>
+  <resources>
+    <stringTable>
+      <string id="ApexDesk">ApexDesk</string>
+      <string id="SUPPORTED_ApexDesk">ApexDesk 0.1 或更高版本</string>
+      <string id="MacroSecurity">宏安全性</string>
+      <string id="MacroSecurity_Help">VBA 宏是否可以运行：从不、先询问用户，或仅在项目由受信任证书签名时。</string>
+      <string id="MacroSecurity_disabled">禁用所有宏</string>
+      <string id="MacroSecurity_ask">启用宏之前询问</string>
+      <string id="MacroSecurity_signed">仅限受信任证书签名的宏</string>
+      <string id="TrustedLocations">受信任位置</string>
+      <string id="TrustedLocations_Help">其中文件打开时启用宏的文件夹。它们替换用户添加的文件夹。</string>
+      <string id="TemplatesFolder">共享模板文件夹</string>
+      <string id="TemplatesFolder_Help">模板文件夹（docx、dotx、odt、xlsx、xltx、ods 等），与用户自己的模板一起列在“从模板新建”中。</string>
+      <string id="BuildingBlocksFolder">共享构建基块文件夹</string>
+      <string id="BuildingBlocksFolder_Help">词汇表文件夹 (.docx、.dotx、.dotm,例如 Normal.dotm 或 Building Blocks.dotx),其中的构建基块会与用户自己的一起提供 (只读)。</string>
+      <string id="LibraryFolder">共享图片库文件夹</string>
+      <string id="LibraryFolder_Help">一个图片文件夹（PNG、JPEG、GIF、BMP），在文档、电子表格和演示文稿的“插入”&gt;“库”中提供；其子文件夹为类别。</string>
+      <string id="SeatsFolder">许可证席位记录文件夹</string>
+      <string id="SeatsFolder_Help">一个共享文件夹，每台使用企业许可证的计算机都会在其中留下一个小文件（名称、用户、版本和最后使用日期）。“关于 &gt; 许可证”随后会显示最近 30 天内使用 ApexDesk 的计算机数量与许可席位数的对比。不会阻止任何操作，也不需要服务器。</string>
+      <string id="OnlySharedTemplates">仅共享模板</string>
+      <string id="OnlySharedTemplates_Help">“根据模板新建”仅显示共享文件夹中的模板（不含内置和个人模板），且不提供“另存为模板”。</string>
+      <string id="DefaultSheetFormat">电子表格的默认格式</string>
+      <string id="DefaultSheetFormat_Help">“另存为”为新电子表格首先提供的格式。</string>
+      <string id="DefaultSheetFormat_xlsx">xlsx</string>
+      <string id="DefaultSheetFormat_xlsm">xlsm</string>
+      <string id="DefaultSheetFormat_ods">ods</string>
+      <string id="DefaultSheetFormat_csv">csv</string>
+      <string id="DefaultDocFormat">文档的默认格式</string>
+      <string id="DefaultDocFormat_Help">“另存为”为新文档首先提供的格式。</string>
+      <string id="DefaultDocFormat_docx">docx</string>
+      <string id="DefaultDocFormat_docm">docm</string>
+      <string id="DefaultDocFormat_odt">odt</string>
+      <string id="DefaultDocFormat_rtf">rtf</string>
+      <string id="UILanguage">界面语言</string>
+      <string id="UILanguage_Help">菜单和对话框的语言：en、es、de、fr、it、pt、ja、ko、zh 或 zh-Hant。</string>
+      <string id="SpellingLanguage">拼写检查语言</string>
+      <string id="SpellingLanguage_Help">拼写检查使用的词典代码（es_ES、en_US 等）。</string>
+      <string id="DictionariesFolder">共享词典文件夹</string>
+      <string id="DictionariesFolder_Help">Hunspell 词典（.aff 和 .dic）和同义词库的文件夹，先于已安装的词典搜索。</string>
+      <string id="DisableGetData">关闭从外部源获取数据</string>
+      <string id="DisableGetData_Help">“获取数据”查询无法读取文件、网页或数据库；基于工作簿自身表格的查询仍可使用。</string>
+      <string id="Proxy">代理</string>
+      <string id="Proxy_Help">Web 请求（获取数据、吊销检查、时间戳）的代理：留空使用系统代理，“direct”表示不用代理，或类似 http://user@proxy:3128 的 URL。</string>
+      <string id="ProxyBypass">不经过代理的服务器</string>
+      <string id="ProxyBypass_Help">直接连接的名称或结尾 (.corp.example)，以逗号分隔；会添加到系统的例外列表。</string>
+      <string id="SignInSites">使用 Windows 登录的服务器</string>
+      <string id="SignInSites_Help">以逗号分隔的名称或结尾，其网络请求会以当前会话登录 (通过 Negotiate 使用 Kerberos 或 NTLM)。</string>
+      <string id="SupportEmail">崩溃报告的收件地址</string>
+      <string id="SupportEmail_Help">用户发送报告时的收件电子邮件地址。报告绝不会自动发送。</string>
+      <string id="FontSubstitutes">字体替换</string>
+      <string id="FontSubstitutes_Help">未安装时用其他字体显示的字体，例如“Corporate Sans=Liberation Sans; Old Serif=Liberation Serif”。</string>
+      <string id="CertificateRoots">组织的根证书</string>
+      <string id="CertificateRoots_Help">除系统证书外，签名还信任的根证书（.cer、.crt、.der、.pem）文件夹。</string>
+      <string id="SignatureLevel">签名级别</string>
+      <string id="SignatureLevel_Help">新签名的长期级别：B、T（时间戳）、LT（含吊销数据）或 LTA（存档）。</string>
+      <string id="SignatureLevel_b">B</string>
+      <string id="SignatureLevel_t">T</string>
+      <string id="SignatureLevel_lt">LT</string>
+      <string id="SignatureLevel_lta">LTA</string>
+      <string id="TimestampURL">时间戳颁发机构</string>
+      <string id="TimestampURL_Help">签名使用的时间戳服务器 (TSA) 的 URL。</string>
+      <string id="Renderer">图形渲染器</string>
+      <string id="Renderer_Help">窗口的绘制方式：启动最快的 OpenGL，或 wgpu（Direct3D、Metal 或 Vulkan）。下次启动时生效。</string>
+      <string id="Renderer_glow">OpenGL</string>
+      <string id="Renderer_wgpu">wgpu</string>
+      <string id="LockFiles">锁定文件</string>
+      <string id="LockFiles_Help">用锁定文件标记打开的文件（与 Office 和 LibreOffice 相同），并在他人打开文件时发出警告。</string>
+      <string id="LinkSecurity">文档中的链接</string>
+      <string id="LinkSecurity_Help">如何处理文档中指向文件、网络文件夹和其他程序的链接。Web 和电子邮件链接始终打开；程序、脚本和危险类型的链接永不打开。</string>
+      <string id="LinkSecurity_ask">打开前询问</string>
+      <string id="LinkSecurity_allow">不询问直接打开</string>
+      <string id="LinkSecurity_block">从不打开</string>
+      <string id="ProtectedView">已下载文件的受保护的视图</string>
+      <string id="ProtectedView_Help">1：标记为从 Internet 下载的文件以只读方式打开且禁用宏，直到用户启用编辑（受信任位置中的文件除外）。0：像其他文件一样打开。</string>
+      <string id="AllowAIAssistants">允许 AI 助手 (MCP)</string>
+      <string id="AllowAIAssistants_Help">通过“apexdesk mcp”连接的 AI 助手能否读取和编辑 ApexDesk 中打开的文件。0 表示关闭，用户无法开启。</string>
+      <string id="AllowAutomationAPI">允许自动化 API</string>
+      <string id="AllowAutomationAPI_Help">脚本能否通过“apexdesk api”转换、读取和写入文件（企业许可证）。0 表示关闭且用户无法开启；1 表示为所有人开启。</string>
+      <string id="AutosaveMinutes">恢复副本之间的分钟数</string>
+      <string id="AutosaveMinutes_Help">保存打开文件恢复副本的频率（0 表示关闭）。</string>
+      <string id="RequiredProperties">必填属性</string>
+      <string id="RequiredProperties_Help">工作簿、文档或演示文稿保存前必须具有的属性（内置属性如标题，或自定义属性如客户）。保存时会询问空的属性。</string>
+      <string id="CheckBeforeSharing">共享前检查</string>
+      <string id="CheckBeforeSharing_Help">在将文件导出为 PDF 或通过电子邮件发送之前，查找个人数据（电子邮件地址、身份证号、IBAN、卡号和电话号码）、空的必填属性、公式错误、批注和修订。“警告”允许继续；“阻止”在发现问题时不允许继续。</string>
+      <string id="CheckBeforeSharing_off">关闭</string>
+      <string id="CheckBeforeSharing_warn">警告</string>
+      <string id="CheckBeforeSharing_block">阻止</string>
+      <string id="BrandFonts">品牌字体</string>
+      <string id="BrandFonts_Help">组织的字体，每项一个：在字体框中最先列出，并在共享前检查。用户应用品牌时，第一个字体会替换其他字体。</string>
+      <string id="BrandColors">品牌颜色</string>
+      <string id="BrandColors_Help">组织的颜色，格式为 #RRGGBB，每项一个：在颜色菜单中最先显示，并在共享前检查（黑色、白色和灰色始终允许）。</string>
+      <string id="ForbiddenTerms">禁用词语</string>
+      <string id="ForbiddenTerms_Help">文档不得包含的词语（旧公司名称、内部代号等），每项一个：由“共享前检查”查找。</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="MacroSecurity">
+        <dropdownList refId="MacroSecurity" noSort="true">宏安全性</dropdownList>
+      </presentation>
+      <presentation id="TrustedLocations">
+        <listBox refId="TrustedLocations">受信任位置</listBox>
+      </presentation>
+      <presentation id="TemplatesFolder">
+        <textBox refId="TemplatesFolder"><label>共享模板文件夹</label></textBox>
+      </presentation>
+      <presentation id="BuildingBlocksFolder">
+        <textBox refId="BuildingBlocksFolder"><label>共享构建基块文件夹</label></textBox>
+      </presentation>
+      <presentation id="LibraryFolder">
+        <textBox refId="LibraryFolder"><label>共享图片库文件夹</label></textBox>
+      </presentation>
+      <presentation id="SeatsFolder">
+        <textBox refId="SeatsFolder"><label>许可证席位记录文件夹</label></textBox>
+      </presentation>
+      <presentation id="DefaultSheetFormat">
+        <dropdownList refId="DefaultSheetFormat" noSort="true">电子表格的默认格式</dropdownList>
+      </presentation>
+      <presentation id="DefaultDocFormat">
+        <dropdownList refId="DefaultDocFormat" noSort="true">文档的默认格式</dropdownList>
+      </presentation>
+      <presentation id="UILanguage">
+        <textBox refId="UILanguage"><label>界面语言</label></textBox>
+      </presentation>
+      <presentation id="SpellingLanguage">
+        <textBox refId="SpellingLanguage"><label>拼写检查语言</label></textBox>
+      </presentation>
+      <presentation id="DictionariesFolder">
+        <textBox refId="DictionariesFolder"><label>共享词典文件夹</label></textBox>
+      </presentation>
+      <presentation id="Proxy">
+        <textBox refId="Proxy"><label>代理</label></textBox>
+      </presentation>
+      <presentation id="ProxyBypass">
+        <textBox refId="ProxyBypass"><label>不经过代理的服务器</label></textBox>
+      </presentation>
+      <presentation id="SignInSites">
+        <textBox refId="SignInSites"><label>使用 Windows 登录的服务器</label></textBox>
+      </presentation>
+      <presentation id="SupportEmail">
+        <textBox refId="SupportEmail"><label>崩溃报告的收件地址</label></textBox>
+      </presentation>
+      <presentation id="FontSubstitutes">
+        <textBox refId="FontSubstitutes"><label>字体替换</label></textBox>
+      </presentation>
+      <presentation id="CertificateRoots">
+        <textBox refId="CertificateRoots"><label>组织的根证书</label></textBox>
+      </presentation>
+      <presentation id="SignatureLevel">
+        <dropdownList refId="SignatureLevel" noSort="true">签名级别</dropdownList>
+      </presentation>
+      <presentation id="TimestampURL">
+        <textBox refId="TimestampURL"><label>时间戳颁发机构</label></textBox>
+      </presentation>
+      <presentation id="Renderer">
+        <dropdownList refId="Renderer" noSort="true">图形渲染器</dropdownList>
+      </presentation>
+      <presentation id="LinkSecurity">
+        <dropdownList refId="LinkSecurity" noSort="true">文档中的链接</dropdownList>
+      </presentation>
+      <presentation id="AutosaveMinutes">
+        <decimalTextBox refId="AutosaveMinutes">恢复副本之间的分钟数</decimalTextBox>
+      </presentation>
+      <presentation id="RequiredProperties">
+        <listBox refId="RequiredProperties">必填属性</listBox>
+      </presentation>
+      <presentation id="CheckBeforeSharing">
+        <dropdownList refId="CheckBeforeSharing" noSort="true">共享前检查</dropdownList>
+      </presentation>
+      <presentation id="BrandFonts">
+        <listBox refId="BrandFonts">品牌字体</listBox>
+      </presentation>
+      <presentation id="BrandColors">
+        <listBox refId="BrandColors">品牌颜色</listBox>
+      </presentation>
+      <presentation id="ForbiddenTerms">
+        <listBox refId="ForbiddenTerms">禁用词语</listBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

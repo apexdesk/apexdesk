@@ -1,6 +1,6 @@
 # Contrato de licencia de usuario final de ApexDesk
 
-Versión 2 · 12 de octubre de 2026
+Versión 3 · 12 de octubre de 2026
 
 Este contrato es entre tú y el autor de ApexDesk, titular de sus
 derechos («el autor»). Al instalar o usar ApexDesk lo
@@ -40,6 +40,12 @@ Cualquier otra empresa u organización puede usar y probar ApexDesk gratis
 hasta el 31 de diciembre de 2027, o hasta la fecha posterior que el autor
 anuncie públicamente. Después de esa fecha necesita una licencia de
 empresa para seguir usándolo.
+
+**Código fuente.** El código fuente de ApexDesk, sin los recursos de
+empresa, también se publica bajo la Licencia Pública General de GNU,
+versión 3 o posterior, en https://github.com/apexdesk/apexdesk. Nada de
+este contrato limita lo que esa licencia te permite hacer con ese código
+o con los programas compilados a partir de él.
 
 ## 2. Recursos de empresa
 

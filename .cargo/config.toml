@@ -1,0 +1,4 @@
+# Windows builds link the C runtime statically: no Visual C++ redistributable
+# needed on the user's machine. /ignore:4099: the CRT's missing .pdb files.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=/ignore:4099"]

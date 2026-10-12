@@ -1,0 +1,97 @@
+[package]
+name = "apex-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "ApexDesk: hoja de cálculo y procesador de textos ligeros"
+
+[[bin]]
+name = "apexdesk"
+path = "src/main.rs"
+
+[features]
+default = []
+# ApexDesk Empresa: business licenses and the features they unlock (batch
+# processing, document control, check before sharing, bank reconciliation,
+# company templates, signing circuits, inventory, the automation API). Its
+# sources aren't public; the public build turns it off.
+empresa = ["apex-io/empresa"]
+# FFmpeg as a component loaded while running, tried before the system's
+# decoders. Off: the system's decoders play videos and sounds.
+ffmpeg = []
+# pdfium (from tools/pdfium-fetch.sh) loaded while running to draw pages,
+# for comparing ApexDesk's own renderer against it (render_cmp). A
+# development tool: the installers build without it.
+pdfium = ["dep:pdfium-render"]
+
+[dependencies]
+apex-sheet.workspace = true
+apex-doc.workspace = true
+apex-slides.workspace = true
+apex-io.workspace = true
+apex-pdf.workspace = true
+apex-sign.workspace = true
+sha2 = "0.10"
+getrandom = "0.3"
+apex-spell.workspace = true
+apex-i18n.workspace = true
+apex-tui.workspace = true
+# Get Data (its network and database clients are default features).
+apex-query.workspace = true
+apex-db.workspace = true
+apex-vba.workspace = true
+eframe = { version = "0.36.2", default-features = false, features = ["wgpu", "glow", "x11", "wayland", "default_fonts", "accesskit"] }
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal", "wayland"] }
+# The window's handle, which file dialogs open over (eframe and rfd
+# already use it).
+raw-window-handle = "0.6"
+# Picture decoding (already used by other dependencies).
+png = "0.18.1"
+zune-jpeg = "0.5.15"
+weezl = "0.1.12"
+image-webp = "0.2.4"
+# QR codes (Insert > QR code); no image or SVG output, we draw them.
+qrcode = { version = "0.14.1", default-features = false }
+# Patterns to redact in PDFs (apex-doc and apex-sheet already use it).
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+# Font line metrics (egui already uses it).
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+# Column widths of the command line's tables (apex-tui already uses it).
+unicode-width = "0.2"
+# MCP messages (JSON-RPC); already built for the MySQL client.
+serde_json = "1"
+# PDF pages drawn by pdfium (the `pdfium` feature), a library loaded while
+# running (no linking, no image crate).
+pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_latest"], optional = true }
+# GStreamer on Linux (videos and sounds of presentations), and FFmpeg with
+# the `ffmpeg` feature: system libraries loaded while running, their few
+# functions declared by hand.
+libloading = "0.8"
+# Sound output for videos and sounds: the one cross-platform audio crate
+# (ALSA, WASAPI, CoreAudio); the system decodes, cpal only plays samples.
+cpal = "0.18"
+
+# The system clipboard in several formats (vendor/arboard: X11, Windows,
+# macOS), and pictures on Windows and macOS.
+arboard = { version = "3.6", default-features = false, features = ["image-data"] }
+
+[target.'cfg(windows)'.dependencies]
+# Videos and sounds through Media Foundation, Windows' own decoders
+# (Microsoft's bindings, MIT or Apache-2.0; cpal and wgpu already build
+# this version).
+windows = { version = "0.62", features = ["Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_UI_Shell"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Only to pick the X11 backend: winit's Wayland backend has no file drops.
+winit = { version = "0.30", default-features = false, features = ["x11"] }
+# The clipboard in several formats under the Wayland backend
+# (vendor/smithay-clipboard, which egui-winit runs).
+smithay-clipboard = "0.7"
+
+[dev-dependencies]
+# Test databases for mail merge (apex-query already builds it).
+rusqlite = { version = "0.40", features = ["bundled"] }

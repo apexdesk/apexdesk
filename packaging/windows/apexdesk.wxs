@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Windows Installer package for ApexDesk (WiX Toolset v5). UNTESTED: it
+  was written on Linux, where MSI files can't be built; see msi.cmd.
+
+  One package installs per machine (Program Files, every user) or per user
+  (%LOCALAPPDATA%\Programs, no administrator rights): the setup asks, and
+  silently the command line decides:
+
+    msiexec /i ApexDesk.msi /qn ALLUSERS=1                   per machine
+    msiexec /i ApexDesk.msi /qn MSIINSTALLPERUSER=1          per user
+    msiexec /i ApexDesk.msi /qn ALLUSERS=1 ADDLOCAL=Main,Dictionaries
+    msiexec /x ApexDesk.msi /qn                              uninstall
+
+  Optional features (off unless chosen or listed in
+  ADDLOCAL): Dictionaries and the Group Policy templates. Videos and sounds play
+  through Windows' own Media Foundation: nothing to install.
+
+  Uninstalling removes everything installed; the users' settings in
+  %APPDATA%\apexdesk stay, as with other programs.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="ApexDesk" Manufacturer="ApexDesk" Version="$(var.Version)" Language="1033"
+           UpgradeCode="7E4B3C1A-5D2F-4E8B-9A61-3C0D2B7F4A15" Scope="perUserOrMachine" Compressed="yes">
+    <SummaryInformation Description="ApexDesk $(var.Version)" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ApexDesk is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="apexdesk.ico" SourceFile="apexdesk.ico" />
+    <Property Id="ARPPRODUCTICON" Value="apexdesk.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/apexdesk/apexdesk" />
+    <Property Id="ApplicationFolderName" Value="ApexDesk" />
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+    <ui:WixUI Id="WixUI_Advanced" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="APPLICATIONFOLDER" Name="ApexDesk">
+        <Directory Id="DictDir" Name="dictionaries" />
+        <Directory Id="PolicyDir" Name="policy" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="ApexDesk" Description="The program." Level="1" AllowAbsent="no" Display="expand">
+      <Component Id="Program" Directory="APPLICATIONFOLDER">
+        <File Id="ApexDeskExe" Source="$(var.Stage)\ApexDesk.exe" KeyPath="yes">
+          <Shortcut Id="StartMenu" Name="ApexDesk" Directory="ProgramMenuFolder" Advertise="yes" Icon="apexdesk.ico" WorkingDirectory="APPLICATIONFOLDER" />
+        </File>
+        <File Source="$(var.Stage)\README.txt" />
+        <File Source="$(var.Stage)\THIRD-PARTY-NOTICES.md" />
+        <!-- "Open with" for the file types (not made the default). -->
+        <ProgId Id="ApexDesk.Spreadsheet" Description="Spreadsheet" Icon="apexdesk.ico" Advertise="yes">
+          <Extension Id="xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="ods" ContentType="application/vnd.oasis.opendocument.spreadsheet"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="csv" ContentType="text/csv"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+        <ProgId Id="ApexDesk.Document" Description="Document" Icon="apexdesk.ico" Advertise="yes">
+          <Extension Id="docx" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="odt" ContentType="application/vnd.oasis.opendocument.text"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="md" ContentType="text/markdown"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+        <!-- ApexDesk's own notebooks. -->
+        <ProgId Id="ApexDesk.Notebook" Description="ApexDesk notebook" Icon="apexdesk.ico" Advertise="yes">
+          <Extension Id="apexnote" ContentType="application/x-apexnote"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+      </Component>
+    </Feature>
+
+    <?if $(var.WithDictionaries) = 1 ?>
+    <Feature Id="Dictionaries" Title="Spelling dictionaries" Description="Hunspell dictionaries and thesauri." Level="1000">
+      <Files Include="$(var.DictSource)\**" Directory="DictDir" />
+    </Feature>
+    <?endif?>
+    <Feature Id="PolicyTemplates" Title="Group Policy templates" Description="ADMX/ADML files for administrators." Level="1000">
+      <Files Include="policy\**" Directory="PolicyDir" />
+    </Feature>
+  </Package>
+</Wix>

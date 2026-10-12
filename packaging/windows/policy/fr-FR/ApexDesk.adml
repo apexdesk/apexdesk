@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made by the apexdesk policy command: edit the program, not this file. -->
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>ApexDesk</displayName>
+  <description>Stratégies de l'organisation</description>
+  <resources>
+    <stringTable>
+      <string id="ApexDesk">ApexDesk</string>
+      <string id="SUPPORTED_ApexDesk">ApexDesk 0.1 ou ultérieur</string>
+      <string id="MacroSecurity">Sécurité des macros</string>
+      <string id="MacroSecurity_Help">Si les macros VBA peuvent s'exécuter : jamais, après confirmation de l'utilisateur, ou seulement si le projet est signé par un certificat approuvé.</string>
+      <string id="MacroSecurity_disabled">Désactiver toutes les macros</string>
+      <string id="MacroSecurity_ask">Demander avant d'activer les macros</string>
+      <string id="MacroSecurity_signed">Uniquement les macros signées par un certificat approuvé</string>
+      <string id="TrustedLocations">Emplacements approuvés</string>
+      <string id="TrustedLocations_Help">Dossiers dont les fichiers s'ouvrent avec les macros activées. Ils remplacent ceux ajoutés par les utilisateurs.</string>
+      <string id="TemplatesFolder">Dossier des modèles partagés</string>
+      <string id="TemplatesFolder_Help">Un dossier de modèles (docx, dotx, odt, xlsx, xltx, ods...) affichés dans Nouveau à partir d'un modèle à côté de ceux de l'utilisateur.</string>
+      <string id="BuildingBlocksFolder">Dossier partagé de blocs de construction</string>
+      <string id="BuildingBlocksFolder_Help">Un dossier de glossaires (.docx, .dotx, .dotm comme Normal.dotm ou Building Blocks.dotx) dont les blocs sont proposés à côté de ceux de l'utilisateur (lecture seule).</string>
+      <string id="LibraryFolder">Dossier partagé de la bibliothèque d’images</string>
+      <string id="LibraryFolder_Help">Un dossier d’images (PNG, JPEG, GIF, BMP) proposées dans Insertion &gt; Bibliothèque dans les documents, classeurs et présentations ; ses sous-dossiers sont des catégories.</string>
+      <string id="SeatsFolder">Dossier du registre des postes</string>
+      <string id="SeatsFolder_Help">Un dossier partagé où chaque ordinateur doté de la licence entreprise dépose un petit fichier (nom, utilisateur, version et dernier jour d'utilisation). À propos &gt; Licence indique alors combien d'ordinateurs ont utilisé ApexDesk ces 30 derniers jours par rapport aux postes sous licence. Rien n'est bloqué et aucun serveur n'est nécessaire.</string>
+      <string id="OnlySharedTemplates">Modèles partagés uniquement</string>
+      <string id="OnlySharedTemplates_Help">Nouveau à partir d’un modèle n’affiche que les modèles du dossier partagé (ni intégrés ni personnels) et Enregistrer comme modèle n’est pas proposé.</string>
+      <string id="DefaultSheetFormat">Format par défaut des classeurs</string>
+      <string id="DefaultSheetFormat_Help">Le format qu'Enregistrer sous propose d'abord pour les nouveaux classeurs.</string>
+      <string id="DefaultSheetFormat_xlsx">xlsx</string>
+      <string id="DefaultSheetFormat_xlsm">xlsm</string>
+      <string id="DefaultSheetFormat_ods">ods</string>
+      <string id="DefaultSheetFormat_csv">csv</string>
+      <string id="DefaultDocFormat">Format par défaut des documents</string>
+      <string id="DefaultDocFormat_Help">Le format qu'Enregistrer sous propose d'abord pour les nouveaux documents.</string>
+      <string id="DefaultDocFormat_docx">docx</string>
+      <string id="DefaultDocFormat_docm">docm</string>
+      <string id="DefaultDocFormat_odt">odt</string>
+      <string id="DefaultDocFormat_rtf">rtf</string>
+      <string id="UILanguage">Langue de l'interface</string>
+      <string id="UILanguage_Help">La langue des menus et des boîtes de dialogue : en, es, de, fr, it, pt, ja, ko, zh ou zh-Hant.</string>
+      <string id="SpellingLanguage">Langue de l'orthographe</string>
+      <string id="SpellingLanguage_Help">Le dictionnaire utilisé par l'orthographe, par son code (es_ES, en_US...).</string>
+      <string id="DictionariesFolder">Dossier des dictionnaires partagés</string>
+      <string id="DictionariesFolder_Help">Un dossier de dictionnaires Hunspell (.aff et .dic) et de thésaurus consulté avant ceux installés.</string>
+      <string id="DisableGetData">Désactiver Obtenir des données de sources externes</string>
+      <string id="DisableGetData_Help">Les requêtes Obtenir des données ne peuvent lire ni fichiers, ni pages web, ni bases de données ; celles sur les tableaux du classeur fonctionnent toujours.</string>
+      <string id="Proxy">Proxy</string>
+      <string id="Proxy_Help">Le proxy des requêtes web (Obtenir des données, révocation, horodatage) : vide pour celui du système, « direct » pour aucun, ou une URL comme http://utilisateur@proxy:3128.</string>
+      <string id="ProxyBypass">Serveurs atteints sans proxy</string>
+      <string id="ProxyBypass_Help">Noms ou terminaisons (.societe.example), séparés par des virgules, atteints directement ; ils s'ajoutent aux exceptions du système.</string>
+      <string id="SignInSites">Serveurs avec la connexion Windows</string>
+      <string id="SignInSites_Help">Noms ou terminaisons, séparés par des virgules, où les requêtes web se connectent avec la session (Kerberos ou NTLM, via Negotiate).</string>
+      <string id="SupportEmail">Adresse des rapports de plantage</string>
+      <string id="SupportEmail_Help">L'adresse e-mail à laquelle un rapport est adressé quand l'utilisateur l'envoie. Les rapports ne sont jamais envoyés automatiquement.</string>
+      <string id="FontSubstitutes">Substitution de polices</string>
+      <string id="FontSubstitutes_Help">Polices affichées avec une autre quand elles ne sont pas installées, comme « Corporate Sans=Liberation Sans; Old Serif=Liberation Serif ».</string>
+      <string id="CertificateRoots">Certificats racine de l'organisation</string>
+      <string id="CertificateRoots_Help">Un dossier de certificats racine (.cer, .crt, .der, .pem) approuvés pour les signatures en plus de ceux du système.</string>
+      <string id="SignatureLevel">Niveau de signature</string>
+      <string id="SignatureLevel_Help">Le niveau à long terme des nouvelles signatures : B, T (horodatage), LT (avec données de révocation) ou LTA (archivage).</string>
+      <string id="SignatureLevel_b">B</string>
+      <string id="SignatureLevel_t">T</string>
+      <string id="SignatureLevel_lt">LT</string>
+      <string id="SignatureLevel_lta">LTA</string>
+      <string id="TimestampURL">Autorité d'horodatage</string>
+      <string id="TimestampURL_Help">L'URL du serveur d'horodatage (TSA) utilisé par les signatures.</string>
+      <string id="Renderer">Moteur de rendu graphique</string>
+      <string id="Renderer_Help">Comment la fenêtre est dessinée : OpenGL, qui démarre le plus vite, ou wgpu (Direct3D, Metal ou Vulkan). S'applique au prochain démarrage.</string>
+      <string id="Renderer_glow">OpenGL</string>
+      <string id="Renderer_wgpu">wgpu</string>
+      <string id="LockFiles">Fichiers de verrouillage</string>
+      <string id="LockFiles_Help">Marquer les fichiers ouverts d'un fichier de verrouillage (comme Office et LibreOffice) et avertir quand quelqu'un d'autre a ouvert un fichier.</string>
+      <string id="LinkSecurity">Liens dans les documents</string>
+      <string id="LinkSecurity_Help">Que faire des liens des documents vers des fichiers, des dossiers réseau et d'autres programmes. Les liens web et e-mail s'ouvrent toujours ; les programmes, scripts et types de liens dangereux jamais.</string>
+      <string id="LinkSecurity_ask">Demander avant d'ouvrir</string>
+      <string id="LinkSecurity_allow">Ouvrir sans demander</string>
+      <string id="LinkSecurity_block">Ne jamais ouvrir</string>
+      <string id="ProtectedView">Mode protégé pour les fichiers téléchargés</string>
+      <string id="ProtectedView_Help">1 : les fichiers marqués comme téléchargés depuis Internet s'ouvrent en lecture seule, macros désactivées, jusqu'à ce que l'utilisateur active la modification (sauf ceux des emplacements approuvés). 0 : ils s'ouvrent comme les autres.</string>
+      <string id="AllowAIAssistants">Autoriser les assistants IA (MCP)</string>
+      <string id="AllowAIAssistants_Help">Si les assistants IA connectés avec « apexdesk mcp » peuvent lire et modifier les fichiers ouverts dans ApexDesk. 0 le désactive et les utilisateurs ne peuvent pas l'activer.</string>
+      <string id="AllowAutomationAPI">Autoriser l'API d'automatisation</string>
+      <string id="AllowAutomationAPI_Help">Si les scripts peuvent convertir, lire et écrire des fichiers avec « apexdesk api » (licence entreprise). 0 la désactive et les utilisateurs ne peuvent pas l'activer ; 1 l'active pour tous.</string>
+      <string id="AutosaveMinutes">Minutes entre les copies de récupération</string>
+      <string id="AutosaveMinutes_Help">Fréquence d'enregistrement des copies de récupération des fichiers ouverts (0 les désactive).</string>
+      <string id="RequiredProperties">Propriétés obligatoires</string>
+      <string id="RequiredProperties_Help">Propriétés (intégrées comme Titre, ou personnalisées comme Client) qu'un classeur, document ou présentation doit avoir avant d'être enregistré. L'enregistrement demande celles qui sont vides.</string>
+      <string id="CheckBeforeSharing">Vérifier avant de partager</string>
+      <string id="CheckBeforeSharing_Help">Avant d'exporter un fichier en PDF ou de l'envoyer par e-mail, rechercher les données personnelles (adresses e-mail, numéros d'identité, IBAN, numéros de carte et de téléphone), les propriétés obligatoires vides, les erreurs de formule, les commentaires et les modifications suivies. Avertir laisse continuer ; Bloquer non, tant que quelque chose est trouvé.</string>
+      <string id="CheckBeforeSharing_off">Désactivé</string>
+      <string id="CheckBeforeSharing_warn">Avertir</string>
+      <string id="CheckBeforeSharing_block">Bloquer</string>
+      <string id="BrandFonts">Polices de la marque</string>
+      <string id="BrandFonts_Help">Les polices de l'organisation, une par entrée : proposées en premier dans la zone de police et vérifiées avant le partage. La première remplace les autres quand l'utilisateur applique la marque.</string>
+      <string id="BrandColors">Couleurs de la marque</string>
+      <string id="BrandColors_Help">Les couleurs de l'organisation au format #RRGGBB, une par entrée : proposées en premier dans les menus de couleur et vérifiées avant le partage (noir, blanc et gris sont toujours acceptés).</string>
+      <string id="ForbiddenTerms">Termes interdits</string>
+      <string id="ForbiddenTerms_Help">Mots ou expressions que les documents ne doivent pas contenir (anciens noms de l'entreprise, noms de code internes...), un par entrée : trouvés par Vérifier avant de partager.</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="MacroSecurity">
+        <dropdownList refId="MacroSecurity" noSort="true">Sécurité des macros</dropdownList>
+      </presentation>
+      <presentation id="TrustedLocations">
+        <listBox refId="TrustedLocations">Emplacements approuvés</listBox>
+      </presentation>
+      <presentation id="TemplatesFolder">
+        <textBox refId="TemplatesFolder"><label>Dossier des modèles partagés</label></textBox>
+      </presentation>
+      <presentation id="BuildingBlocksFolder">
+        <textBox refId="BuildingBlocksFolder"><label>Dossier partagé de blocs de construction</label></textBox>
+      </presentation>
+      <presentation id="LibraryFolder">
+        <textBox refId="LibraryFolder"><label>Dossier partagé de la bibliothèque d’images</label></textBox>
+      </presentation>
+      <presentation id="SeatsFolder">
+        <textBox refId="SeatsFolder"><label>Dossier du registre des postes</label></textBox>
+      </presentation>
+      <presentation id="DefaultSheetFormat">
+        <dropdownList refId="DefaultSheetFormat" noSort="true">Format par défaut des classeurs</dropdownList>
+      </presentation>
+      <presentation id="DefaultDocFormat">
+        <dropdownList refId="DefaultDocFormat" noSort="true">Format par défaut des documents</dropdownList>
+      </presentation>
+      <presentation id="UILanguage">
+        <textBox refId="UILanguage"><label>Langue de l'interface</label></textBox>
+      </presentation>
+      <presentation id="SpellingLanguage">
+        <textBox refId="SpellingLanguage"><label>Langue de l'orthographe</label></textBox>
+      </presentation>
+      <presentation id="DictionariesFolder">
+        <textBox refId="DictionariesFolder"><label>Dossier des dictionnaires partagés</label></textBox>
+      </presentation>
+      <presentation id="Proxy">
+        <textBox refId="Proxy"><label>Proxy</label></textBox>
+      </presentation>
+      <presentation id="ProxyBypass">
+        <textBox refId="ProxyBypass"><label>Serveurs atteints sans proxy</label></textBox>
+      </presentation>
+      <presentation id="SignInSites">
+        <textBox refId="SignInSites"><label>Serveurs avec la connexion Windows</label></textBox>
+      </presentation>
+      <presentation id="SupportEmail">
+        <textBox refId="SupportEmail"><label>Adresse des rapports de plantage</label></textBox>
+      </presentation>
+      <presentation id="FontSubstitutes">
+        <textBox refId="FontSubstitutes"><label>Substitution de polices</label></textBox>
+      </presentation>
+      <presentation id="CertificateRoots">
+        <textBox refId="CertificateRoots"><label>Certificats racine de l'organisation</label></textBox>
+      </presentation>
+      <presentation id="SignatureLevel">
+        <dropdownList refId="SignatureLevel" noSort="true">Niveau de signature</dropdownList>
+      </presentation>
+      <presentation id="TimestampURL">
+        <textBox refId="TimestampURL"><label>Autorité d'horodatage</label></textBox>
+      </presentation>
+      <presentation id="Renderer">
+        <dropdownList refId="Renderer" noSort="true">Moteur de rendu graphique</dropdownList>
+      </presentation>
+      <presentation id="LinkSecurity">
+        <dropdownList refId="LinkSecurity" noSort="true">Liens dans les documents</dropdownList>
+      </presentation>
+      <presentation id="AutosaveMinutes">
+        <decimalTextBox refId="AutosaveMinutes">Minutes entre les copies de récupération</decimalTextBox>
+      </presentation>
+      <presentation id="RequiredProperties">
+        <listBox refId="RequiredProperties">Propriétés obligatoires</listBox>
+      </presentation>
+      <presentation id="CheckBeforeSharing">
+        <dropdownList refId="CheckBeforeSharing" noSort="true">Vérifier avant de partager</dropdownList>
+      </presentation>
+      <presentation id="BrandFonts">
+        <listBox refId="BrandFonts">Polices de la marque</listBox>
+      </presentation>
+      <presentation id="BrandColors">
+        <listBox refId="BrandColors">Couleurs de la marque</listBox>
+      </presentation>
+      <presentation id="ForbiddenTerms">
+        <listBox refId="ForbiddenTerms">Termes interdits</listBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>
