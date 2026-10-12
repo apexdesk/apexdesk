@@ -25,7 +25,7 @@ env:
 jobs:
   version:
     name: Versión
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -90,7 +90,7 @@ jobs:
   linux:
     name: Linux (x86_64)
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -111,11 +111,12 @@ jobs:
         with:
           key: linux-x86_64
 
-      - name: Instalar cargo-zigbuild y rpmbuild
+      - name: Instalar cargo-zigbuild, rpmbuild y ALSA
         run: |
           cargo install --locked cargo-zigbuild
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rpm
+          # cpal builds its ALSA backend on Linux (pkg-config finds libasound2).
+          sudo apt-get install -y --no-install-recommends rpm libasound2-dev pkg-config
 
       - name: Portable (glibc 2.31)
         run: packaging/linux/portable.sh
@@ -141,7 +142,7 @@ jobs:
   windows:
     name: Windows (x86_64)
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -178,7 +179,7 @@ jobs:
     name: Publicar Release
     needs: [version, macos, linux, windows]
     if: needs.version.outputs.tag != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Descargar los artefactos
         uses: actions/download-artifact@v7
