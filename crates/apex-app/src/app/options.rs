@@ -20,6 +20,7 @@ pub(super) struct OptionsDlg {
     dark_canvas: bool,
     contrast: bool,
     sharp_text: bool,
+    scroll_speed: f32,
     /// The vertical ruler in the draft view of documents.
     vruler: bool,
     draft_vruler: bool,
@@ -113,6 +114,7 @@ impl App {
             dark_canvas: st.dark_canvas,
             contrast: st.contrast,
             sharp_text: st.sharp_text,
+            scroll_speed: st.scroll_speed,
             vruler: st.vruler,
             draft_vruler: st.draft_vruler,
             formula_bar: st.show_formula_bar,
@@ -206,6 +208,7 @@ impl App {
             st.sharp_text = d.sharp_text;
             crate::theme::setup(ctx, d.contrast, d.sharp_text);
         }
+        st.scroll_speed = d.scroll_speed;
         st.vruler = d.vruler;
         crate::settings::set_vruler(d.vruler);
         st.draft_vruler = d.draft_vruler;
@@ -313,6 +316,10 @@ fn general_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
         ui.end_row();
         ui.label("");
         ui.checkbox(&mut d.sharp_text, tr("options.sharp_text")).on_hover_text(tr("options.sharp_text_tip"));
+        ui.end_row();
+        ui.label(tr("options.scroll_speed"));
+        let (lo, hi) = crate::settings::SCROLL_SPEED;
+        ui.add(egui::Slider::new(&mut d.scroll_speed, lo..=hi).step_by(0.1).custom_formatter(|v, _| format!("{v:.1}×"))).on_hover_text(tr("options.scroll_speed_tip"));
         ui.end_row();
         ui.label(tr("menu.language"));
         let cur = crate::i18n::available().find(|l| l.code == d.lang).map_or(tr("options.lang_system"), |l| l.name);

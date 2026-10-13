@@ -6826,6 +6826,8 @@ options.contrast = Plus de contraste
 options.contrast_tip = Texte de l'interface un peu plus clair avec le thème sombre et plus foncé avec le thème clair
 options.sharp_text = Texte plus net
 options.sharp_text_tip = Lettres sur des pixels entiers : plus nettes sur les écrans ordinaires, avec un espacement un peu moins régulier. À l'écran seulement
+options.scroll_speed = Vitesse de défilement
+options.scroll_speed_tip = Distance de défilement de la molette et du pavé tactile : de moitié moins (0,5×) à cinq fois plus (5×). Ctrl avec la molette zoome toujours comme d’habitude
 
 # --- sheet review and tests (block 5 ideas) ---
 audit.err_constant = Un nombre saisi à la main parmi des cellules ayant la même formule

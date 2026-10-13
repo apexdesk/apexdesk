@@ -6822,6 +6822,8 @@ options.contrast = 更高对比度
 options.contrast_tip = 界面文字在深色主题下稍亮一些，在浅色主题下稍深一些
 options.sharp_text = 更清晰的文字
 options.sharp_text_tip = 文字对齐到整像素：在普通屏幕上更清晰，字间距略欠均匀。仅影响屏幕显示
+options.scroll_speed = 滚动速度
+options.scroll_speed_tip = 鼠标滚轮和触摸板的滚动距离：从一半（0.5×）到五倍（5×）。按住 Ctrl 滚动滚轮仍照常缩放
 
 # --- sheet review and tests (block 5 ideas) ---
 audit.err_constant = 在具有相同公式的单元格之间手动输入的数字

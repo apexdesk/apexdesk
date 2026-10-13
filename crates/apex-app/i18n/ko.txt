@@ -6822,6 +6822,8 @@ options.contrast = 대비 높이기
 options.contrast_tip = 인터페이스 글자를 어두운 테마에서는 조금 더 밝게, 밝은 테마에서는 조금 더 진하게 표시합니다
 options.sharp_text = 더 선명한 글자
 options.sharp_text_tip = 글자를 픽셀 단위에 맞춥니다. 일반 화면에서 더 선명하지만 글자 간격이 약간 덜 고르게 됩니다. 화면에서만 적용
+options.scroll_speed = 스크롤 속도
+options.scroll_speed_tip = 마우스 휠과 터치패드의 스크롤 거리: 절반(0.5×)부터 다섯 배(5×)까지. Ctrl과 휠을 함께 쓰면 평소처럼 확대/축소됩니다
 
 # --- sheet review and tests (block 5 ideas) ---
 audit.err_constant = 같은 수식을 가진 셀 사이에 직접 입력한 숫자

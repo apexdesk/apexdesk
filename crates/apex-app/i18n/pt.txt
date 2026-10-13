@@ -6826,6 +6826,8 @@ options.contrast = Mais contraste
 options.contrast_tip = Texto da interface um pouco mais claro no tema escuro e mais escuro no tema claro
 options.sharp_text = Texto mais nítido
 options.sharp_text_tip = Letras em pixels inteiros: mais nítidas em telas comuns, com espaçamento um pouco menos uniforme. Só na tela
+options.scroll_speed = Velocidade de rolagem
+options.scroll_speed_tip = Quanto a roda do mouse e o touchpad rolam: da metade (0,5×) até cinco vezes mais (5×). Ctrl com a roda continua a dar zoom como sempre
 
 # --- sheet review and tests (block 5 ideas) ---
 audit.err_constant = Um número digitado à mão entre células com a mesma fórmula

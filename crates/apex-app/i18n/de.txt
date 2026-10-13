@@ -6826,6 +6826,8 @@ options.contrast = Mehr Kontrast
 options.contrast_tip = Text der Oberfläche im dunklen Design etwas heller, im hellen etwas dunkler
 options.sharp_text = Schärferer Text
 options.sharp_text_tip = Buchstaben auf ganzen Pixeln: schärfer auf normalen Bildschirmen, mit etwas weniger gleichmäßigen Abständen. Nur auf dem Bildschirm
+options.scroll_speed = Scrollgeschwindigkeit
+options.scroll_speed_tip = Wie weit Mausrad und Touchpad scrollen: von halb so weit (0,5×) bis fünfmal so weit (5×). Strg mit dem Mausrad zoomt weiterhin wie gewohnt
 
 # --- sheet review and tests (block 5 ideas) ---
 audit.err_constant = Eine von Hand eingegebene Zahl zwischen Zellen mit derselben Formel

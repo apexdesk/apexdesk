@@ -38,6 +38,9 @@ pub fn set_draft_vruler(on: bool) {
     DRAFT_VRULER.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The range of `Settings::scroll_speed`.
+pub const SCROLL_SPEED: (f32, f32) = (0.5, 5.0);
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     /// Interface language code; empty means the base language.
@@ -71,6 +74,8 @@ pub struct Settings {
     /// The vertical ruler shows in the draft view of documents too.
     pub vruler: bool,
     pub draft_vruler: bool,
+    /// The mouse wheel and touchpad scroll this many times as far (0.5–5).
+    pub scroll_speed: f32,
     /// The window was maximized when the program last closed.
     pub window_maximized: bool,
     /// The normal (not maximized) window size when it last closed.
@@ -226,6 +231,7 @@ impl Default for Settings {
             sharp_text: false,
             vruler: true,
             draft_vruler: false,
+            scroll_speed: 1.0,
             window_maximized: false,
             window_size: None,
             mcp: false,
@@ -416,6 +422,7 @@ impl Settings {
                 "sharp_text" => s.sharp_text = v.trim() == "1",
                 "vruler" => s.vruler = v.trim() == "1",
                 "draft_vruler" => s.draft_vruler = v.trim() == "1",
+                "scroll_speed" => s.scroll_speed = v.trim().parse::<f32>().ok().filter(|v| v.is_finite()).unwrap_or(1.0).clamp(SCROLL_SPEED.0, SCROLL_SPEED.1),
                 "window_maximized" => s.window_maximized = v.trim() == "1",
                 "window_size" => {
                     s.window_size = v.split_once('x').and_then(|(w, h)| Some([w.trim().parse::<f32>().ok()?, h.trim().parse::<f32>().ok()?])).filter(|z| z.iter().all(|n| n.is_finite()))
@@ -514,6 +521,7 @@ impl Settings {
         out.push_str(&format!("sharp_text={}\n", self.sharp_text as u8));
         out.push_str(&format!("vruler={}\n", self.vruler as u8));
         out.push_str(&format!("draft_vruler={}\n", self.draft_vruler as u8));
+        out.push_str(&format!("scroll_speed={}\n", self.scroll_speed));
         out.push_str(&format!("window_maximized={}\n", self.window_maximized as u8));
         if let Some([w, h]) = self.window_size {
             out.push_str(&format!("window_size={w:.0}x{h:.0}\n"));
@@ -620,6 +628,20 @@ mod tests {
         assert_eq!(s.window_size, Some([1100.0, 700.0]));
         s.set("window_size", "junk");
         assert_eq!(s.window_size, None);
+    }
+
+    #[test]
+    fn scroll_speed_stays_in_range() {
+        let mut s = Settings::default();
+        assert_eq!(s.scroll_speed, 1.0);
+        s.set("scroll_speed", "2.5");
+        assert_eq!(s.scroll_speed, 2.5);
+        s.set("scroll_speed", "40");
+        assert_eq!(s.scroll_speed, 5.0);
+        s.set("scroll_speed", "0.1");
+        assert_eq!(s.scroll_speed, 0.5);
+        s.set("scroll_speed", "NaN");
+        assert_eq!(s.scroll_speed, 1.0);
     }
 
     #[test]

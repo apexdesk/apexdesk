@@ -6822,6 +6822,8 @@ options.contrast = 更高對比
 options.contrast_tip = 介面文字在深色主題下稍亮一些，在淺色主題下稍深一些
 options.sharp_text = 更清晰的文字
 options.sharp_text_tip = 文字對齊到整像素：在一般螢幕上更清晰，字距略欠均勻。僅影響螢幕顯示
+options.scroll_speed = 捲動速度
+options.scroll_speed_tip = 滑鼠滾輪與觸控板的捲動距離：從一半（0.5×）到五倍（5×）。按住 Ctrl 轉動滾輪仍照常縮放
 
 # --- sheet review and tests (block 5 ideas) ---
 audit.err_constant = 在具有相同公式的儲存格之間手動輸入的數字

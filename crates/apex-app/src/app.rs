@@ -1964,6 +1964,19 @@ impl eframe::App for App {
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         use crate::script::Step;
+        // File > Options > Scroll speed: the wheel's and touchpad's steps,
+        // not a zoom (Ctrl) and not Android's fingers (added below).
+        let speed = self.settings.scroll_speed;
+        if speed != 1.0 {
+            for e in &mut raw.events {
+                if let egui::Event::MouseWheel { delta, modifiers, .. } = e
+                    && !modifiers.command
+                    && !modifiers.ctrl
+                {
+                    *delta *= speed;
+                }
+            }
+        }
         #[cfg(target_os = "android")]
         {
             crate::android::visible(raw, ctx.pixels_per_point());

@@ -6822,6 +6822,8 @@ options.contrast = コントラストを上げる
 options.contrast_tip = インターフェイスの文字を、ダーク テーマではやや明るく、ライト テーマではやや濃くします
 options.sharp_text = 文字をくっきり表示
 options.sharp_text_tip = 文字をピクセル単位に揃えます。通常の画面ではくっきり見えますが、文字間隔がわずかに不均一になります。画面表示のみ
+options.scroll_speed = スクロール速度
+options.scroll_speed_tip = マウスホイールとタッチパッドのスクロール量：半分（0.5×）から5倍（5×）まで。Ctrl とホイールでのズームはこれまでどおりです
 
 # --- sheet review and tests (block 5 ideas) ---
 audit.err_constant = 同じ数式のセルの間に手入力された数値

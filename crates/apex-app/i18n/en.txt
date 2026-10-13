@@ -6826,6 +6826,8 @@ options.contrast = More contrast
 options.contrast_tip = Interface text a little brighter in the dark theme and darker in the light one
 options.sharp_text = Sharper text
 options.sharp_text_tip = Letters on whole pixels: sharper on ordinary screens, with slightly less even spacing between them. Only on screen
+options.scroll_speed = Scroll speed
+options.scroll_speed_tip = How far the mouse wheel and the touchpad scroll: from half as far (0.5×) to five times as far (5×). Ctrl with the wheel still zooms as usual
 
 # --- sheet review and tests (block 5 ideas) ---
 audit.err_constant = A number typed among cells that share a formula
