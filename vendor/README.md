@@ -124,7 +124,7 @@ program offers.
 again. If arboard gains multi-format copies, remove this folder and its
 `[patch.crates-io]` entry.
 
-## smithay-clipboard 0.7.3 (clipboard in several formats on Wayland)
+## smithay-clipboard 0.7.3 (clipboard formats and dropped files on Wayland)
 
 A copy of `smithay-clipboard` 0.7.3 from crates.io with one change, used
 through `[patch.crates-io]` in the workspace `Cargo.toml`.
@@ -142,6 +142,11 @@ of a key press), so the formats go through the clipboard egui-winit runs.
   them; replies go back by channel with the request's number.
 - `src/state.rs`: the stored formats are offered with the selection and
   served when asked for; the offer's formats are listed and read.
+- `src/state.rs`, `src/lib.rs`: files dragged onto the window
+  (`text/uri-list`, copy only) are read on drop and kept for
+  `take_dropped()`; `hovering()` tells a drag is over the window and
+  `set_drop_waker()` sets what to call when either changes. winit 0.30
+  only gives dropped files on X11.
 
 **Updating.** Copy the new `smithay-clipboard` over this folder and apply
 the change again.

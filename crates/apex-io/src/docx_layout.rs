@@ -698,6 +698,9 @@ pub(crate) fn cap_ppr(st: &ParaStyle, base_hp: u16) -> (String, u32) {
     (ppr, (size * 2.0).round() as u32)
 }
 
+/// The largest page margin Word takes, in twips (22 inches).
+const MAX_MARGIN: i32 = 31680;
+
 /// A section's `w:sectPr`.
 pub(crate) fn sect_xml(refs: &str, headers: &apex_doc::Headers, page: &PageSetup, cols: &Columns, start: SectionStart, borders: &PageBorders) -> String {
     let tw = |v: f32| (v * TWIP).round() as i32;
@@ -716,13 +719,13 @@ pub(crate) fn sect_xml(refs: &str, headers: &apex_doc::Headers, page: &PageSetup
     let _ = write!(
         s,
         r#"<w:pgMar w:top="{}" w:right="{}" w:bottom="{}" w:left="{}" w:header="{}" w:footer="{}" w:gutter="{}"/>"#,
-        tw(page.margin_top),
-        tw(page.margin_right),
-        tw(page.margin_bottom),
-        tw(page.margin_left),
-        tw(page.margin_header),
-        tw(page.margin_footer),
-        tw(page.gutter)
+        tw(page.margin_top).clamp(-MAX_MARGIN, MAX_MARGIN),
+        tw(page.margin_right).clamp(0, MAX_MARGIN),
+        tw(page.margin_bottom).clamp(-MAX_MARGIN, MAX_MARGIN),
+        tw(page.margin_left).clamp(0, MAX_MARGIN),
+        tw(page.margin_header).clamp(0, MAX_MARGIN),
+        tw(page.margin_footer).clamp(0, MAX_MARGIN),
+        tw(page.gutter).clamp(0, MAX_MARGIN)
     );
     if !borders.is_empty() {
         let _ = write!(s, r#"<w:pgBorders w:offsetFrom="{}">"#, if borders.from_edge { "page" } else { "text" });

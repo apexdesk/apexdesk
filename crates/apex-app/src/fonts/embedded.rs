@@ -102,6 +102,7 @@ fn drop_family(d: &mut Db, key: &str) {
     d.embedded.remove(key);
     if d.families.get(key).is_some_and(|fam| fam.faces.iter().flatten().all(|x| x.0.to_string_lossy().starts_with("embedded:"))) {
         d.families.remove(key);
+        d.requested.retain(|k| k != key);
     }
     d.embedded_clash.insert(key.to_string());
 }

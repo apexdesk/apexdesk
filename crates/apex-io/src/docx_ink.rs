@@ -55,6 +55,22 @@ pub(crate) fn read(root: &Node, parts: &HashMap<String, Arc<[u8]>>) -> Option<Do
     Some(s)
 }
 
+/// `xml` with each ink shape as its freeform fallback alone: a header or
+/// footer can't relate to an ink part (Open XML refuses it).
+pub(crate) fn fallback_only(xml: &str) -> String {
+    let open = format!(r#"<mc:AlternateContent xmlns:mc="{NS_MC}"><mc:Choice xmlns:wpi="{NS_WPI}" Requires="wpi">"#);
+    let (mut out, mut rest) = (String::with_capacity(xml.len()), xml);
+    while let Some(i) = rest.find(&open) {
+        let el = &rest[i..];
+        let Some((a, b)) = el.find("<mc:Fallback>").zip(el.find("</mc:Fallback></mc:AlternateContent>")).filter(|(a, b)| a < b) else { break };
+        out.push_str(&rest[..i]);
+        out.push_str(&el[a + "<mc:Fallback>".len()..b]);
+        rest = &el[b + "</mc:Fallback></mc:AlternateContent>".len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// An ink shape as the inside of a `w:r`.
 pub(crate) fn write(out: &mut String, ds: &DocShape, ink: &Ink, media: &mut Media) {
     let (cx, cy) = (emu(ds.width), emu(ds.height));
@@ -133,6 +149,15 @@ mod tests {
         inline.wrap = ShapeWrap::Inline;
         d.insert_shape(Selection::caret(Pos::new(0, 5)), inline);
         d
+    }
+
+    #[test]
+    fn fallback_only_drops_the_ink_part() {
+        let bytes = crate::docx::write(&sample());
+        let body = crate::zip::ZipReader::new(&bytes).unwrap().read_string("word/document.xml").unwrap();
+        let plain = fallback_only(&body);
+        assert!(!plain.contains("contentPart") && !plain.contains("mc:AlternateContent") && plain.contains("<a:custGeom>"));
+        assert_eq!(plain.matches("<w:drawing>").count(), body.matches("<w:drawing>").count() / 2);
     }
 
     #[test]

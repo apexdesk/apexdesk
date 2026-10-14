@@ -80,7 +80,7 @@ impl WordState<'_> {
     }
 
     /// The properties of the table that `m` maps.
-    fn props_of(&self, m: &apex_doc::TableMap) -> Option<apex_doc::TableProps> {
+    pub(super) fn props_of(&self, m: &apex_doc::TableMap) -> Option<apex_doc::TableProps> {
         let mut c = self.doc.paragraphs.get(m.start)?.cell.as_ref()?;
         for _ in 0..m.depth {
             c = c.nested.as_deref()?;
@@ -640,7 +640,7 @@ impl Interp<'_> {
     }
 
     /// Changes the properties of a table as one more undo step.
-    fn set_table_props(&mut self, r: &SpanRef, depth: usize, f: &dyn Fn(&mut apex_doc::TableProps)) -> R<()> {
+    pub(super) fn set_table_props(&mut self, r: &SpanRef, depth: usize, f: &dyn Fn(&mut apex_doc::TableProps)) -> R<()> {
         let w = self.w();
         let start = r.borrow().start;
         let p = w.para_of(start);

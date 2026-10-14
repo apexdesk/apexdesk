@@ -797,6 +797,11 @@ impl App {
             let id = self.tabs[idx].id;
             self.signature_dropped(id);
         }
+        // A file another app opened with ApexDesk, as a copy, goes back.
+        #[cfg(target_os = "android")]
+        if res.is_ok() && !crate::android::saved(&path) {
+            self.notify(Notice::error(tr("notice.saved_copy_only")));
+        }
         self.after_save(idx, path, fmt, res, pw.is_some())
     }
 
@@ -1091,7 +1096,7 @@ impl App {
             AppCmd::Fullscreen => self.toggle_fullscreen(ctx),
             AppCmd::Theme(dark) => {
                 self.settings.dark = dark;
-                apply_theme(ctx, dark);
+                fade_theme(ctx, dark);
                 self.settings.save();
             }
             AppCmd::DarkCanvas => {
@@ -1099,7 +1104,7 @@ impl App {
                 // It shows with the dark theme: turning it on switches to it.
                 if self.settings.dark_canvas && !ctx.global_style().visuals.dark_mode {
                     self.settings.dark = Some(true);
-                    apply_theme(ctx, Some(true));
+                    fade_theme(ctx, Some(true));
                 }
                 self.settings.save();
             }
@@ -2039,8 +2044,16 @@ impl eframe::App for App {
         }
     }
 
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        // As eframe's own, unless the window's corners are rounded.
+        crate::window_frame::clear_color().unwrap_or_else(|| Color32::from_rgba_unmultiplied(12, 12, 12, 180).to_normalized_gamma_f32())
+    }
+
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         use crate::script::Step;
+        crate::window_frame::input_hook(ctx, raw);
+        #[cfg(target_os = "linux")]
+        crate::sysclip::wayland_drops(ctx, raw);
         // File > Options > Scroll speed: the wheel's and touchpad's steps,
         // not a zoom (Ctrl) and not Android's fingers (added below).
         let speed = self.settings.scroll_speed;
@@ -2172,6 +2185,8 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         fonts::apply(&ctx);
+        theme::fade_frame(&ctx);
+        crate::window_frame::native(frame);
         if let (Some(v), Some(t)) = (&mut self.perf, frame.info().cpu_usage) {
             v.push(t);
             let now = Instant::now();
@@ -2242,7 +2257,10 @@ impl eframe::App for App {
         }
 
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
-        let sent: Vec<PathBuf> = self.incoming.as_ref().map(|rx| rx.try_iter().collect()).unwrap_or_default();
+        #[allow(unused_mut)]
+        let mut sent: Vec<PathBuf> = self.incoming.as_ref().map(|rx| rx.try_iter().collect()).unwrap_or_default();
+        #[cfg(target_os = "android")]
+        sent.extend(crate::android::opened());
         for p in dropped {
             // A picture dropped on a sheet goes into it.
             let picture = p.extension().is_some_and(|e| crate::sheet_view::PICTURE_EXTENSIONS.contains(&e.to_string_lossy().to_lowercase().as_str()));
@@ -2315,11 +2333,21 @@ impl eframe::App for App {
             self.macro_bar(ui);
             self.signature_bar(ui);
         } else if !immersive {
-            egui::Panel::top("tabs").frame(egui::Frame::new().fill(theme::workspace_bg(ui.visuals())).inner_margin(egui::Margin { left: 6, right: 6, top: 4, bottom: 0 })).show(ui, |ui| {
+            // With ApexDesk's window frame this row is the title bar.
+            let r = crate::window_frame::corners(&ctx);
+            let corners = egui::CornerRadius { nw: r, ne: r, sw: 0, se: 0 };
+            egui::Panel::top("tabs").frame(egui::Frame::new().fill(theme::workspace_bg(ui.visuals())).corner_radius(corners).inner_margin(egui::Margin { left: 6, right: 6, top: 4, bottom: 0 })).show(ui, |ui| {
+                // Registered first: the tabs, buttons and search box on top
+                // of it take their own clicks.
+                crate::window_frame::title_area(ui, ui.max_rect().expand2(egui::vec2(6.0, 0.0)).with_min_y(ui.max_rect().top() - 4.0));
                 ui.horizontal(|ui| {
-                    let right = 260.0_f32.min(ui.available_width() * 0.4) + 8.0 + self.qat_width();
+                    let buttons = crate::window_frame::buttons_width(&ctx);
+                    let right = 260.0_f32.min(ui.available_width() * 0.4) + 8.0 + self.qat_width() + buttons;
                     ui.allocate_ui(egui::vec2((ui.available_width() - right).max(0.0), 28.0), |ui| self.tab_bar(ui));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if buttons > 0.0 {
+                            ui.scope(crate::window_frame::buttons);
+                        }
                         self.search_box(ui);
                         self.qat_bar(ui);
                     });
@@ -2351,7 +2379,9 @@ impl eframe::App for App {
             }
             // A phone has no room for the status bar.
             if !immersive && !phone {
-                egui::Panel::bottom("status").show(ui, |ui| {
+                let r = crate::window_frame::corners(&ctx);
+                let frame = egui::Frame::side_top_panel(ui.style()).corner_radius(egui::CornerRadius { nw: 0, ne: 0, sw: r, se: r });
+                egui::Panel::bottom("status").frame(frame).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         match &mut tab.view {
                             View::Sheet(v) => v.status(ui),
@@ -2485,7 +2515,9 @@ impl eframe::App for App {
         } else if !has_tab && phone {
             egui::CentralPanel::default_margins().show(ui, |ui| self.phone_start(ui));
         } else if !has_tab {
-            egui::CentralPanel::default_margins().show(ui, |ui| self.start_screen(ui));
+            let r = crate::window_frame::corners(&ctx);
+            let frame = egui::Frame::central_panel(ui.style()).corner_radius(egui::CornerRadius { nw: 0, ne: 0, sw: r, se: r });
+            egui::CentralPanel::default_margins().frame(frame).show(ui, |ui| self.start_screen(ui));
         }
         for n in notices {
             self.notify(n);
@@ -2553,6 +2585,7 @@ impl eframe::App for App {
         self.print_dialogs(&ctx);
         self.toasts(&ctx);
         self.update_title(&ctx);
+        crate::window_frame::finish(&ctx);
         self.debug_capture(&ctx);
         if self.perf.is_some() {
             self.perf_ui.push(ui_start.elapsed().as_secs_f32());
@@ -2574,7 +2607,7 @@ impl App {
         }
         let shot = ctx.input(|i| {
             i.events.iter().find_map(|e| match e {
-                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                egui::Event::Screenshot { image, user_data, .. } if !theme::is_fade_shot(user_data) => Some(image.clone()),
                 _ => None,
             })
         });
@@ -2615,6 +2648,7 @@ fn init(ctx: &egui::Context, settings: &Settings, started: Instant) {
     crate::read_aloud::set_prefs(&settings.speech_voice, settings.speech_rate);
     theme::setup(ctx, settings.contrast, settings.sharp_text);
     apply_theme(ctx, settings.dark);
+    theme::set_fades(std::env::var_os("APEXDESK_SCRIPT").is_none() && std::env::var_os("APEXDESK_SCREENSHOT").is_none());
     // Zoom shortcuts act on the document, not on the whole interface.
     // A right click held a moment still opens its menu: past 0.8 s egui
     // took it for no click at all, and the menu never came.
@@ -2624,12 +2658,21 @@ fn init(ctx: &egui::Context, settings: &Settings, started: Instant) {
     });
 }
 
-fn apply_theme(ctx: &egui::Context, dark: Option<bool>) {
-    ctx.set_theme(match dark {
+fn theme_pref(dark: Option<bool>) -> egui::ThemePreference {
+    match dark {
         None => egui::ThemePreference::System,
         Some(true) => egui::ThemePreference::Dark,
         Some(false) => egui::ThemePreference::Light,
-    });
+    }
+}
+
+fn apply_theme(ctx: &egui::Context, dark: Option<bool>) {
+    ctx.set_theme(theme_pref(dark));
+}
+
+/// A theme the user picks: the old one fades into it.
+fn fade_theme(ctx: &egui::Context, dark: Option<bool>) {
+    theme::fade_to(ctx, theme_pref(dark));
 }
 
 fn big_button(ui: &mut egui::Ui, icon: Icon, label: &str, color: Color32, width: f32) -> egui::Response {

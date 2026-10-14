@@ -42,3 +42,16 @@ fn copies_drop_the_code_name() {
     assert_eq!(other.sheets[j].code_name, None);
     assert_eq!(wb.sheets[0].code_name.as_deref(), Some("Sheet1"));
 }
+
+#[test]
+fn names_excel_refuses_are_renamed() {
+    let mut wb = Workbook::new();
+    wb.sheets.push(Sheet::new("'Admin\\Library"));
+    wb.sheets.push(Sheet::new("'file:///C:/sources/libo-core/base.ods'#Sheet1"));
+    wb.set_input(0, apex_sheet::CellRef::parse("A1").unwrap(), "='''Admin\\Library'!B2");
+    let back = apex_io::xlsx::read(&apex_io::xlsx::write(&wb)).unwrap();
+    let names: Vec<&str> = back.sheets.iter().map(|s| s.name.as_ref()).collect();
+    assert_eq!(names[1], "Admin_Library");
+    assert_eq!(names[2], "file____C__sources_libo-core_ba");
+    assert!(back.edit_text(0, apex_sheet::CellRef::parse("A1").unwrap()).contains("Admin_Library!B2"));
+}

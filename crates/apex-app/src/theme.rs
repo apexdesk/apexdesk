@@ -262,3 +262,109 @@ mod dark_tests {
     }
 }
 
+
+/// How long the old theme takes to fade into the new one, in seconds.
+const FADE: f64 = 0.4;
+/// How long to wait for the picture of the window before changing the
+/// theme without a fade.
+const SHOT_WAIT: f64 = 0.5;
+
+static FADES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Off for scripted runs: their screenshots must not catch a fade halfway.
+pub fn set_fades(on: bool) {
+    FADES.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The marker of the screenshot a theme change asks for.
+struct FadeShot;
+
+#[derive(Clone)]
+enum Fade {
+    /// Waiting since `asked` for the picture of the window as it is.
+    Shot { to: egui::ThemePreference, asked: f64 },
+    /// That picture over the new theme, fading out since `since`.
+    Out { tex: egui::TextureHandle, since: f64 },
+}
+
+fn fade_id() -> egui::Id {
+    egui::Id::new("theme-fade")
+}
+
+/// Whether `pref` shows the dark theme.
+fn shows_dark(ctx: &egui::Context, pref: egui::ThemePreference) -> bool {
+    match pref {
+        egui::ThemePreference::Dark => true,
+        egui::ThemePreference::Light => false,
+        egui::ThemePreference::System => ctx.system_theme().unwrap_or(ctx.theme()) == egui::Theme::Dark,
+    }
+}
+
+/// Changes to the light or dark theme gradually: the window as it looks
+/// now fades into the new theme.
+pub fn fade_to(ctx: &egui::Context, pref: egui::ThemePreference) {
+    let now = ctx.input(|i| i.time);
+    ctx.data_mut(|d| d.remove::<Fade>(fade_id()));
+    if !FADES.load(std::sync::atomic::Ordering::Relaxed) || shows_dark(ctx, pref) == (ctx.theme() == egui::Theme::Dark) {
+        ctx.set_theme(pref);
+        return;
+    }
+    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(FadeShot)));
+    ctx.data_mut(|d| d.insert_temp(fade_id(), Fade::Shot { to: pref, asked: now }));
+    ctx.request_repaint();
+}
+
+/// Whether a screenshot is the one a theme change asked for.
+pub fn is_fade_shot(user_data: &egui::UserData) -> bool {
+    user_data.data.as_ref().is_some_and(|d| d.is::<FadeShot>())
+}
+
+/// Each frame: changes the theme once the picture of the window comes, and
+/// paints that picture fading out over the new theme.
+pub fn fade_frame(ctx: &egui::Context) {
+    let Some(fade) = ctx.data(|d| d.get_temp::<Fade>(fade_id())) else { return };
+    let now = ctx.input(|i| i.time);
+    let next = match fade {
+        Fade::Shot { to, asked } => {
+            let shot = ctx.input(|i| {
+                i.events.iter().find_map(|e| match e {
+                    egui::Event::Screenshot { image, user_data, .. } if is_fade_shot(user_data) => Some(image.clone()),
+                    _ => None,
+                })
+            });
+            match shot {
+                Some(image) => {
+                    let tex = ctx.load_texture("theme-fade", (*image).clone(), egui::TextureOptions::LINEAR);
+                    ctx.set_theme(to);
+                    Some(Fade::Out { tex, since: now })
+                }
+                None if now - asked > SHOT_WAIT => {
+                    ctx.set_theme(to);
+                    None
+                }
+                None => Some(Fade::Shot { to, asked }),
+            }
+        }
+        Fade::Out { tex, since } => {
+            let t = ((now - since) / FADE) as f32;
+            if t < 1.0 {
+                // Eased out: quick at first, gentle at the end.
+                let a = (1.0 - t) * (1.0 - t);
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Debug, fade_id()));
+                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                painter.image(tex.id(), ctx.viewport_rect(), uv, Color32::from_white_alpha((a * 255.0) as u8));
+                Some(Fade::Out { tex, since })
+            } else {
+                None
+            }
+        }
+    };
+    ctx.data_mut(|d| {
+        if let Some(f) = next {
+            d.insert_temp(fade_id(), f);
+        } else {
+            d.remove::<Fade>(fade_id());
+        }
+    });
+    ctx.request_repaint();
+}

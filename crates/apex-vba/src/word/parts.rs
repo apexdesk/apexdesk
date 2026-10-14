@@ -59,7 +59,7 @@ impl WordState<'_> {
     }
 
     /// Where the table of a Table object is now.
-    fn table(&mut self, r: &SpanRef, depth: usize) -> R<TableMap> {
+    pub(super) fn table(&mut self, r: &SpanRef, depth: usize) -> R<TableMap> {
         let start = r.borrow().start;
         let p = self.para_of(start);
         let m = self.table_at(p, depth).ok_or_else(deleted)?;
@@ -204,6 +204,7 @@ impl Interp<'_> {
             WObj::Tocs => self.tocs_call(name, a),
             WObj::Toc(k) => self.toc_call(k, name),
             WObj::TableBorders(r, d) => self.table_borders_call(r, d, name),
+            WObj::CellShading(r, d, row, col) => self.cell_shading_get(r, d, row, col, name),
             WObj::Sections => self.sections_call(name, a),
             WObj::Section(i) => self.section_call(i, name, a),
             WObj::HeadersFooters(i, h) => self.hfs_call(i, h, name, a),
@@ -300,6 +301,10 @@ impl Interp<'_> {
             (WObj::DocShape(k), _) => self.shape_put(k, name, v),
             (WObj::ShapeRange(k), _) => self.shape_text_put(k, name, v),
             (WObj::TableBorders(r, d), _) => self.table_borders_set(r, d, name, v),
+            (WObj::CellShading(r, d, row, col), _) => self.cell_shading_set(r, d, row, col, name, v),
+            (WObj::Line(r, d, rows, i), _) => self.line_format_set(r, d, rows, Some(i), name, v),
+            (WObj::Lines(r, d, rows), _) => self.line_format_set(r, d, rows, None, name, v),
+            (WObj::Cell(r, d, row, col), _) => self.cell_format_set(r, d, row, col, name, v),
             (WObj::Table(r, d), "style") => self.table_style_set(r, d, v),
             (WObj::PageSetup, _) => self.wpage_set(name, v),
             (WObj::Prop(b, n), "value") => self.prop_set(b, &n, v),
@@ -476,7 +481,7 @@ impl Interp<'_> {
             }
             "application" => Ok(Value::Object(Obj::Application)),
             "parent" => Ok(wo(WObj::Table(r, depth))),
-            _ => Err(Error::unsupported(&format!("{}.{name}", if rows { "Rows" } else { "Columns" }))),
+            _ => self.line_format_get(r, depth, rows, None, name),
         }
     }
 
@@ -519,7 +524,7 @@ impl Interp<'_> {
             }
             "application" => Ok(Value::Object(Obj::Application)),
             "parent" => Ok(wo(WObj::Table(r, depth))),
-            _ => Err(Error::unsupported(&format!("{}.{name}", if rows { "Row" } else { "Column" }))),
+            _ => self.line_format_get(r, depth, rows, Some(i), name),
         }
     }
 
@@ -578,7 +583,7 @@ impl Interp<'_> {
             }
             "application" => Ok(Value::Object(Obj::Application)),
             "parent" => Ok(wo(WObj::Table(r, depth))),
-            _ => Err(Error::unsupported(&format!("Cell.{name}"))),
+            _ => self.cell_format_get(r, depth, row, col, name),
         }
     }
 

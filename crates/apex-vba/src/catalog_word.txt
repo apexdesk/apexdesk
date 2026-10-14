@@ -470,11 +470,17 @@ r Uniform: Boolean | Whether it has no merged cells.
 
 class Rows | The rows of a table.
 m Add([BeforeRow]): Row | Adds a row (at the end by default).
+p Alignment: Long | wdAlignRowLeft, wdAlignRowCenter or wdAlignRowRight.
+p AllowBreakAcrossPages: Long | Whether the rows may break across pages (wdUndefined if they differ).
 r Application: Application | The application.
 r Count: Long | How many rows.
 r First: Row | The first row.
+p HeadingFormat: Long | Whether the rows repeat at the top of each page.
+p Height: Single | The height of the rows in points (wdUndefined if they differ).
+p HeightRule: Long | wdRowHeightAuto, wdRowHeightAtLeast or wdRowHeightExactly.
 m Item(Index): Row | A row by number.
 r Last: Row | The last row.
+p LeftIndent: Single | How far the table is moved from the margin, in points.
 r Parent: Table | The table.
 
 class Columns | The columns of a table.
@@ -485,11 +491,16 @@ r First: Column | The first column.
 m Item(Index): Column | A column by number.
 r Last: Column | The last column.
 r Parent: Table | The table.
+p Width: Single | The width of the columns in points (wdUndefined if they differ).
 
 class Row | A row of a table.
+p AllowBreakAcrossPages: Long | Whether the row may break across pages.
 r Application: Application | The application.
 m Cells([Index]): Cells | The cells of the row, or one.
 m Delete() | Deletes the row.
+p HeadingFormat: Long | Whether the row repeats at the top of each page (the first rows only).
+p Height: Single | The height in points (0: as high as its text).
+p HeightRule: Long | wdRowHeightAuto, wdRowHeightAtLeast or wdRowHeightExactly.
 r Index: Long | The row number.
 r IsFirst: Boolean | Whether it is the first row.
 r IsLast: Boolean | Whether it is the last row.
@@ -505,6 +516,7 @@ r Index: Long | The column number.
 r IsFirst: Boolean | Whether it is the first column.
 r IsLast: Boolean | Whether it is the last column.
 r Parent: Table | The table.
+p Width: Single | The width in points.
 
 class Cells | The cells of a table, a row or a column.
 r Application: Application | The application.
@@ -514,13 +526,18 @@ m Item(Index): Cell | A cell by number.
 class Cell | A cell of a table.
 r Application: Application | The application.
 r ColumnIndex: Long | The column number.
+p Height: Single | The height of its row in points.
+p HeightRule: Long | The height rule of its row.
 m Next(): Cell | The next cell, or Nothing.
 r Parent: Table | The table.
 m Previous(): Cell | The previous cell, or Nothing.
 r Range: Range | The text of the cell.
 r RowIndex: Long | The row number.
 m Select() | Selects the cell.
+r Shading: Shading | The fill of the cell.
 m Tables([Index]): Tables | The tables nested in the cell.
+p VerticalAlignment: Long | wdCellAlignVerticalTop, wdCellAlignVerticalCenter or wdCellAlignVerticalBottom.
+p Width: Single | The width in points (of all its columns if merged).
 
 class Bookmarks | The bookmarks of the document.
 m Add(Name, [Range]): Bookmark | Adds a bookmark on the range (the selection by default).
@@ -850,7 +867,26 @@ p Enable: Boolean | Whether the table has lines all around and inside.
 p InsideLineStyle: Long | wdLineStyleNone or wdLineStyleSingle.
 p OutsideLineStyle: Long | wdLineStyleNone or wdLineStyleSingle.
 
+class Shading | The fill of a table cell.
+r Application: Application | The application.
+p BackgroundPatternColor: Long | The fill colour (wdColorAutomatic: none).
+p BackgroundPatternColorIndex: Long | The fill as a WdColorIndex (wdAuto: none).
+r ForegroundPatternColor: Long | Always wdColorAutomatic.
+r ForegroundPatternColorIndex: Long | Always wdAuto.
+r Parent: Cell | The cell.
+p Texture: Long | Only wdTextureNone: the fill is solid.
+
 class WordConstants | Constants of Word.
+c wdRowHeightAuto = 0 | WdRowHeightRule: row height.
+c wdRowHeightAtLeast = 1 | WdRowHeightRule: row height.
+c wdRowHeightExactly = 2 | WdRowHeightRule: row height.
+c wdAlignRowLeft = 0 | WdRowAlignment: table alignment.
+c wdAlignRowCenter = 1 | WdRowAlignment: table alignment.
+c wdAlignRowRight = 2 | WdRowAlignment: table alignment.
+c wdCellAlignVerticalTop = 0 | WdCellVerticalAlignment: cell alignment.
+c wdCellAlignVerticalCenter = 1 | WdCellVerticalAlignment: cell alignment.
+c wdCellAlignVerticalBottom = 3 | WdCellVerticalAlignment: cell alignment.
+c wdTextureNone = 0 | WdTextureIndex: solid fill.
 c wdFieldPage = 33 | WdFieldType: field type.
 c wdFieldNumPages = 26 | WdFieldType: field type.
 c wdFieldDate = 31 | WdFieldType: field type.

@@ -6,7 +6,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
-use sctk::data_device_manager::data_device::{DataDevice, DataDeviceHandler};
+use sctk::data_device_manager::data_device::{DataDevice, DataDeviceData, DataDeviceHandler};
 use sctk::data_device_manager::data_offer::{
     DataOfferError, DataOfferHandler, DragOffer, SelectionOffer,
 };
@@ -509,25 +509,111 @@ impl PointerHandler for State {
 }
 
 impl DataDeviceHandler for State {
+    // ApexDesk patch: files dragged onto a window of the process (its
+    // `text/uri-list`) are taken, copied, never moved, and kept for
+    // `take_dropped`.
     fn enter(
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &WlDataDevice,
+        data_device: &WlDataDevice,
         _: f64,
         _: f64,
         _: &WlSurface,
     ) {
+        let Some(offer) = drag_offer(data_device) else { return };
+        let files = offer.with_mime_types(|offered| offered.iter().any(|m| m == URI_LIST));
+        if files {
+            offer.accept_mime_type(offer.serial, Some(URI_LIST.to_string()));
+            offer.set_actions(DndAction::Copy, DndAction::Copy);
+        } else {
+            offer.accept_mime_type(offer.serial, None);
+        }
+        crate::set_hovering(files);
     }
 
-    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {
+        crate::set_hovering(false);
+    }
 
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, _: f64, _: f64) {}
 
-    fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+    fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, data_device: &WlDataDevice) {
+        crate::set_hovering(false);
+        let Some(offer) = drag_offer(data_device) else { return };
+        if !offer.with_mime_types(|offered| offered.iter().any(|m| m == URI_LIST)) {
+            return;
+        }
+        let Ok(read_pipe) = offer.receive(URI_LIST.to_string()) else { return };
+        if set_non_blocking(read_pipe.as_raw_fd()).is_err() {
+            return;
+        }
+        let mut buffer = [0; 4096];
+        let mut content = Vec::new();
+        let _ = self.loop_handle.insert_source(read_pipe, move |_, file, _| {
+            let file = unsafe { file.get_mut() };
+            loop {
+                match file.read(&mut buffer) {
+                    Ok(0) => {
+                        offer.finish();
+                        crate::push_dropped(parse_uri_list(&content));
+                        break PostAction::Remove;
+                    },
+                    Ok(n) => content.extend_from_slice(&buffer[..n]),
+                    Err(err) if err.kind() == ErrorKind::WouldBlock => break PostAction::Continue,
+                    Err(_) => {
+                        offer.finish();
+                        break PostAction::Remove;
+                    },
+                }
+            }
+        });
+    }
 
     // The selection is finished and ready to be used.
     fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+}
+
+/// The MIME type of a list of dragged files. (ApexDesk patch.)
+const URI_LIST: &str = "text/uri-list";
+
+/// The drag over a data device, if any. (ApexDesk patch.)
+fn drag_offer(data_device: &WlDataDevice) -> Option<DragOffer> {
+    data_device.data::<DataDeviceData>().and_then(|data| data.drag_offer())
+}
+
+/// The local files of a `text/uri-list`: `file://` lines, with or without a
+/// host, their `%XX` escapes decoded. (ApexDesk patch.)
+pub(crate) fn parse_uri_list(list: &[u8]) -> Vec<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let text = String::from_utf8_lossy(list);
+    let mut paths = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("file://") else { continue };
+        let Some(slash) = rest.find('/') else { continue };
+        let raw = rest[slash..].as_bytes();
+        let mut path = Vec::with_capacity(raw.len());
+        let mut i = 0;
+        while i < raw.len() {
+            let hex = |b: u8| (b as char).to_digit(16);
+            match (raw[i], raw.get(i + 1).copied().and_then(hex), raw.get(i + 2).copied().and_then(hex)) {
+                (b'%', Some(h), Some(l)) => {
+                    path.push((h * 16 + l) as u8);
+                    i += 3;
+                },
+                (b, ..) => {
+                    path.push(b);
+                    i += 1;
+                },
+            }
+        }
+        paths.push(std::ffi::OsStr::from_bytes(&path).into());
+    }
+    paths
 }
 
 impl DataSourceHandler for State {

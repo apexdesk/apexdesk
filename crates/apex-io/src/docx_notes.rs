@@ -579,7 +579,7 @@ impl NoteWriter {
             let mut s = String::from(HEADER);
             let _ = write!(
                 s,
-                r#"<w:{kind}s xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:{kind} w:type="separator" w:id="-1"><w:p>{sep_ppr}<w:r>{sep_rpr}<w:separator/></w:r></w:p></w:{kind}><w:{kind} w:type="continuationSeparator" w:id="0"><w:p>{sep_ppr}<w:r>{sep_rpr}<w:continuationSeparator/></w:r></w:p></w:{kind}>"#
+                r#"<w:{kind}s xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" mc:Ignorable="w14"><w:{kind} w:type="separator" w:id="-1"><w:p>{sep_ppr}<w:r>{sep_rpr}<w:separator/></w:r></w:p></w:{kind}><w:{kind} w:type="continuationSeparator" w:id="0"><w:p>{sep_ppr}<w:r>{sep_rpr}<w:continuationSeparator/></w:r></w:p></w:{kind}>"#
             );
             for n in notes {
                 s.push_str(n);

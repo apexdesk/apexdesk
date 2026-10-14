@@ -147,7 +147,8 @@ pub fn macros_group(b: &mut crate::toolstrip::Body, shell: &mut Shell) {
     use crate::toolstrip;
     let a = b.accent();
     b.group("macros.title", Icon::Field, |ui| {
-        toolstrip::large_menu(ui, Icon::Field, tr("macros.title"), tr("macros.tip"), a, |ui| {
+        // No shortcut on the menu itself: its items have theirs.
+        toolstrip::large_menu(ui, Icon::Field, tr("macros.title"), "", a, |ui| {
             if toolstrip::menu_item_keys(ui, Icon::SpeakPlay, tr("macros.view"), "Alt+F8").clicked() {
                 shell.cmd = Some(AppCmd::RunMacro);
                 ui.close();
@@ -179,7 +180,7 @@ pub fn developer_code_group(b: &mut crate::toolstrip::Body, shell: &mut Shell) {
         if toolstrip::large(ui, Icon::Field, tr("developer.vba_editor"), tr("macros.tip"), a, false).clicked() {
             shell.cmd = Some(AppCmd::Macros);
         }
-        if toolstrip::large(ui, Icon::SpeakPlay, tr("macros.title"), tr("macros.run_tip"), a, false).clicked() {
+        if toolstrip::large(ui, Icon::SpeakPlay, tr("macros.view"), tr("macros.run_tip"), a, false).clicked() {
             shell.cmd = Some(AppCmd::RunMacro);
         }
         if let Some((on, relative)) = shell.recording {

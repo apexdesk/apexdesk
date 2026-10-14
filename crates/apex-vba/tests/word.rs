@@ -197,6 +197,45 @@ Debug.Print n"#,
 }
 
 #[test]
+fn table_sizes_and_cell_format() {
+    let mut d = doc("Before\nAfter");
+    let p = ok(
+        &mut d,
+        r#"Dim t As Table
+Set t = ActiveDocument.Tables.Add(ActiveDocument.Paragraphs(2).Range, 2, 3)
+t.Columns.Width = 100
+t.Columns(2).Width = 150
+Debug.Print t.Columns(1).Width; t.Columns(2).Width; t.Columns.Width
+t.Rows(1).Height = 30
+t.Rows(1).HeightRule = wdRowHeightExactly
+Debug.Print t.Rows(1).Height; t.Rows(1).HeightRule; t.Rows(2).HeightRule; t.Rows.HeightRule
+t.Rows(1).HeadingFormat = True
+t.Rows(2).AllowBreakAcrossPages = False
+Debug.Print t.Rows(1).HeadingFormat; t.Rows(2).HeadingFormat; t.Rows(2).AllowBreakAcrossPages
+t.Rows.Alignment = wdAlignRowCenter
+t.Rows.LeftIndent = 12
+Debug.Print t.Rows.Alignment; t.Rows.LeftIndent
+t.Cell(2, 3).Width = 80
+t.Cell(2, 2).VerticalAlignment = wdCellAlignVerticalCenter
+t.Cell(1, 1).Shading.BackgroundPatternColor = RGB(255, 0, 0)
+Debug.Print t.Cell(2, 3).Width; t.Cell(2, 2).VerticalAlignment; t.Cell(1, 1).Shading.BackgroundPatternColor = vbRed
+Debug.Print t.Cell(1, 2).Shading.BackgroundPatternColor = wdColorAutomatic; t.Cell(1, 1).Height"#,
+    );
+    assert_eq!(p, [" 100  150  9999999 ", " 30  2  0  9999999 ", "-1  0  0 ", " 1  12 ", " 80  1 True", "True 30 "]);
+    let m = &d.tables()[0];
+    let props = d.paragraphs[m.start].cell.as_ref().and_then(|c| c.table_props.as_deref()).expect("table props");
+    assert_eq!(props.widths, [100.0, 150.0, 80.0]);
+    assert_eq!(props.header_rows, 1);
+    assert!(props.row_rules[0].exact && props.row_rules[1].cant_split);
+    assert_eq!(props.align, apex_doc::Align::Center);
+    assert_eq!(m.cell_props(&d.paragraphs, 1, 1).map(|c| c.valign), Some(apex_doc::VAlign::Center));
+    assert_eq!(m.cell_props(&d.paragraphs, 0, 0).and_then(|c| c.shading), Some(0xFF0000));
+    let mut d = doc("Before\nAfter");
+    let e = err(&mut d, "ActiveDocument.Tables.Add(ActiveDocument.Paragraphs(2).Range, 1, 1).Columns(1).Width = 5000");
+    assert_eq!(e.number, 4608);
+}
+
+#[test]
 fn bookmarks_comments_and_links() {
     let mut d = doc("Some text here");
     let p = ok(

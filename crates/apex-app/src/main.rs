@@ -10,6 +10,7 @@
 #[cfg(target_os = "android")]
 mod android;
 mod app;
+mod window_frame;
 mod autocorrect;
 mod barcode;
 mod pii;
@@ -205,15 +206,19 @@ fn options(size: Option<[f32; 2]>, renderer: eframe::Renderer, prefs: &settings:
     let remembered = remembered.map(|[w, h]| [w.clamp(640.0, 16384.0), h.clamp(400.0, 16384.0)]);
     let mut o = eframe::NativeOptions {
         renderer,
-        viewport: egui::ViewportBuilder::default()
+        viewport: window_frame::viewport(
+            egui::ViewportBuilder::default()
             .with_title("ApexDesk")
             .with_app_id("apexdesk")
             .with_inner_size(size.or(remembered).unwrap_or([1280.0, 800.0]))
             .with_maximized(maximized)
             .with_min_inner_size([640.0, 400.0])
             .with_drag_and_drop(true)
-            .with_icon(egui::IconData { rgba: include_bytes!("../assets/icon64.rgba").to_vec(), width: 64, height: 64 }),
-        event_loop_builder: backend_hook(),
+                .with_icon(egui::IconData { rgba: include_bytes!("../assets/icon64.rgba").to_vec(), width: 64, height: 64 }),
+            !prefs.system_frame,
+            !scripted,
+        ),
+        event_loop_builder: backend_hook(!prefs.system_frame && !scripted),
         ..Default::default()
     };
     // wgpu: the integrated graphics card unless asked otherwise (a second
@@ -231,19 +236,24 @@ fn options(size: Option<[f32; 2]>, renderer: eframe::Renderer, prefs: &settings:
     o
 }
 
-/// On Linux, prefer X11 (XWayland under Wayland sessions): winit's Wayland
-/// backend does not support dropping files on the window.
-/// `APEXDESK_WAYLAND=1` keeps the native Wayland backend.
+/// On Linux, ApexDesk's own window frame runs on Wayland itself when the
+/// session is Wayland's: under XWayland a frameless window flickers and
+/// shows black frames while resized. With the system's frame X11 is kept
+/// (XWayland under Wayland sessions), which drops files on the window
+/// through winit; on Wayland they come through vendor/smithay-clipboard.
+/// `APEXDESK_WAYLAND=1` and `APEXDESK_X11=1` choose a backend.
 #[cfg(target_os = "linux")]
-fn backend_hook() -> Option<eframe::EventLoopBuilderHook> {
+fn backend_hook(own_frame: bool) -> Option<eframe::EventLoopBuilderHook> {
     use winit::platform::x11::EventLoopBuilderExtX11;
-    let has_x11 = std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty());
-    if !has_x11 || std::env::var_os("APEXDESK_WAYLAND").is_some() {
-        return None;
-    }
-    Some(Box::new(|b| {
-        b.with_x11();
-    }))
+    let set = |v: &str| std::env::var_os(v).is_some_and(|d| !d.is_empty());
+    let x11 = set("DISPLAY")
+        && !set("APEXDESK_WAYLAND")
+        && (set("APEXDESK_X11") || !own_frame || !set("WAYLAND_DISPLAY"));
+    x11.then(|| -> eframe::EventLoopBuilderHook {
+        Box::new(|b| {
+            b.with_x11();
+        })
+    })
 }
 
 /// Windows has no `LANG`: number formats and the spelling dictionary read
@@ -314,6 +324,6 @@ fn system_locale() {
 fn system_locale() {}
 
 #[cfg(not(target_os = "linux"))]
-fn backend_hook() -> Option<eframe::EventLoopBuilderHook> {
+fn backend_hook(_own_frame: bool) -> Option<eframe::EventLoopBuilderHook> {
     None
 }

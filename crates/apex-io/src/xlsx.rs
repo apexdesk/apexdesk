@@ -840,12 +840,43 @@ pub fn write(wb: &Workbook) -> Vec<u8> {
 
 /// Writes the package as xlsx, xlsm, xltx or xltm.
 pub fn write_as(wb: &Workbook, flavor: crate::Flavor) -> Vec<u8> {
-    if wb.calc.date1904 {
+    let renames = excel_names(wb);
+    if wb.calc.date1904 || !renames.is_empty() {
         let mut w = wb.clone();
-        w.shift_dates(-apex_sheet::workbook::DAYS_1904);
+        for (index, name) in renames {
+            w.execute(apex_sheet::Op::RenameSheet { index, name });
+        }
+        if wb.calc.date1904 {
+            w.shift_dates(-apex_sheet::workbook::DAYS_1904);
+        }
         return write_book(&w, flavor);
     }
     write_book(wb, flavor)
+}
+
+/// New names for the sheets whose name Excel refuses (an ods's link
+/// cache `'file:///…'#Sheet1`, say): its characters, at most 31, none of
+/// `[]:*?/\` nor a quote at either end, and unique.
+fn excel_names(wb: &Workbook) -> Vec<(usize, String)> {
+    let ok = |s: &str| !s.trim().is_empty() && s.chars().count() <= 31 && !s.contains(['[', ']', ':', '*', '?', '/', '\\']) && !s.starts_with('\'') && !s.ends_with('\'');
+    let mut taken: Vec<String> = wb.sheets.iter().map(|s| s.name.to_lowercase()).collect();
+    let mut out = Vec::new();
+    for (i, sh) in wb.sheets.iter().enumerate().filter(|(_, s)| !ok(&s.name)) {
+        let clean: String = sh.name.chars().map(|c| if "[]:*?/\\".contains(c) { '_' } else { c }).collect();
+        let clean = clean.trim_matches('\'').trim();
+        let base = if clean.is_empty() { format!("Sheet{}", i + 1) } else { clean.to_string() };
+        let name = (1..)
+            .map(|n| {
+                let tail = if n == 1 { String::new() } else { format!(" ({n})") };
+                let head: String = base.chars().take(31 - tail.chars().count()).collect();
+                format!("{}{tail}", head.trim_end_matches('\''))
+            })
+            .find(|c| !taken.contains(&c.to_lowercase()))
+            .unwrap_or_default();
+        taken[i] = name.to_lowercase();
+        out.push((i, name));
+    }
+    out
 }
 
 fn write_book(wb: &Workbook, flavor: crate::Flavor) -> Vec<u8> {

@@ -99,6 +99,8 @@ pub struct Settings {
     pub renderer: String,
     /// Draw with the high-performance graphics card, not the integrated one.
     pub gpu_high: bool,
+    /// The system's title bar and window frame instead of ApexDesk's.
+    pub system_frame: bool,
     /// Author of comments and tracked changes; empty uses the login name.
     pub user_name: String,
     /// Custom lists for fills and sorts (File > Options).
@@ -271,6 +273,7 @@ impl Default for Settings {
             tui_menu_bar: true,
             renderer: String::new(),
             gpu_high: false,
+            system_frame: false,
             user_name: String::new(),
             custom_lists: Vec::new(),
             autosave_minutes: 10,
@@ -490,6 +493,7 @@ impl Settings {
                 "tui_menu_bar" => s.tui_menu_bar = v.trim() != "0",
                 "renderer" => s.renderer = v.trim().to_string(),
                 "gpu" => s.gpu_high = v.trim() == "high",
+                "system_frame" => s.system_frame = v.trim() == "1",
                 "user_name" => s.user_name = v.trim().to_string(),
                 "autosave_minutes" => s.autosave_minutes = v.trim().parse().unwrap_or(10),
                 "lock_files" => s.lock_files = v.trim() != "0",
@@ -600,6 +604,7 @@ impl Settings {
         out.push_str(&format!("protected_view={}\n", self.protected_view as u8));
         out.push_str(&format!("tui_menu_bar={}\n", self.tui_menu_bar as u8));
         out.push_str(&format!("gpu={}\n", if self.gpu_high { "high" } else { "low" }));
+        out.push_str(&format!("system_frame={}\n", self.system_frame as u8));
         if !self.renderer.is_empty() {
             out.push_str(&format!("renderer={}\n", self.renderer.replace('\n', " ")));
         }

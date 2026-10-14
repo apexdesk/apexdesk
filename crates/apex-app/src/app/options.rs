@@ -40,6 +40,7 @@ pub(super) struct OptionsDlg {
     autosave: u32,
     lock_files: bool,
     gpu_high: bool,
+    system_frame: bool,
     speech_voice: String,
     speech_rate: f32,
     lists: Vec<Vec<String>>,
@@ -139,6 +140,7 @@ impl App {
             autosave: st.autosave_minutes,
             lock_files: st.lock_files,
             gpu_high: st.gpu_high,
+            system_frame: st.system_frame,
             speech_voice: crate::read_aloud::prefs().0,
             speech_rate: crate::read_aloud::prefs().1,
             lists: st.custom_lists.clone(),
@@ -231,7 +233,7 @@ impl App {
         crate::settings::set_draft_vruler(d.draft_vruler);
         if st.dark != d.dark {
             st.dark = d.dark;
-            super::apply_theme(ctx, d.dark);
+            super::fade_theme(ctx, d.dark);
         }
         if st.lang != d.lang {
             // None chosen: the one of the system, if translated.
@@ -257,6 +259,7 @@ impl App {
         st.autosave_minutes = d.autosave;
         st.lock_files = d.lock_files;
         st.gpu_high = d.gpu_high;
+        st.system_frame = d.system_frame;
         crate::read_aloud::set_prefs(&d.speech_voice, d.speech_rate);
         (st.speech_voice, st.speech_rate) = crate::read_aloud::prefs();
         st.custom_lists = d.lists.into_iter().filter(|l| !l.is_empty()).collect();
@@ -383,6 +386,11 @@ fn general_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
     });
     ui.checkbox(&mut d.gpu_high, tr("options.gpu_high"));
     ui.label(RichText::new(tr("options.gpu_high_hint")).weak());
+    #[cfg(not(target_os = "android"))]
+    {
+        ui.checkbox(&mut d.system_frame, tr("options.system_frame"));
+        ui.label(RichText::new(tr("options.system_frame_hint")).weak());
+    }
     section(ui, "options.personalize");
     ui.label(tr("comment.user_name_hint"));
     ui.add(egui::TextEdit::singleline(&mut d.user_name).desired_width(280.0));

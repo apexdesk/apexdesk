@@ -79,6 +79,59 @@ pub fn formats(timeout: Duration) -> Result<Vec<String>> {
     Ok(String::from_utf8_lossy(&list).lines().map(str::to_string).collect())
 }
 
+/// Files dropped on a window of the process, whether a drag of files is
+/// over one, and what to call when either changes. (ApexDesk patch.)
+struct Drops {
+    files: Vec<std::path::PathBuf>,
+    hovering: bool,
+    waker: Option<Box<dyn Fn() + Send + Sync>>,
+}
+
+static DROPS: Mutex<Drops> = Mutex::new(Drops { files: Vec::new(), hovering: false, waker: None });
+
+fn drops() -> std::sync::MutexGuard<'static, Drops> {
+    DROPS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// What to call when files are dropped or a drag of files comes or goes,
+/// from the clipboard's thread. (ApexDesk patch.)
+pub fn set_drop_waker(waker: impl Fn() + Send + Sync + 'static) {
+    drops().waker = Some(Box::new(waker));
+}
+
+/// The files dropped since the last call. (ApexDesk patch.)
+pub fn take_dropped() -> Vec<std::path::PathBuf> {
+    std::mem::take(&mut drops().files)
+}
+
+/// Whether a drag of files is over a window of the process. (ApexDesk patch.)
+pub fn hovering() -> bool {
+    drops().hovering
+}
+
+fn wake(d: &Drops) {
+    if let Some(waker) = &d.waker {
+        waker();
+    }
+}
+
+pub(crate) fn set_hovering(on: bool) {
+    let mut d = drops();
+    if d.hovering != on {
+        d.hovering = on;
+        wake(&d);
+    }
+}
+
+pub(crate) fn push_dropped(files: Vec<std::path::PathBuf>) {
+    if files.is_empty() {
+        return;
+    }
+    let mut d = drops();
+    d.files.extend(files);
+    wake(&d);
+}
+
 pub struct Clipboard {
     request_sender: Sender<worker::Command>,
     request_receiver: Receiver<Result<String>>,

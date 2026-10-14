@@ -27,6 +27,7 @@ mod objects;
 mod parts;
 pub(crate) use parts::safe_address;
 mod range;
+mod table_format;
 
 pub(crate) use find::FindState;
 
@@ -167,6 +168,8 @@ pub enum WObj {
     Toc(usize),
     /// The Borders of a table.
     TableBorders(SpanRef, usize),
+    /// The Shading of a table's cell (row, column).
+    CellShading(SpanRef, usize, usize, usize),
     /// The content controls of a part of the text, or the document's with
     /// a title (false) or tag (true).
     Controls(SpanRef, Option<(bool, Rc<str>)>),
@@ -251,6 +254,7 @@ impl WObj {
             WObj::Tocs => "TablesOfContents",
             WObj::Toc(_) => "TableOfContents",
             WObj::TableBorders(..) => "Borders",
+            WObj::CellShading(..) => "Shading",
             WObj::Controls(..) => "ContentControls",
             WObj::Control(_) => "ContentControl",
             WObj::Entries(_) => "ContentControlListEntries",

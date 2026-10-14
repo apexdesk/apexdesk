@@ -503,7 +503,8 @@ pub fn apply(ctx: &egui::Context) {
     let requested = std::mem::take(&mut d.requested);
     let Some(mut defs) = d.defs.take() else { return };
     for key in requested {
-        let faces = d.families[&key].faces.clone();
+        // A document's embedded family may have gone with it since.
+        let Some(faces) = d.families.get(&key).map(|f| f.faces.clone()) else { continue };
         let mut loaded: [Option<String>; 4] = Default::default();
         for (s, f) in faces.iter().enumerate() {
             let Some((path, index, _, _)) = f else { continue };

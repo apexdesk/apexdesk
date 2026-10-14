@@ -1707,7 +1707,27 @@ fn styles_xml(doc: &Document) -> String {
     s.push_str(&notes::styles());
     add(&mut s, "VerbatimChar", &format!(r#"<w:style w:type="character" w:styleId="VerbatimChar"><w:name w:val="Verbatim Char"/><w:basedOn w:val="DefaultParagraphFont"/><w:rPr><w:rFonts w:ascii="{m}" w:hAnsi="{m}" w:cs="{m}"/></w:rPr></w:style>"#, m = MONO_FONT));
     s.push_str("</w:styles>");
-    s
+    unique_styles(&s)
+}
+
+/// `s` with only the first `w:style` of each styleId (a document's custom
+/// style can share a built-in's id, "TOC3" say; ids must be unique).
+fn unique_styles(s: &str) -> String {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find("<w:style ") {
+        out.push_str(&rest[..i]);
+        let el = &rest[i..];
+        let end = el.find("</w:style>").map_or(el.len(), |e| e + "</w:style>".len());
+        let id = el[..end].split("w:styleId=\"").nth(1).and_then(|r| r.split('"').next());
+        if id.is_none_or(|id| seen.insert(id.to_string())) {
+            out.push_str(&el[..end]);
+        }
+        rest = &el[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Numbering definitions used while writing: abstract formats (bullet,
@@ -1856,11 +1876,12 @@ fn write_rpr(out: &mut String, a: &Attrs, link: bool) {
     } else if let Some(cs) = cs_size {
         let _ = write!(p, r#"<w:szCs w:val="{cs}"/>"#);
     }
-    if let Some(h) = a.highlight {
-        let _ = write!(p, r#"<w:shd w:val="clear" w:color="auto" w:fill="{:06X}"/>"#, h & 0xFF_FFFF);
-    }
+    // The schema's order: u before shd.
     if a.underline {
         p.push_str(&crate::docx_fx::underline_xml(&fx));
+    }
+    if let Some(h) = a.highlight {
+        let _ = write!(p, r#"<w:shd w:val="clear" w:color="auto" w:fill="{:06X}"/>"#, h & 0xFF_FFFF);
     }
     if let Some(x) = asian {
         crate::docx_asian::write_fit(&mut p, x);
@@ -1993,7 +2014,7 @@ fn hf_parts(doc: &Document, w: &mut Shared) -> (Vec<crate::docx_hf::Part>, Vec<S
             let tag = if header { "hdr" } else { "ftr" };
             let mut xml = String::from(HEADER);
             let vml = if header && wm.is_some() { docx_layout::VML_NS } else { "" };
-            let _ = write!(xml, r#"<w:{tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"{vml}>"#);
+            let _ = write!(xml, r#"<w:{tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" mc:Ignorable="w14"{vml}>"#);
             if header {
                 xml.push_str(&wm_xml);
             }
@@ -2396,7 +2417,7 @@ pub fn write_as(doc: &Document, flavor: crate::Flavor) -> Vec<u8> {
     let mut z = ZipWriter::new();
     let (kept_rels, kept_pkg, kept_types) = crate::ooxml_keep::write_common(&mut z, &doc.kept, "word", None);
     let kept = crate::macro_parts::write(&mut z, &doc.macros, "word", flavor);
-    z.add("[Content_Types].xml", format!("{}{}{}{}{}{}{}{}{}{}{}{}{}", HEADER, r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>"#, w.media.content_types(), format!(r#"<Override PartName="/word/document.xml" ContentType="{}"/>{}"#, flavor.document_type(), kept.types), r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>"#, crate::props::content_types(&doc.meta), r#"<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/word/theme/theme1.xml" ContentType=""#, crate::theme_xml::CONTENT_TYPE, r#""/>"#, crate::docx_hf::content_types(&hf_parts), format!("{note_types}{comment_types}{}{}", if doc.biblio.sources.is_empty() { "" } else { crate::docx_biblio::CONTENT_TYPE }, if doc.fonts.faces.is_empty() { "" } else { crate::docx_fonts::CONTENT_TYPES }) + if doc.book.is_some() { crate::book_xml::DOCX_CONTENT_TYPE } else { "" }, kept_types, "</Types>").as_bytes(), true);
+    z.add("[Content_Types].xml", format!("{}{}{}{}{}{}{}{}{}{}{}{}{}", HEADER, r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>"#, w.media.content_types(), format!(r#"<Override PartName="/word/document.xml" ContentType="{}"/>{}"#, flavor.document_type(), kept.types), r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>"#, crate::props::content_types(&doc.meta), r#"<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/word/theme/theme1.xml" ContentType=""#, crate::theme_xml::CONTENT_TYPE, r#""/>"#, crate::docx_hf::content_types(&hf_parts), format!("{note_types}{comment_types}{}{}", if crate::docx_biblio::written(&doc.biblio) { crate::docx_biblio::CONTENT_TYPE } else { "" }, if doc.fonts.faces.is_empty() { "" } else { crate::docx_fonts::CONTENT_TYPES }) + if doc.book.is_some() { crate::book_xml::DOCX_CONTENT_TYPE } else { "" }, kept_types, "</Types>").as_bytes(), true);
     z.add("_rels/.rels", format!(r#"{HEADER}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>{}{}{kept_pkg}</Relationships>"#, crate::props::rels(&doc.meta), kept.root_rels).as_bytes(), true);
     let mut rels = String::from(HEADER);
     rels.push_str(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>"#);
@@ -2465,8 +2486,13 @@ pub fn write_as(doc: &Document, flavor: crate::Flavor) -> Vec<u8> {
         let _ = write!(part_rels, r#"<Relationship Id="rIdL{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="{}" TargetMode="External"/>"#, i + 1, esc(l));
     }
     part_rels.push_str(&w.media.rels());
+    // Validators refuse a header's relationship to an ink part: there,
+    // ink is its freeform fallback alone.
+    for i in 1..=w.media.inks.len() {
+        part_rels = part_rels.replace(&format!(r#"<Relationship Id="rIdInk{i}" Type="{}" Target="ink/ink{i}.xml"/>"#, crate::inkml::REL_TYPE), "");
+    }
     for p in &hf_parts {
-        z.add(&format!("word/{}", p.file), p.xml.as_bytes(), true);
+        z.add(&format!("word/{}", p.file), crate::docx_ink::fallback_only(&p.xml).as_bytes(), true);
         let extra = p.rels.as_deref().unwrap_or("");
         z.add(&format!("word/_rels/{}.rels", p.file), format!(r#"{HEADER}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{part_rels}{extra}</Relationships>"#).as_bytes(), true);
     }

@@ -59,7 +59,7 @@ fn out_of_range() -> Error {
 }
 
 /// A WdColorIndex (0: none).
-fn index_color(n: i64) -> R<Option<u32>> {
+pub(super) fn index_color(n: i64) -> R<Option<u32>> {
     match n {
         0 => Ok(None),
         1..=16 => Ok(Some(INDEX[n as usize - 1])),
@@ -68,7 +68,7 @@ fn index_color(n: i64) -> R<Option<u32>> {
 }
 
 /// The WdColorIndex nearest a color.
-fn color_index(c: u32) -> i32 {
+pub(super) fn color_index(c: u32) -> i32 {
     let d = |a: u32, b: u32| (0..3).map(|k| (((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32).pow(2)).sum::<i32>();
     INDEX.iter().enumerate().min_by_key(|(_, x)| d(**x, c)).map_or(0, |(i, _)| i as i32 + 1)
 }

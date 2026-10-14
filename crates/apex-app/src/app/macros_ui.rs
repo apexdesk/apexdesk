@@ -860,6 +860,12 @@ impl App {
                 .resizable(true)
                 .collapsible(false)
                 .show(ctx, |ui| changed = e.ui(ui, conf));
+            // Escape closes it when it is in front and no field takes the
+            // key (the first Escape only leaves the code).
+            let front = ctx.top_layer_id().is_some_and(|l| l.id == egui::Id::new("macro_editor"));
+            if front && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                open = false;
+            }
         }
         if changed {
             e.dirty = true;

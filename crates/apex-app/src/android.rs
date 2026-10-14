@@ -149,6 +149,35 @@ fn insets() -> [i32; 5] {
     .unwrap_or([0; 5])
 }
 
+/// Files other apps opened with ApexDesk since the last call (the
+/// activity takes them from the intent: their path, or a copy).
+pub fn opened() -> Vec<std::path::PathBuf> {
+    use jni::objects::JString;
+    use jni::{jni_sig, jni_str};
+    with_activity(|env, activity| {
+        let class = env.get_object_class(activity)?;
+        let list = env.call_static_method(&class, jni_str!("takeOpened"), jni_sig!("()Ljava/lang/String;"), &[])?.l()?;
+        if list.is_null() {
+            return Ok(Vec::new());
+        }
+        let list = env.cast_local::<JString>(list)?.try_to_string(env)?;
+        Ok(list.lines().filter(|l| !l.is_empty()).map(std::path::PathBuf::from).collect())
+    })
+    .unwrap_or_default()
+}
+
+/// A file was saved: a copy of another app's file goes back to it. False
+/// when it couldn't (the changes are only in the copy).
+pub fn saved(path: &std::path::Path) -> bool {
+    use jni::objects::JValue;
+    use jni::{jni_sig, jni_str};
+    with_activity(|env, activity| {
+        let p = env.new_string(path.to_string_lossy())?;
+        env.call_method(activity, jni_str!("saved"), jni_sig!("(Ljava/lang/String;)Z"), &[JValue::Object(&p)])?.z()
+    })
+    .unwrap_or(true)
+}
+
 /// Fingers on the screen, as on a phone: a tap clicks, a swipe scrolls
 /// and, let go while moving, goes on and slows down; holding still and
 /// lifting is a right click (context menus), holding still and then moving

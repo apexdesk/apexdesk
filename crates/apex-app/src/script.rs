@@ -58,7 +58,8 @@ pub enum Step {
     Sleep(u64),
 }
 
-/// A file "dropped" by the script.
+/// A file "dropped" by the script, or dropped on the window on Wayland
+/// (`sysclip::wayland_drops`).
 #[derive(Debug)]
 pub struct ScriptFile(pub PathBuf);
 

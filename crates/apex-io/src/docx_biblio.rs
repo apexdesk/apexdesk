@@ -153,11 +153,16 @@ fn add_author(s: &mut Source, last: &str, first: &str) {
     }
 }
 
+/// Whether `write` writes a part for `b`.
+pub(crate) fn written(b: &Bibliography) -> bool {
+    !b.sources.is_empty() || b.style != CiteStyle::default()
+}
+
 /// Writes the sources part (with its properties) when there are sources
 /// or a style other than the default: Word keeps the chosen style there
 /// even with no sources.
 pub(crate) fn write(z: &mut ZipWriter, b: &Bibliography) -> bool {
-    if b.sources.is_empty() && b.style == CiteStyle::default() {
+    if !written(b) {
         return false;
     }
     let (name, xsl) = match b.style {

@@ -149,3 +149,27 @@ mod tests {
         assert_eq!(text_of(&[b'a', 0xE9, 0]), "aé");
     }
 }
+
+/// Files dragged onto the window on the Wayland backend, where winit gives
+/// none: vendor/smithay-clipboard takes them, and here they become egui's.
+#[cfg(all(target_os = "linux", not(test)))]
+pub fn wayland_drops(ctx: &eframe::egui::Context, raw: &mut eframe::egui::RawInput) {
+    static WAKER: std::sync::Once = std::sync::Once::new();
+    if !smithay_clipboard::active() {
+        return;
+    }
+    WAKER.call_once(|| {
+        let ctx = ctx.clone();
+        smithay_clipboard::set_drop_waker(move || ctx.request_repaint());
+    });
+    let dropped = smithay_clipboard::take_dropped();
+    if !dropped.is_empty() {
+        raw.hovered_files.clear();
+        raw.dropped_files.extend(dropped.into_iter().map(|p| std::sync::Arc::new(crate::script::ScriptFile(p)) as _));
+    } else if smithay_clipboard::hovering() {
+        raw.hovered_files.push(eframe::egui::HoveredFile::default());
+    }
+}
+
+#[cfg(all(target_os = "linux", test))]
+pub fn wayland_drops(_: &eframe::egui::Context, _: &mut eframe::egui::RawInput) {}

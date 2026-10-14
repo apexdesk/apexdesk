@@ -2,6 +2,7 @@ package com.apexdesk.app;
 
 import android.Manifest;
 import android.app.NativeActivity;
+import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -9,12 +10,23 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
+import android.database.Cursor;
 import android.view.DisplayCutout;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * The NativeActivity full screen (immersive): the system's bars hide (a
@@ -73,6 +85,183 @@ public class MainActivity extends NativeActivity {
         });
         hideBars();
         later(0);
+        // Copies of files opened before: this run can't write them back.
+        remove(new File(getCacheDir(), "opened"));
+        take(getIntent());
+    }
+
+    private static void remove(File f) {
+        File[] inner = f.listFiles();
+        if (inner != null) {
+            for (File g : inner) {
+                remove(g);
+            }
+        }
+        f.delete();
+    }
+
+    /** Files other apps opened with ApexDesk, as paths, until taken. */
+    private static final ArrayList<String> opened = new ArrayList<>();
+    /** The copies of files that had no path, and where they came from. */
+    private static final HashMap<String, Uri> copies = new HashMap<>();
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        take(intent);
+    }
+
+    /**
+     * A file another app opens with ApexDesk (the manifest's VIEW and EDIT
+     * filter). Read off the UI thread: a copy may take a while.
+     */
+    private void take(Intent intent) {
+        if (intent == null || intent.getData() == null
+                || (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+                || !(Intent.ACTION_VIEW.equals(intent.getAction()) || Intent.ACTION_EDIT.equals(intent.getAction()))) {
+            return;
+        }
+        final Uri uri = intent.getData();
+        final boolean writable = (intent.getFlags() & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String path = resolve(uri, writable);
+                if (path != null) {
+                    synchronized (opened) {
+                        opened.add(path);
+                    }
+                }
+            }
+        }).start();
+    }
+
+    /** The files opened since the last call, one path a line (the program asks each frame). */
+    public static String takeOpened() {
+        synchronized (opened) {
+            if (opened.isEmpty()) {
+                return null;
+            }
+            String all = String.join("\n", opened);
+            opened.clear();
+            return all;
+        }
+    }
+
+    /**
+     * The file's own path where the program may read it (so saving writes
+     * it in place), or else a copy in the cache, written back on saving
+     * when the other app allowed it.
+     */
+    private String resolve(Uri uri, boolean writable) {
+        if (ContentResolver.SCHEME_FILE.equals(uri.getScheme())) {
+            return uri.getPath();
+        }
+        if (!ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) {
+            return null;
+        }
+        if (hasFileAccess()) {
+            String real = realPath(uri);
+            if (real != null && new File(real).canRead()) {
+                return real;
+            }
+        }
+        String name = displayName(uri);
+        File dir = new File(getCacheDir(), "opened/" + System.nanoTime());
+        File copy = new File(dir, name);
+        if (!dir.mkdirs()) {
+            return null;
+        }
+        try (InputStream in = getContentResolver().openInputStream(uri);
+             OutputStream out = new FileOutputStream(copy)) {
+            if (in == null) {
+                return null;
+            }
+            pipe(in, out);
+        } catch (Exception e) {
+            return null;
+        }
+        if (writable) {
+            synchronized (copies) {
+                copies.put(copy.getPath(), uri);
+            }
+        }
+        return copy.getPath();
+    }
+
+    /** Where a document of the shared storage is, if the provider tells. */
+    private String realPath(Uri uri) {
+        try {
+            if ("com.android.externalstorage.documents".equals(uri.getAuthority()) && DocumentsContract.isDocumentUri(this, uri)) {
+                String[] id = DocumentsContract.getDocumentId(uri).split(":", 2);
+                if (id.length == 2 && "primary".equalsIgnoreCase(id[0])) {
+                    return Environment.getExternalStorageDirectory() + "/" + id[1];
+                }
+                return id.length == 2 ? "/storage/" + id[0] + "/" + id[1] : null;
+            }
+            try (Cursor c = getContentResolver().query(uri, new String[] { "_data" }, null, null, null)) {
+                if (c != null && c.moveToFirst() && !c.isNull(0)) {
+                    return c.getString(0);
+                }
+            }
+        } catch (Exception e) {
+            // Providers without the column, or that refuse the query.
+        }
+        return null;
+    }
+
+    /** The file's name as the other app shows it, safe as a file name. */
+    private String displayName(Uri uri) {
+        String name = null;
+        try (Cursor c = getContentResolver().query(uri, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null)) {
+            if (c != null && c.moveToFirst() && !c.isNull(0)) {
+                name = c.getString(0);
+            }
+        } catch (Exception e) {
+            // No name: the URI's last part.
+        }
+        if (name == null) {
+            name = uri.getLastPathSegment();
+        }
+        if (name != null) {
+            name = name.substring(name.lastIndexOf('/') + 1);
+        }
+        return name == null || name.isEmpty() || name.equals(".") || name.equals("..") ? "document" : name;
+    }
+
+    /**
+     * The program saved `path`: a copy of another app's file goes back to
+     * it. False when it is a copy that couldn't go back (the other app
+     * didn't allow writing, or refused).
+     */
+    public boolean saved(String path) {
+        Uri uri;
+        boolean copy = path.startsWith(new File(getCacheDir(), "opened").getPath() + "/");
+        synchronized (copies) {
+            uri = copies.get(path);
+        }
+        if (uri == null) {
+            return !copy;
+        }
+        try (InputStream in = new FileInputStream(path);
+             OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+            if (out == null) {
+                return false;
+            }
+            pipe(in, out);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void pipe(InputStream in, OutputStream out) throws java.io.IOException {
+        byte[] buf = new byte[65536];
+        int n;
+        while ((n = in.read(buf)) > 0) {
+            out.write(buf, 0, n);
+        }
     }
 
     /**
