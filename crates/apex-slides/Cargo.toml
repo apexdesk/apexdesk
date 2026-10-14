@@ -7,3 +7,5 @@ publish.workspace = true
 
 [dependencies]
 apex-doc.workspace = true
+# Combine Shapes: union, intersection... of the shapes' outlines.
+i_overlay = { version = "=9.0.0", default-features = false }

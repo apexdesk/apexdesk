@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/apex-sheet", "crates/apex-doc", "crates/apex-slides","crates/apex-io", "crates/apex-pdf", "crates/apex-sign", "crates/apex-spell", "crates/apex-i18n", "crates/apex-tui", "crates/apex-query", "crates/apex-db", "crates/apex-vba", "crates/apex-app", "crates/apex-android", "crates/apex-bench"]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false

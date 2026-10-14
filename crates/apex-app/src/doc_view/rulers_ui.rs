@@ -414,7 +414,7 @@ mod tests {
         let ctx = egui::Context::default();
         fonts::install(&ctx);
         let mut v = DocView::new(Document::from_paragraphs(vec![Paragraph::new("Tabs\tare\there")]));
-        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: false, file_name: "n".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: false, file_name: "n".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         let mut frame = |v: &mut DocView, events: Vec<egui::Event>| {
             let input = egui::RawInput { events, screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))), ..Default::default() };
             ctx.run_ui(input, |ui| v.ui(ui, &mut shell)).textures_delta.clear();
@@ -440,7 +440,7 @@ mod tests {
         let ctx = egui::Context::default();
         fonts::install(&ctx);
         let mut v = DocView::new(Document::from_paragraphs(vec![Paragraph::new("Text")]));
-        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: false, file_name: "n".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: false, file_name: "n".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         let mut frame = |v: &mut DocView, events: Vec<egui::Event>| {
             let input = egui::RawInput { events, screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))), ..Default::default() };
             ctx.run_ui(input, |ui| v.ui(ui, &mut shell)).textures_delta.clear();
@@ -474,7 +474,7 @@ mod tests {
         let ctx = egui::Context::default();
         fonts::install(&ctx);
         let mut v = DocView::new(Document::from_paragraphs(vec![Paragraph::new("Text")]));
-        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: false, file_name: "n".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: false, file_name: "n".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         let mut frame = |v: &mut DocView, events: Vec<egui::Event>| {
             let input = egui::RawInput { events, screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))), ..Default::default() };
             let mut out = ctx.run_ui(input, |ui| v.ui(ui, &mut shell));

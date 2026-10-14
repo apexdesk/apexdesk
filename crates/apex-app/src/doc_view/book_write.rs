@@ -67,7 +67,7 @@ mod tests {
     fn writing_without_distractions_goes_full_screen_and_back() {
         let mut v = DocView::new(Document::from_paragraphs(vec![Paragraph::new("x")]));
         v.make_book();
-        let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "libro".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "libro".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         v.start_quiet();
         assert!(v.quiet());
         v.quiet_frame(&mut shell);

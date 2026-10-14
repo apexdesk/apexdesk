@@ -83,6 +83,49 @@ pub enum Value {
     Missing,
     /// An error value (CVErr, a cell with #N/A...): its number.
     Error(i32),
+    /// A variable of a user-defined type (`Type ... End Type`): a value,
+    /// copied on write like arrays.
+    Record(Rc<Record>),
+}
+
+/// The value of a user-defined type: its name and fields in order.
+#[derive(Clone, Debug)]
+pub struct Record {
+    pub name: Rc<str>,
+    pub fields: Vec<Field>,
+}
+
+/// A field of a [`Record`]: what it takes (like a variable's slot) and
+/// what it holds.
+#[derive(Clone, Debug)]
+pub struct Field {
+    /// Lowercase.
+    pub name: Rc<str>,
+    pub ty: VType,
+    /// `String * n`.
+    pub fixed: Option<u32>,
+    /// The user-defined type it holds (its elements', for an array).
+    pub udt: Option<Rc<str>>,
+    pub val: Value,
+}
+
+impl Record {
+    pub fn field_mut(&mut self, name: &str) -> R<&mut Field> {
+        self.fields.iter_mut().find(|f| f.name.eq_ignore_ascii_case(name)).ok_or_else(|| Error::new(461, format!("Method or data member not found: {name}")))
+    }
+
+    pub fn field(&self, name: &str) -> R<&Field> {
+        self.fields.iter().find(|f| f.name.eq_ignore_ascii_case(name)).ok_or_else(|| Error::new(461, format!("Method or data member not found: {name}")))
+    }
+}
+
+/// `s` as a `String * len`: cut or padded with spaces.
+pub fn fixed_len(s: &str, len: u32) -> Value {
+    let len = len as usize;
+    let mut out: String = s.chars().take(len).collect();
+    let have = out.chars().count();
+    out.extend(std::iter::repeat_n(' ', len - have));
+    Value::str(out)
 }
 
 /// An array: bounds of each dimension and the elements, the last index
@@ -192,6 +235,11 @@ thread_local! {
 /// Dates are shown and read in the order of `locale` (CStr, CDate).
 pub fn set_locale(locale: Locale) {
     CONV.with(|c| *c.borrow_mut() = Conv { locale, date_code: locale.short_date_code() });
+}
+
+/// The locale of [`set_locale`].
+pub fn locale() -> Locale {
+    conv().locale
 }
 
 fn conv() -> Conv {
@@ -374,6 +422,10 @@ impl Value {
     pub fn coerce(self, ty: VType) -> R<Value> {
         Ok(match ty {
             VType::Variant => self,
+            _ if matches!(self, Value::Record(_)) => match ty {
+                VType::Object => self,
+                _ => return Err(Error::type_mismatch()),
+            },
             VType::Boolean => Value::Bool(self.to_bool()?),
             VType::Byte => {
                 let v = self.to_i64()?;
@@ -408,10 +460,12 @@ impl Value {
             Value::Date(_) => "Date".into(),
             Value::Str(_) => "String".into(),
             Value::Array(a) => format!("{}()", Value::type_of(a.ty)),
+            Value::Object(Obj::Instance(i)) => i.class.to_string(),
             Value::Object(o) => o.type_name().into(),
             Value::Nothing => "Nothing".into(),
             Value::Missing => "Error".into(),
             Value::Error(_) => "Error".into(),
+            Value::Record(r) => r.name.to_string(),
         }
     }
 
@@ -444,6 +498,7 @@ impl Value {
             Value::Object(_) | Value::Nothing => 9,
             Value::Error(_) | Value::Missing => 10,
             Value::Bool(_) => 11,
+            Value::Record(_) => 36,
             Value::Array(a) => 8192 + match a.ty {
                 VType::Variant => 12,
                 t => t.default_value().var_type(),

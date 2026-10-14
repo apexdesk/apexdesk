@@ -712,6 +712,15 @@ pub trait EvalContext {
     fn spill_range(&self, _sheet: usize, _cell: CellRef) -> Option<Range> {
         None
     }
+    /// The value of function `name` of the workbook's macros, called from
+    /// `cell` (None: there is no such function).
+    /// Whether the workbook's macros have function `name`.
+    fn has_udf(&self, _name: &str) -> bool {
+        false
+    }
+    fn call_udf(&self, _name: &str, _args: Vec<crate::udf::UdfArg>, _sheet: usize, _cell: CellRef) -> Option<Value> {
+        None
+    }
     /// The formula in a cell, as shown in the formula bar.
     fn formula_text(&self, _sheet: usize, _cell: CellRef) -> Option<String> {
         None
@@ -1417,6 +1426,19 @@ impl<'a> Env<'a> {
                 Some(Bound::V(Value::Lambda(l))) => {
                     let vals = args.iter().map(|a| self.bound(a)).collect();
                     self.invoke(&l, vals)
+                }
+                // A function of the workbook's macros.
+                None if self.ctx.has_udf(name) => {
+                    use crate::udf::UdfArg;
+                    let vals = args
+                        .iter()
+                        .map(|a| match self.bound(a) {
+                            Bound::V(v) => UdfArg::Value(v),
+                            Bound::R(sheet, range) => UdfArg::Range { sheet, range },
+                            Bound::Omitted => UdfArg::Missing,
+                        })
+                        .collect();
+                    self.ctx.call_udf(name, vals, self.sheet, self.cell).unwrap_or(Value::Error(ErrorKind::Name))
                 }
                 _ => Value::Error(ErrorKind::Name),
             },
@@ -3153,7 +3175,8 @@ impl Criteria {
     }
 }
 
-pub(crate) fn wildcard(p: &[char], s: &[char]) -> bool {
+/// `*`, `?` and `~` as the criteria of COUNTIF and Find match them.
+pub fn wildcard(p: &[char], s: &[char]) -> bool {
     let budget = wild_budget(1 << 24);
     let mut work = budget;
     let r = wildcard_in(p, s, &mut work);

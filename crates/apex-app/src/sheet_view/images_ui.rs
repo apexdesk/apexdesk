@@ -378,6 +378,13 @@ impl SheetView {
                 return true;
             }
             resp.request_focus();
+            // A picture with a macro runs it; Ctrl+click selects it.
+            let picked = self.images.selected == Some((self.sheet, id));
+            if let Some(m) = self.sh().image(id).map(|i| i.macro_name.clone()).filter(|m| !m.is_empty() && handle == Handle::Move && !picked && !mods.command) {
+                self.images.selected = None;
+                self.click_macro(&m);
+                return true;
+            }
             self.images.selected = Some((self.sheet, id));
             self.marquee = false;
             if let Some(orig) = self.sh().image(id).cloned() {
@@ -493,6 +500,12 @@ impl SheetView {
         if ui.button(tr("image.back")).clicked() {
             if let Some((_, id)) = self.images.selected {
                 self.wb.reorder_image(self.sheet, id, false);
+            }
+            ui.close();
+        }
+        if ui.button(format!("{}…", tr("macros.assign"))).clicked() {
+            if let Some((_, id)) = self.images.selected {
+                self.open_assign_macro(super::macro_hooks::Clickable::Image(id));
             }
             ui.close();
         }
@@ -803,6 +816,7 @@ impl SheetView {
         self.barcode_dialog(ctx);
         self.shape_dialog(ctx);
         self.control_dialog(ctx);
+        self.assign_macro_dialog(ctx);
         let Some(d) = &mut self.images.dialog else { return };
         let mut res = widgets::dialog(ctx, "image-props", &tr("image.size"), 420.0, |ui| props_ui(ui, d));
         if std::mem::take(&mut d.fresh) && res == DialogResult::Cancel && !ctx.input(|i| i.key_pressed(Key::Escape)) {

@@ -873,6 +873,21 @@ impl SheetView {
 
     /// The View tab's own groups; the application adds the Window and
     /// Screen groups every kind of tab has (`App::view_tab`).
+    /// The Controls group of the Developer tab: form controls to insert,
+    /// and the selected one's settings (its macro among them).
+    pub(crate) fn developer_controls(&mut self, b: &mut Body) {
+        let a = b.accent();
+        b.group("developer.controls", Icon::Control, |ui| {
+            toolstrip::large_menu(ui, Icon::Control, tr("developer.insert"), tr("control.form_tip"), a, |ui| self.form_controls_menu(ui));
+            let control = self.selected_shape().is_some_and(|s| s.control.is_some());
+            ui.add_enabled_ui(control, |ui| {
+                if toolstrip::large(ui, Icon::Options, tr("developer.properties"), tr("developer.properties_tip"), a, false).on_disabled_hover_text(tr("developer.no_control")).clicked() {
+                    self.open_control_dialog();
+                }
+            });
+        });
+    }
+
     pub(crate) fn view_tab(&mut self, b: &mut Body, shell: &mut Shell) {
         let a = b.accent();
         b.group("toolstrip.g.workbook_views", Icon::PageBreak, |ui| {

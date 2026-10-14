@@ -145,6 +145,8 @@ fn sample(i: &Item) -> Vec<&'static str> {
     match i.name {
         "MacroSecurity" => vec!["signed"],
         "TrustedLocations" => vec!["/Volumes/Company/Macros", "/Users/Shared/Macros"],
+        "TrustedPublishers" => vec!["5F:3A:9C:12:E4:7B:08:D6:21:AF:64:C3:90:1E:B7:58:2D:F0:46:9A:BB:13:7C:E5:08:42:D9:61:FA:2C:85:30"],
+        "DisableMacroEditor" => vec!["0"],
         "TemplatesFolder" => vec!["/Volumes/Company/Templates"],
         "BuildingBlocksFolder" => vec!["/Volumes/Company/Building Blocks"],
         "LibraryFolder" => vec!["/Volumes/Company/Library"],

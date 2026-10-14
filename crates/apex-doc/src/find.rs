@@ -414,11 +414,26 @@ impl Document {
         if let Some(h) = only {
             hits.retain(|&(a, b, _)| (a, b) == h);
         }
-        let Some(first) = hits.first().map(|h| h.0.para) else { return Ok((0, sel.cursor)) };
+        let n = hits.len();
+        let caret = self.replace_hits(&hits, with.is_empty() && !fmt.is_empty(), fmt, sel);
+        Ok((n, caret))
+    }
+
+    /// The matches of `query` in order, each with the text `with` (Word's
+    /// codes and groups expanded) puts in its place.
+    pub fn find_hits(&self, query: &str, o: &FindOpts, with: &str) -> Result<Vec<(Pos, Pos, String)>, String> {
+        self.scan(query, o, Some(with))
+    }
+
+    /// Replaces `hits` (from [`Document::find_hits`], in order, not
+    /// overlapping) with their texts, giving them the formatting `fmt`;
+    /// `keep_text` keeps the text and only formats it. One undo step.
+    /// Returns the end of the first replacement (the caret when none).
+    pub fn replace_hits(&mut self, hits: &[(Pos, Pos, String)], keep_text: bool, fmt: &FindFormat, sel: Selection) -> Pos {
+        let Some(first) = hits.first().map(|h| h.0.para) else { return sel.cursor };
         let last = hits.iter().map(|h| h.1.para).max().unwrap_or(first);
         let before = self.paragraphs[first..=last].to_vec();
         let n0 = self.paragraphs.len();
-        let keep_text = with.is_empty() && !fmt.is_empty();
         let styles = self.styles.clone();
         let restyle = |d: &mut Document, from: usize, to: usize| {
             if let Some((k, c)) = fmt.para_style {
@@ -456,7 +471,7 @@ impl Document {
         let after_len = (last + 1 - first + self.paragraphs.len()).saturating_sub(n0);
         let caret = self.clamp(caret);
         self.record(first, before, after_len, sel, Selection::caret(caret), EditKind::Replace);
-        Ok((hits.len(), caret))
+        caret
     }
 }
 

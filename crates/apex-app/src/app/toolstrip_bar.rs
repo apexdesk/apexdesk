@@ -37,7 +37,8 @@ impl App {
             Some(View::Db(v)) => v.toolstrip_tabs(),
             Some(View::Note(v)) => v.toolstrip_tabs(),
         };
-        super::view_tab::with_view_tab(tabs)
+        let developer = self.settings.developer_tab && matches!(self.tabs.get(self.active).map(|t| &t.view), Some(View::Sheet(_) | View::Doc(_)));
+        super::developer_tab::with_developer_tab(super::view_tab::with_view_tab(tabs), developer)
     }
 
     pub(super) fn accent(&self) -> Color32 {
@@ -107,10 +108,13 @@ impl App {
     }
 
     /// Draws the toolstrip tab `id` in the current [`toolstrip::Style`].
-    fn draw_tab(&mut self, ui: &mut egui::Ui, tabs: &[TabDef], id: &'static str, shell: &mut Shell) {
+    pub(super) fn draw_tab(&mut self, ui: &mut egui::Ui, tabs: &[TabDef], id: &'static str, shell: &mut Shell) {
         let label = tabs.iter().find(|t| t.id == id).map_or("", |t| tr(t.label));
         if id == super::view_tab::VIEW {
             return toolstrip::within(label, || self.view_tab(ui, shell));
+        }
+        if id == super::developer_tab::DEVELOPER {
+            return toolstrip::within(label, || self.developer_tab(ui, shell));
         }
         toolstrip::within(label, || match self.tabs.get_mut(self.active).map(|t| &mut t.view) {
             Some(View::Sheet(v)) => v.toolstrip(ui, id, shell),
@@ -167,7 +171,7 @@ impl App {
 
     /// Runs a command chosen in the search and collects the search's
     /// commands.
-    fn toolstrip_tasks(&mut self, ui: &mut egui::Ui, tabs: &[TabDef], shell: &mut Shell) {
+    pub(super) fn toolstrip_tasks(&mut self, ui: &mut egui::Ui, tabs: &[TabDef], shell: &mut Shell) {
         // A command chosen in the search: its button, clicked off screen.
         if let Some(c) = self.pending_cmd.take() {
             toolstrip::offscreen_ui(ui, |ui| {

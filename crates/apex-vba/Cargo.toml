@@ -7,3 +7,4 @@ publish.workspace = true
 
 [dependencies]
 apex-sheet.workspace = true
+apex-doc.workspace = true

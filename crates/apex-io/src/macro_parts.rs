@@ -28,7 +28,7 @@ pub struct Flavor {
 impl Flavor {
     pub fn from_path(p: &std::path::Path) -> Flavor {
         let ext = p.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
-        Flavor { macros: matches!(ext.as_str(), "xlsm" | "xltm" | "docm" | "dotm"), template: matches!(ext.as_str(), "xltx" | "xltm" | "dotx" | "dotm") }
+        Flavor { macros: matches!(ext.as_str(), "xlsm" | "xltm" | "docm" | "dotm" | "pptm" | "potm" | "ppsm"), template: matches!(ext.as_str(), "xltx" | "xltm" | "dotx" | "dotm") }
     }
 
     /// The flavor of `path`; for other extensions (a temporary file), the

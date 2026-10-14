@@ -207,3 +207,28 @@ fn edits_keep_the_rest() {
     let ids: Vec<u32> = d.slides.iter().map(|s| s.id).collect();
     assert_eq!(ids, back.slides.iter().map(|s| s.id).collect::<Vec<_>>());
 }
+
+#[test]
+fn macro_project_written_into_pptm() {
+    // A new project, as the macro editor makes it, goes into a .pptm.
+    let mut deck = build::new_deck(0);
+    let bin = apex_io::vba::new_presentation_project();
+    deck.macros.set_project(bin.clone());
+    let data = pptx::write_as(&deck, PptFlavor { macros: true, ..Default::default() });
+    check_package(&data);
+    let back = pptx::read(&data).unwrap();
+    assert_eq!(back.macros.project.as_deref(), Some(&bin));
+    // Edited again, the new code replaces the one read.
+    let mut edited = back.clone();
+    let mut p = apex_io::vba::read(&bin).unwrap();
+    let mut m = apex_io::vba::VbaModule::standard("Module1");
+    m.code = "Sub Hola()\nEnd Sub\n".into();
+    p.modules.push(m);
+    edited.macros.set_project(p.write().unwrap());
+    let again = pptx::read(&pptx::write_as(&edited, PptFlavor { macros: true, ..Default::default() })).unwrap();
+    let code = apex_io::vba::read(again.macros.project.as_deref().unwrap()).unwrap();
+    assert!(code.modules[0].code.contains("Sub Hola"));
+    // As .pptx the project goes.
+    let plain = pptx::read(&pptx::write_as(&edited, PptFlavor::default())).unwrap();
+    assert!(plain.macros.project.is_none());
+}

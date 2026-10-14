@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">Solo macro firmate con un certificato attendibile</string>
       <string id="TrustedLocations">Percorsi attendibili</string>
       <string id="TrustedLocations_Help">Cartelle i cui file si aprono con le macro attivate. Sostituiscono quelle aggiunte dagli utenti.</string>
+      <string id="TrustedPublishers">Autori di macro attendibili</string>
+      <string id="TrustedPublishers_Help">Certificati (impronte SHA-256 o SHA-1, in esadecimale) le cui macro firmate vengono eseguite con «Solo macro firmate». Se impostato, vengono eseguite solo le macro firmate da questi e gli utenti non possono aggiungerne altri.</string>
+      <string id="DisableMacroEditor">Disattiva l'editor delle macro</string>
+      <string id="DisableMacroEditor_Help">1: l'editor delle macro (Alt+F11) non può essere aperto. Le macro vengono comunque eseguite secondo i criteri di sicurezza delle macro.</string>
       <string id="TemplatesFolder">Cartella dei modelli condivisi</string>
       <string id="TemplatesFolder_Help">Una cartella di modelli (docx, dotx, odt, xlsx, xltx, ods...) elencati in Nuovo da modello accanto a quelli dell'utente.</string>
       <string id="BuildingBlocksFolder">Cartella condivisa dei blocchi predefiniti</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">Percorsi attendibili</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">Autori di macro attendibili</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>Cartella dei modelli condivisi</label></textBox>

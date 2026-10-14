@@ -431,14 +431,24 @@ fn placer(shape: &Shape, rect: Rect) -> impl Fn(Pos2) -> Pos2 + '_ {
 /// The paths of a shape drawn with a preset's standard geometry, on the
 /// screen (turned and flipped); None: it is drawn by its kind.
 fn preset_paths(shape: &Shape, rect: Rect) -> Option<Vec<(Vec<(Vec<Pos2>, bool)>, apex_doc::PresetFill, bool)>> {
+    let (w, h) = (rect.width(), rect.height());
+    let paths = local_paths(shape, w, h)?;
+    let map = |(x, y): (f32, f32)| place(rect, shape.rotation, pos2(if shape.flip_h { w - x } else { x }, if shape.flip_v { h - y } else { y }));
+    Some(paths.into_iter().map(|p| (p.subpaths.into_iter().map(|(pts, closed)| (pts.into_iter().map(map).collect(), closed)).collect(), p.fill, p.stroke)).collect())
+}
+
+/// The paths of a shape's geometry (a drawn one, or a preset's) in its own
+/// `w` by `h` box.
+fn local_paths(shape: &Shape, w: f32, h: f32) -> Option<Vec<apex_doc::PresetPath>> {
+    if let Some(c) = &shape.custom {
+        let v = apex_doc::custom_paths(c, w, h);
+        return (!v.is_empty()).then_some(v);
+    }
     let g = shape.geometry()?;
     if matches!(g, "line" | "straightConnector1") {
         return None;
     }
-    let (w, h) = (rect.width(), rect.height());
-    let paths = apex_doc::preset_paths(g, w, h, &shape.adj)?;
-    let map = |(x, y): (f32, f32)| place(rect, shape.rotation, pos2(if shape.flip_h { w - x } else { x }, if shape.flip_v { h - y } else { y }));
-    Some(paths.into_iter().map(|p| (p.subpaths.into_iter().map(|(pts, closed)| (pts.into_iter().map(map).collect(), closed)).collect(), p.fill, p.stroke)).collect())
+    apex_doc::preset_paths(g, w, h, &shape.adj)
 }
 
 /// A fill color shaded as a preset's path says (the sides of a cube...).
@@ -537,7 +547,7 @@ pub(crate) fn convex_poly(pts: &[Pos2]) -> bool {
 /// picture, then the outlines, with arrowheads on the ends of open ones.
 fn paint_preset(p: &Painter, rect: Rect, shape: &Shape, paths: &[(Vec<(Vec<Pos2>, bool)>, apex_doc::PresetFill, bool)], line: Option<Stroke>, scale: f32) {
     let gradient = shape.gradient.as_ref().filter(|_| shape.fill.is_some() && !shape.kind.is_line());
-    let local = gradient.and_then(|_| shape.geometry()).and_then(|g| apex_doc::preset_paths(g, rect.width(), rect.height(), &shape.adj));
+    let local = gradient.and_then(|_| local_paths(shape, rect.width(), rect.height()));
     if let (Some(g), Some(local)) = (gradient, local) {
         let (w, h) = (rect.width(), rect.height());
         let place = placer(shape, rect);
@@ -1474,6 +1484,19 @@ mod tests {
         // Text goes in the preset's own rectangle.
         let tr = text_rect(&Shape { preset: Some(Arc::from("flowChartPunchedTape")), ..Shape::new(ShapeKind::Rect) }, rect, 1.0);
         assert!(tr.min.y > rect.min.y + 10.0 && tr.max.y < rect.max.y - 10.0, "{tr:?}");
+    }
+
+    #[test]
+    fn drawn_geometry_is_painted() {
+        let mut s = Shape::new(ShapeKind::Rect);
+        s.custom = Some(Arc::from(r#"<a:custGeom><a:pathLst><a:path w="10" h="10"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="10" y="0"/></a:lnTo><a:lnTo><a:pt x="0" y="10"/></a:lnTo><a:close/></a:path></a:pathLst></a:custGeom>"#));
+        let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(100.0, 50.0));
+        let paths = preset_paths(&s, rect).expect("drawn");
+        let (pts, closed) = &paths[0].0[0];
+        assert!(*closed && pts.len() == 3);
+        assert_eq!(pts[1], pos2(110.0, 10.0));
+        s.flip_h = true;
+        assert_eq!(preset_paths(&s, rect).unwrap()[0].0[0].0[1], pos2(10.0, 10.0));
     }
 
     #[test]

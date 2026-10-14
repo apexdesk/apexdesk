@@ -11,6 +11,7 @@ use eframe::egui::{self, Id};
 
 use super::{App, View};
 use crate::common::{self, Shell};
+use crate::i18n::tr;
 use crate::icons::Icon;
 use crate::toolstrip::{self, TabDef};
 
@@ -37,6 +38,9 @@ impl App {
         // pages; PDFs and databases have none of those.
         let workspace = matches!(view, View::Doc(_) | View::Sheet(_) | View::Slides(_) | View::Note(_));
         let macros = matches!(view, View::Doc(_) | View::Sheet(_));
+        // A phone showing the whole interface: the way back to its own.
+        let phone = super::phone::phone_device() && !self.settings.phone_ui;
+        let mut to_phone = false;
         toolstrip::body(ui, Id::new(("view_toolstrip", kind)), accent, |b| {
             match &mut *view {
                 View::Sheet(v) => v.view_tab(b, shell),
@@ -59,6 +63,15 @@ impl App {
             if macros {
                 common::macros_group(b, shell);
             }
+            if phone {
+                b.group("phone.interface", Icon::Window, |ui| {
+                    to_phone |= toolstrip::large(ui, Icon::Window, tr("phone.compact"), tr("phone.compact_tip"), a, false).clicked();
+                });
+            }
         });
+        if to_phone {
+            self.settings.phone_ui = true;
+            self.settings.save();
+        }
     }
 }

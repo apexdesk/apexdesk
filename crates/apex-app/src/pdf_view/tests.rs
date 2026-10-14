@@ -38,7 +38,7 @@ pub(super) fn file_of(objs: &[String]) -> Vec<u8> {
 }
 
 fn shell() -> Shell {
-    Shell { cmd: None, show_formula_bar: false, file_name: "t.pdf".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None }
+    Shell { cmd: None, show_formula_bar: false, file_name: "t.pdf".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None }
 }
 
 /// Runs a frame with these events.

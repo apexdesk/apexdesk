@@ -4,7 +4,8 @@
 //!
 //! The test PKI (tests/data): "ApexDesk Test Root CA" (RSA) issued Alice
 //! (RSA, alice-*.p12, password "secreto") and Bob (P-256, bob-empty.p12
-//! without password, bob-utf8.p12 with "ñandú"), made with OpenSSL.
+//! without password, bob-utf8.p12 with "ñandú"), made with OpenSSL; Carol
+//! (P-256, carol-code.p12 without password) signs code, self-signed.
 
 use std::io::{Read, Write};
 
@@ -535,4 +536,39 @@ fn packages_pdf_readers_take_for_pdfs() {
     assert_eq!(sigs.len(), 1);
     assert_eq!(sigs[0].status(), Status::ChangedAfter);
     assert!(!apex_sign::stamps_only(&sigs));
+}
+
+#[test]
+fn vba_projects_signed_here() {
+    let bin = apex_io::vba::new_workbook_project("ThisWorkbook", &["Sheet1".to_string()]).unwrap();
+    let mut p = apex_io::vba::read(&bin).unwrap();
+    let mut m = apex_io::vba::VbaModule::standard("Module1");
+    m.code = "Sub Hello()\n    MsgBox \"Hi\"\nEnd Sub\n".into();
+    p.modules.push(m);
+    // Written as usual, a module ends in a line break: the V3 readings
+    // differ and it isn't signed.
+    assert!(apex_sign::vba::sign(&alice(), &p.write().unwrap()).is_err());
+    let signed = p.write_for_signing().unwrap();
+    for id in [alice(), bob()] {
+        let sig = apex_sign::vba::sign(&id, &signed).unwrap();
+        let s = apex_sign::vba::check(&sig, &signed).unwrap();
+        assert!(s.intact && s.code_matches && s.v3, "{}", id.cert.subject.display());
+        assert_eq!(s.cert.der, id.cert.der);
+        // Not for other code.
+        let mut q = apex_io::vba::read(&signed).unwrap();
+        q.modules.last_mut().unwrap().code = "Sub Hello()\n    Shell \"calc\"\nEnd Sub".into();
+        let other = q.write_for_signing().unwrap();
+        let s = apex_sign::vba::check(&sig, &other).unwrap();
+        assert!(s.intact && !s.code_matches && !s.v3);
+        // Nor once a byte of what it signs changes.
+        let mut bad = sig.clone();
+        let at = bad.windows(4).position(|w| w == [12, 0, 0, 0]).unwrap();
+        bad[at + 4] ^= 2;
+        assert!(!apex_sign::vba::check(&bad, &signed).unwrap().intact);
+    }
+    // A certificate for signing code makes a signature that may be trusted.
+    let carol = apex_sign::p12::read(&data("carol-code.p12"), "").unwrap();
+    let s = apex_sign::vba::check(&apex_sign::vba::sign(&carol, &signed).unwrap(), &signed).unwrap();
+    assert!(s.code_signing && s.is_sound() && !s.is_trusted());
+    assert!(s.is_trusted_with(&[carol.cert.fingerprint()], true));
 }

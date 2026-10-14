@@ -1039,6 +1039,16 @@ pub fn write_as(deck: &Deck, flavor: PptFlavor) -> Vec<u8> {
         w.pkg.rels.insert("ppt/tableStyles.xml".into(), Vec::new());
         w.rel(&format!("{R}tableStyles"), "ppt/tableStyles.xml", false);
     }
+    // The VBA project: as read, or edited (or new) in the macro editor.
+    if let (true, Some(bin)) = (flavor.macros, &deck.macros.project) {
+        let path = w.rels.iter().find(|r| r.1 == crate::macro_parts::REL_VBA).map(|r| r.2.clone()).unwrap_or_else(|| "ppt/vbaProject.bin".into());
+        if w.pkg.orig_part(&path).is_none_or(|o| *o.data != bin[..]) {
+            // Changed: the signatures, if any, no longer match.
+            w.pkg.add(&path, bin.to_vec(), "application/vnd.ms-office.vbaProject");
+            w.pkg.rels.insert(path.clone(), Vec::new());
+        }
+        w.rel(crate::macro_parts::REL_VBA, &path, false);
+    }
     w.finish();
     pkg.add(&pres_path, pres_xml.into_bytes(), flavor.main_type());
 

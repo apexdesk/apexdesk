@@ -170,7 +170,7 @@ impl PdfView {
     fn page_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, i: usize, rect: Rect, z: f32, ppp: f32) {
         let painter = ui.painter_at(rect.expand(4.0));
         painter.rect_filled(rect.translate(vec2(2.0, 3.0)), 0.0, Color32::from_black_alpha(50));
-        painter.rect_filled(rect, 0.0, Color32::WHITE);
+        painter.rect_filled(rect, 0.0, self.paper());
         let map = self.map_of(i, rect, z);
         // Drawn by pdfium: at the width shown, in steps (so zooming
         // doesn't ask for every size).

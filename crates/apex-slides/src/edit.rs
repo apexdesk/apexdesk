@@ -5,7 +5,8 @@
 
 use std::sync::Arc;
 
-use crate::object::{Frame, Group, ObjKind, Object, PhType};
+use crate::combine::{self, Merge, Outline};
+use crate::object::{Frame, Geometry, Group, ObjKind, Object, PhType, ShapeProps};
 use crate::{Deck, Slide};
 
 /// The object with this id in `objs` or in their groups.
@@ -421,6 +422,45 @@ pub fn group_in(objects: &mut Vec<Object>, ids: &[u32]) -> Option<u32> {
     g.sp.frame = Some(f);
     objects.insert(at, g);
     Some(id)
+}
+
+/// Merges shapes of `objects` (Shape Format > Merge Shapes): `picked`
+/// are their ids in the order they were selected, with their outlines
+/// ([`combine::outline`], or their text's). The result takes the first
+/// one's look, text and place in the stacking order; for Fragment every
+/// piece is a shape. One shape alone is made a drawn shape (text to
+/// shape). Returns the new shapes' ids, empty when nothing changed.
+pub fn merge_in(objects: &mut Vec<Object>, picked: &[(u32, Outline)], how: Merge) -> Vec<u32> {
+    let shapes: Vec<&(u32, Outline)> = picked.iter().filter(|(id, o)| !o.is_empty() && objects.iter().any(|x| x.id == *id && matches!(x.kind, ObjKind::Shape { connector: false, .. }))).collect();
+    if shapes.is_empty() || shapes.len() < 2 && how != Merge::Union {
+        return Vec::new();
+    }
+    let outlines: Vec<Outline> = shapes.iter().map(|s| s.1.clone()).collect();
+    let made: Vec<(Frame, Geometry)> = combine::merge(&outlines, how).iter().filter_map(combine::to_geometry).collect();
+    if made.is_empty() {
+        return Vec::new();
+    }
+    let first = objects.iter().find(|o| o.id == shapes[0].0).cloned().expect("picked above");
+    let mut at = objects.iter().position(|o| o.id == first.id).unwrap_or(objects.len());
+    let gone: Vec<u32> = shapes.iter().map(|s| s.0).collect();
+    at -= objects[..at].iter().filter(|o| gone.contains(&o.id)).count();
+    objects.retain(|o| !gone.contains(&o.id));
+    let mut ids = Vec::new();
+    for (f, g) in made {
+        let id = next_id_in(objects);
+        let mut o = Object::new(id, format!("Freeform {}", id - 1), ObjKind::Shape { text: None, text_box: false, connector: false });
+        o.sp = ShapeProps { frame: Some(f), geom: Some(g), ..first.sp.clone() };
+        o.style = first.style.clone();
+        // The text stays on the one shape a merge makes, as in PowerPoint.
+        if how != Merge::Fragment
+            && let ObjKind::Shape { text, .. } = &first.kind
+        {
+            o.kind = ObjKind::Shape { text: text.clone(), text_box: false, connector: false };
+        }
+        objects.insert(at + ids.len(), o);
+        ids.push(id);
+    }
+    ids
 }
 
 /// Puts a group's objects back on the slide, where the group showed them.

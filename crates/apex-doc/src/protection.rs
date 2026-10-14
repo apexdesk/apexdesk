@@ -84,6 +84,15 @@ impl crate::Document {
         self.redo.last().map(|e| e.kind)
     }
 
+    /// Keeps only the last `keep` undo steps (a macro's copy, editing
+    /// many times, doesn't hold a copy of the text for each edit).
+    pub fn trim_undo(&mut self, keep: usize) {
+        if self.undo.len() > keep {
+            let n = self.undo.len() - keep;
+            self.undo.drain(..n);
+        }
+    }
+
     /// Keeps the next edit from merging into the last undo step.
     pub fn seal_undo(&mut self) {
         if let Some(e) = self.undo.last_mut() {

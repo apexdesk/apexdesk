@@ -69,7 +69,35 @@ pub(super) enum State {
     ClassicSheet,
     /// A notebook: sections, pages, a canvas, a page type.
     Note,
+    /// On a phone's screen: the start screen, a document, a spreadsheet.
+    PhoneStart,
+    PhoneDoc,
+    PhoneSheet,
+    /// A workbook with macros waiting for the user (the macro bar), and
+    /// one with them enabled and the macro editor open; a document with
+    /// macros waiting.
+    MacroSheet,
+    MacroEditor,
+    MacroDoc,
 }
+
+/// The macros of the macro states: ordinary ones (cells, a message, a
+/// loop, an error the code handles), as people write them.
+/// `wb` with [`AUDIT_MACROS`] in its Module1.
+pub(super) fn with_macros(mut wb: apex_sheet::Workbook) -> apex_sheet::Workbook {
+    let names: Vec<String> = wb.sheets.iter().map(|s| s.name.to_string()).collect();
+    let mut p = apex_io::vba::read(&apex_io::vba::new_workbook_project("ThisWorkbook", &names).expect("project")).expect("read");
+    let mut m = apex_io::vba::VbaModule::standard("Module1");
+    m.code = AUDIT_MACROS.into();
+    p.modules.push(m);
+    wb.macros.set_project(p.write().expect("write"));
+    wb
+}
+
+const AUDIT_MACROS: &str = "Option Explicit\n\nSub FillCells()\n    Dim i As Long\n    For i = 1 To 10\n        Cells(i, 3).Value = i * i\n    Next i\nEnd Sub\n\nSub Hello()\n    MsgBox \"Hello from a macro\"\nEnd Sub\n\nSub Safe()\n    On Error GoTo Fail\n    Range(\"D1\").Value = 1 / 0\n    Exit Sub\nFail:\n    Range(\"D1\").Value = \"handled\"\nEnd Sub\n";
+
+/// A phone's screen, in points.
+const PHONE: egui::Vec2 = vec2(400.0, 860.0);
 
 pub(super) fn temp_dir() -> PathBuf {
     let d = crate::settings::config_dir().expect("test folder").join("audit");
@@ -154,14 +182,14 @@ impl App {
     fn audit_setup(&mut self, state: State, n: u64) {
         use apex_sheet::CellRef;
         match state {
-            State::Start => {}
-            State::Doc | State::ClassicDoc => self.push_tab(View::Doc(Box::new(crate::doc_view::DocView::new(sample_doc()))), None, None),
+            State::Start | State::PhoneStart => {}
+            State::Doc | State::ClassicDoc | State::PhoneDoc => self.push_tab(View::Doc(Box::new(crate::doc_view::DocView::new(sample_doc()))), None, None),
             State::DocSelected => {
                 let mut v = crate::doc_view::DocView::new(sample_doc());
                 v.select_all();
                 self.push_tab(View::Doc(Box::new(v)), None, None);
             }
-            State::Sheet | State::ClassicSheet => self.push_tab(View::Sheet(Box::new(crate::sheet_view::SheetView::new(sample_book()))), None, None),
+            State::Sheet | State::ClassicSheet | State::PhoneSheet => self.push_tab(View::Sheet(Box::new(crate::sheet_view::SheetView::new(sample_book()))), None, None),
             State::SheetSelected => {
                 let mut v = crate::sheet_view::SheetView::new(sample_book());
                 v.select_range(CellRef::new(0, 0), CellRef::new(5, 1));
@@ -191,6 +219,29 @@ impl App {
             }
             State::Pdf => self.open_path(&pdf_fixture()),
             State::Note => self.open_note_tab(&note_fixture(n)),
+            State::MacroSheet | State::MacroEditor => {
+                self.settings.macros_enabled = true;
+                let wb = with_macros(sample_book());
+                self.push_tab(View::Sheet(Box::new(crate::sheet_view::SheetView::new(wb))), None, None);
+                let id = self.tabs[self.active].id;
+                self.macros.note(id);
+                if state == State::MacroEditor {
+                    self.enable_macros(id);
+                    self.open_macros();
+                }
+            }
+            State::MacroDoc => {
+                self.settings.macros_enabled = true;
+                let mut doc = sample_doc();
+                let mut p = apex_io::vba::read(&apex_io::vba::new_document_project()).expect("read");
+                let mut m = apex_io::vba::VbaModule::standard("Module1");
+                m.code = "Sub Shout()\n    ActiveDocument.Content.InsertAfter \"!\"\nEnd Sub\n".into();
+                p.modules.push(m);
+                doc.macros.set_project(p.write().expect("write"));
+                self.push_tab(View::Doc(Box::new(crate::doc_view::DocView::new(doc))), None, None);
+                let id = self.tabs[self.active].id;
+                self.macros.note(id);
+            }
         }
     }
 }
@@ -228,7 +279,8 @@ pub(super) fn drop_context() {
 fn test_settings(classic: bool) -> Settings {
     // The language in force stays (it is the process's): another test
     // may be reading it.
-    Settings { lang: crate::i18n::current().to_string(), classic, ..Settings::default() }
+    // The Developer tab too, so its controls are crawled.
+    Settings { lang: crate::i18n::current().to_string(), classic, developer_tab: true, ..Settings::default() }
 }
 
 /// A control found in the accessibility tree.
@@ -355,7 +407,9 @@ fn place_role(role: Role) -> bool {
 impl Rig {
     fn new(state: State, n: u64) -> Rig {
         let classic = matches!(state, State::ClassicDoc | State::ClassicSheet);
-        Rig::open(classic, |app| app.audit_setup(state, n))
+        let phone = matches!(state, State::PhoneStart | State::PhoneDoc | State::PhoneSheet);
+        super::phone::test::FORCE.set(Some(phone));
+        Rig::open_sized(classic, if phone { PHONE } else { SCREEN }, |app| app.audit_setup(state, n))
     }
 
     /// A fresh window (the classic interface or not) that `setup` fills.
@@ -979,7 +1033,7 @@ pub(super) fn commands(state: State) -> Report {
         rig.settle();
         rig.app.commands.take().unwrap_or_default()
     };
-    assert!(state == State::Start || list.len() > 20, "{state:?}: {} commands", list.len());
+    assert!(matches!(state, State::Start | State::PhoneStart) || list.len() > 20, "{state:?}: {} commands", list.len());
     for (i, c) in list.iter().enumerate() {
         if !c.entry.enabled {
             continue;
@@ -1077,6 +1131,56 @@ audit! {
     classic_doc_controls, classic_doc_commands, ClassicDoc;
     classic_sheet_controls, classic_sheet_commands, ClassicSheet;
     note_controls, note_commands, Note;
+    phone_start_controls, phone_start_commands, PhoneStart;
+    phone_doc_controls, phone_doc_commands, PhoneDoc;
+    phone_sheet_controls, phone_sheet_commands, PhoneSheet;
+    macro_sheet_controls, macro_sheet_commands, MacroSheet;
+    macro_editor_controls, macro_editor_commands, MacroEditor;
+    macro_doc_controls, macro_doc_commands, MacroDoc;
+}
+
+/// A phone gets its own interface: one bar with the menu, the file's
+/// name and Undo/Redo/Save, the tools of one tab in a row, no tab strip
+/// nor status bar; its menu lists the open files and goes back to the
+/// whole interface. A tablet (and the desktop) keeps the whole one.
+#[test]
+fn phone_interface_and_tablets() {
+    isolated("phone_interface_and_tablets", || {
+        let (menu, undo, save) = (tr("phone.menu"), tr("edit.undo"), tr("menu.save"));
+        for state in [State::PhoneDoc, State::PhoneSheet] {
+            let mut rig = Rig::new(state, 0);
+            assert!(rig.app.phone());
+            let names: Vec<&str> = rig.controls.iter().map(|c| c.key.1.as_str()).collect();
+            assert!(names.contains(&menu) && names.contains(&undo) && names.contains(&save), "{state:?}: {names:?}");
+            // No tab strip (its close cross and +; a sheet's + adds a
+            // sheet), no toolstrip tabs as buttons.
+            assert!(!names.contains(&"×") && (state == State::PhoneSheet || !names.contains(&"+")), "{state:?}: {names:?}");
+            assert!(!names.contains(&tr("menu.review")), "{state:?}: the toolstrip's tabs show");
+            // The menu takes the document's place and lists the file.
+            click_named(&mut rig, menu);
+            assert!(rig.app.phone_drawer_open());
+            let name = rig.app.tabs[0].name();
+            assert!(rig.controls.iter().any(|c| c.key.1.contains(&name)), "{state:?}: the menu doesn't list {name}");
+            // Full interface: the tablet's, from the menu.
+            click_named(&mut rig, tr("phone.full"));
+            assert!(!rig.app.phone() && !rig.app.settings.phone_ui);
+            assert!(rig.controls.iter().any(|c| c.key.1 == "×"), "{state:?}: no tab strip after Full interface");
+        }
+        // A PDF on a phone: the pages only, no side pane.
+        super::phone::test::FORCE.set(Some(true));
+        let rig = Rig::open_sized(false, PHONE, |app| app.audit_setup(State::Pdf, 0));
+        assert!(rig.app.phone());
+        assert!(matches!(&rig.app.tabs[0].view, View::Pdf(v) if v.pane == crate::pdf_view::Pane::None));
+        // A tablet: the whole interface, the same as before.
+        for state in [State::Doc, State::Sheet] {
+            super::phone::test::FORCE.set(Some(false));
+            let rig = Rig::open_sized(false, vec2(1280.0, 800.0), |app| app.audit_setup(state, 0));
+            assert!(!rig.app.phone());
+            let names: Vec<&str> = rig.controls.iter().map(|c| c.key.1.as_str()).collect();
+            assert!(!names.contains(&menu), "{state:?}: a tablet got the phone's bar");
+            assert!(names.contains(&"×") && names.contains(&tr("menu.review")), "{state:?}: {names:?}");
+        }
+    });
 }
 
 /// A check box low in Options, shown first, clicked twice leaves the

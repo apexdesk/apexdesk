@@ -7,7 +7,7 @@ use apex_sheet::analysis::lists;
 use eframe::egui::{self, RichText};
 
 use super::App;
-use crate::i18n::tr;
+use crate::i18n::{tr, trf};
 use crate::icons::Icon;
 use crate::policy::{self, guard};
 use crate::widgets::{self, DialogResult};
@@ -17,10 +17,15 @@ pub(super) struct OptionsDlg {
     classic: bool,
     show_toolbar: bool,
     mini_toolbar: bool,
+    developer_tab: bool,
     dark_canvas: bool,
     contrast: bool,
     sharp_text: bool,
     scroll_speed: f32,
+    /// The file types to open with ApexDesk (`default_apps::GROUPS`).
+    default_groups: [bool; 4],
+    /// What the last "use ApexDesk" did.
+    default_note: Option<super::Notice>,
     /// The vertical ruler in the draft view of documents.
     vruler: bool,
     draft_vruler: bool,
@@ -42,6 +47,10 @@ pub(super) struct OptionsDlg {
     macro_mode: usize,
     protected_view: bool,
     trusted: Vec<std::path::PathBuf>,
+    /// Files whose macros may change files without asking (0: forgotten).
+    file_grants: usize,
+    publishers: Vec<String>,
+    addins: Vec<std::path::PathBuf>,
     templates_folder: String,
     building_blocks_folder: String,
     library_folder: String,
@@ -111,10 +120,13 @@ impl App {
             classic: st.classic,
             show_toolbar: st.show_toolbar,
             mini_toolbar: st.mini_toolbar,
+            developer_tab: st.developer_tab,
             dark_canvas: st.dark_canvas,
             contrast: st.contrast,
             sharp_text: st.sharp_text,
             scroll_speed: st.scroll_speed,
+            default_groups: super::default_apps_ui::first_choice(),
+            default_note: None,
             vruler: st.vruler,
             draft_vruler: st.draft_vruler,
             formula_bar: st.show_formula_bar,
@@ -133,6 +145,9 @@ impl App {
             macro_mode: if !st.macros_enabled { 0 } else if st.macros_signed_only { 2 } else { 1 },
             protected_view: st.protected_view,
             trusted: st.trusted_locations.clone(),
+            file_grants: st.macro_file_grants.len(),
+            publishers: st.trusted_publishers.clone(),
+            addins: st.addins.clone(),
             templates_folder: st.templates_folder.clone(),
             building_blocks_folder: st.building_blocks_folder.clone(),
             library_folder: st.library_folder.clone(),
@@ -200,6 +215,7 @@ impl App {
         st.classic = d.classic;
         st.show_toolbar = d.show_toolbar;
         st.mini_toolbar = d.mini_toolbar;
+        st.developer_tab = d.developer_tab;
         crate::settings::set_mini_toolbar(d.mini_toolbar);
         st.show_formula_bar = d.formula_bar;
         st.dark_canvas = d.dark_canvas;
@@ -249,6 +265,11 @@ impl App {
         st.macros_signed_only = d.macro_mode == 2;
         st.protected_view = d.protected_view;
         st.trusted_locations = d.trusted;
+        if d.file_grants == 0 {
+            st.macro_file_grants.clear();
+        }
+        st.trusted_publishers = d.publishers;
+        st.addins = d.addins;
         st.pkcs11_module = d.pkcs11_module.trim().to_string();
         st.templates_folder = d.templates_folder.trim().to_string();
         st.building_blocks_folder = d.building_blocks_folder.trim().to_string();
@@ -287,6 +308,7 @@ fn general_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
     ui.checkbox(&mut d.show_toolbar, tr(if d.classic { "options.show_toolbar" } else { "options.show_toolstrip" }));
     ui.checkbox(&mut d.formula_bar, tr("view.formula_bar"));
     ui.checkbox(&mut d.mini_toolbar, tr("options.mini_toolbar"));
+    ui.checkbox(&mut d.developer_tab, tr("options.developer_tab"));
     ui.checkbox(&mut d.vruler, tr("options.vruler"));
     ui.indent("draft_vruler", |ui| ui.add_enabled(d.vruler, egui::Checkbox::new(&mut d.draft_vruler, tr("options.draft_vruler"))));
     ui.add_space(4.0);
@@ -398,6 +420,20 @@ fn general_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
     folder_row(ui, "LibraryFolder", &mut d.library_folder, |d| &mut d.library_folder);
     ui.horizontal(|ui| guard(ui, "OnlySharedTemplates", |ui| ui.checkbox(&mut d.only_shared_templates, tr("policy.OnlySharedTemplates"))));
 
+    section(ui, "default_apps.section");
+    if crate::portable::enabled() || cfg!(target_os = "android") {
+        ui.label(RichText::new(tr("default_apps.portable")).weak());
+    } else {
+        ui.label(tr("default_apps.intro"));
+        super::default_apps_ui::group_boxes(ui, &mut d.default_groups);
+        if ui.add_enabled(d.default_groups.contains(&true), egui::Button::new(tr("default_apps.button"))).clicked() {
+            d.default_note = Some(super::default_apps_ui::make_default(d.default_groups));
+        }
+        if let Some(n) = &d.default_note {
+            ui.label(if n.error { RichText::new(&n.text).color(ui.visuals().error_fg_color) } else { RichText::new(&n.text).weak() });
+        }
+    }
+
     section(ui, "speak.button");
     crate::speech::start(ui.ctx());
     egui::Grid::new("opt_speech").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
@@ -472,6 +508,18 @@ fn macros_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
         ui.checkbox(&mut d.protected_view, tr("options.protected_view"));
     });
     ui.label(RichText::new(tr("options.protected_hint")).weak());
+    addins_section(ui, d);
+    publishers_section(ui, d);
+    if d.file_grants > 0 {
+        section(ui, "options.file_grants");
+        ui.label(RichText::new(tr("options.file_grants_hint")).weak());
+        ui.horizontal(|ui| {
+            ui.label(trf("options.file_grants_count", &[("n", &d.file_grants)]));
+            if ui.button(tr("options.file_grants_forget")).clicked() {
+                d.file_grants = 0;
+            }
+        });
+    }
     section(ui, "options.trusted");
     ui.label(RichText::new(tr("options.trusted_hint")).weak());
     if policy::locked("TrustedLocations") {
@@ -507,6 +555,76 @@ fn macros_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
                 && !d.trusted.contains(&dir)
             {
                 d.trusted.push(dir);
+            }
+        });
+    }
+}
+
+/// The publishers whose signed macros run under "signed only".
+fn publishers_section(ui: &mut egui::Ui, d: &mut OptionsDlg) {
+    section(ui, "options.publishers");
+    ui.label(RichText::new(tr("options.publishers_hint")).weak());
+    let locked = policy::locked("TrustedPublishers");
+    if locked {
+        policy::note(ui, "TrustedPublishers");
+    }
+    let mut remove = None;
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        egui::ScrollArea::vertical().id_salt("opt_publishers").max_height(120.0).show(ui, |ui| {
+            if d.publishers.is_empty() {
+                ui.label(RichText::new(tr("options.publishers_none")).weak());
+            }
+            for (i, p) in d.publishers.iter().enumerate() {
+                let (sha, name) = p.split_once(' ').unwrap_or((p, ""));
+                ui.horizontal(|ui| {
+                    if !locked && ui.small_button("×").on_hover_text(tr("options.delete")).clicked() {
+                        remove = Some(i);
+                    }
+                    let shown = if name.trim().is_empty() { sha.to_string() } else { apex_sign::x509::one_line(name) };
+                    ui.label(shown).on_hover_text(format!("SHA-256: {sha}"));
+                });
+            }
+        });
+    });
+    if let Some(i) = remove {
+        d.publishers.remove(i);
+    }
+}
+
+/// The installed add-ins and where the personal macro workbook is.
+fn addins_section(ui: &mut egui::Ui, d: &mut OptionsDlg) {
+    section(ui, "macros.addins");
+    ui.label(RichText::new(tr("options.addins_hint")).weak());
+    if let Some(p) = super::macro_run::personal_path() {
+        ui.label(RichText::new(format!("{}: {}", tr("macros.personal"), p.display())).weak());
+    }
+    let mut remove = None;
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        egui::ScrollArea::vertical().id_salt("opt_addins").max_height(100.0).show(ui, |ui| {
+            if d.addins.is_empty() {
+                ui.label(RichText::new(tr("options.addins_none")).weak());
+            }
+            for (i, p) in d.addins.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    if ui.small_button("×").on_hover_text(tr("options.delete")).clicked() {
+                        remove = Some(i);
+                    }
+                    ui.label(p.to_string_lossy());
+                });
+            }
+        });
+    });
+    if let Some(i) = remove {
+        d.addins.remove(i);
+    }
+    if ui.button(format!("{}…", tr("options.addins_add"))).clicked() {
+        crate::file_dialog::FileDialog::new().set_title(tr("options.addins_add")).add_filter("Excel", &["xlam", "xlsm", "xla", "xls", "xlsb"]).pick_file(|app, file| {
+            if let Some(d) = &mut app.options
+                && !d.addins.contains(&file)
+            {
+                d.addins.push(file);
             }
         });
     }

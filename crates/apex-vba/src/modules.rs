@@ -15,7 +15,8 @@ impl Interp<'_> {
     pub fn module_object(&self, mi: usize) -> Obj {
         let m = &self.project.modules[mi];
         match m.kind {
-            ModuleKind::Document => match owner_for(m, self.wb) {
+            ModuleKind::Document if self.word.is_some() && owner_for(m, &self.wb) == Owner::Workbook => Obj::Word(Box::new(crate::word::WObj::Doc)),
+            ModuleKind::Document => match owner_for(m, &self.wb) {
                 Owner::Sheet(s) => Obj::Sheet(s),
                 Owner::Workbook => Obj::Workbook,
                 Owner::None => Obj::Module(mi),
@@ -30,9 +31,10 @@ impl Interp<'_> {
             Obj::Module(mi) => return Some(*mi),
             Obj::Sheet(s) => Owner::Sheet(*s),
             Obj::Workbook => Owner::Workbook,
+            Obj::Word(w) if matches!(**w, crate::word::WObj::Doc) => Owner::Workbook,
             _ => return None,
         };
-        self.project.modules.iter().position(|m| m.kind == ModuleKind::Document && owner_for(m, self.wb) == owner)
+        self.project.modules.iter().position(|m| m.kind == ModuleKind::Document && owner_for(m, &self.wb) == owner)
     }
 
     /// `o.name(args)` when `name` is a procedure or a variable of the

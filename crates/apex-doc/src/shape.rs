@@ -399,6 +399,9 @@ pub struct Shape {
     /// Vertical text in the box: DrawingML's `vert` ("eaVert", "vert",
     /// "vert270"...), kept for files.
     pub vert: Option<Arc<str>>,
+    /// A drawn geometry (`<a:custGeom>...</a:custGeom>`, as written in
+    /// DrawingML) in place of the kind's: see [`crate::custom_paths`].
+    pub custom: Option<Arc<str>>,
 }
 
 impl Default for Shape {
@@ -438,6 +441,7 @@ impl Shape {
             link: None,
             ink: None,
             vert: None,
+            custom: None,
         }
     }
 
@@ -541,6 +545,9 @@ impl Shape {
         self.line_width = if self.line_width.is_finite() { self.line_width.clamp(0.0, 100.0) } else { 1.0 };
         self.text.truncate(10_000);
         self.adj.truncate(16);
+        if self.custom.as_ref().is_some_and(|c| c.len() > (1 << 22)) {
+            self.custom = None;
+        }
         if let Some(g) = &mut self.gradient {
             g.sanitize();
         }
@@ -565,7 +572,7 @@ impl Shape {
     fn hash_into<H: Hasher>(&self, h: &mut H) {
         (self.kind, &self.preset, self.fill, self.line, self.dash, self.arrow_start, self.arrow_end, self.flip_h, self.flip_v, self.valign).hash(h);
         (self.line_width.to_bits(), self.rotation.to_bits(), &self.adj).hash(h);
-        (&self.name, &self.alt, self.link, self.hidden, &self.gradient).hash(h);
+        (&self.name, &self.alt, self.link, self.hidden, &self.gradient, &self.custom).hash(h);
         self.picture.as_ref().map(|i| i.data_key()).hash(h);
         if let Some(i) = &self.picture {
             i.crop.map(f32::to_bits).hash(h);

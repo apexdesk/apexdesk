@@ -38,6 +38,8 @@ pub(super) struct RawFrame {
     rotate: f32,
     translate: Option<(f32, f32)>,
     resize: bool,
+    /// The macro a click runs.
+    macro_name: String,
     /// Stacking order.
     z: u32,
 }
@@ -87,6 +89,7 @@ pub(super) fn read_frame(r: &mut Reader, t: &Tag, sheet: usize, cell: Option<Cel
         rotate,
         translate,
         resize: t.attr("table:end-cell-address").is_some(),
+        macro_name: String::new(),
         z: t.attr("draw:z-index").and_then(|v| v.trim().parse().ok()).unwrap_or(u32::MAX),
     };
     let mut depth = 1;
@@ -107,6 +110,9 @@ pub(super) fn read_frame(r: &mut Reader, t: &Tag, sheet: usize, cell: Option<Cel
                     "draw:object" if f.object.is_empty() => f.object = x.attr("xlink:href").unwrap_or_default().into_owned(),
                     "draw:object-ole" if f.object.is_empty() => f.object = x.attr("xlink:href").unwrap_or_default().into_owned(),
                     "draw:plugin" => f.object = "-".into(),
+                    "script:event-listener" | "presentation:event-listener" if x.attr("script:event-name").is_some_and(|e| e == "dom:click") => {
+                        f.macro_name = super::shapes::macro_of_href(&x.attr("xlink:href").unwrap_or_default());
+                    }
                     "svg:desc" if !empty && depth == 1 => {
                         f.desc = r.text();
                         continue;
@@ -201,6 +207,7 @@ pub(super) fn resolve(z: &ZipReader, mut frames: Vec<RawFrame>, clips: &HashMap<
         img.name = f.name;
         img.alt = f.desc;
         img.object = object;
+        img.macro_name = f.macro_name;
         img.crop = crop;
         img.rotation = -f.rotate.to_degrees();
         img.anchor = match (f.cell, f.resize) {
@@ -384,6 +391,7 @@ pub(super) fn frames(wb: &apex_sheet::Workbook, si: usize, pics: &mut Pictures) 
                 let _ = write!(x, r#"><draw:image xlink:href="{}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad" draw:mime-type="{}"><text:p/></draw:image>"#, esc(&href), img.format.mime());
             }
         }
+        x.push_str(&super::shapes::macro_listener(&img.macro_name));
         if !img.alt.is_empty() {
             let _ = write!(x, "<svg:desc>{}</svg:desc>", esc(&img.alt));
         }

@@ -183,6 +183,12 @@ impl FileDialog {
         self.start(Kind::Save, Box::new(move |app, a| then(app, a.and_then(|v| v.into_iter().next()))));
     }
 
+    /// Asks for what `kind` says; `then` gets the paths, or None if
+    /// cancelled.
+    pub fn ask(self, kind: Kind, then: impl FnOnce(&mut App, Option<Vec<PathBuf>>) + 'static) {
+        self.start(kind, Box::new(then));
+    }
+
     fn start(self, kind: Kind, then: Then) {
         if busy() {
             // Cancelled, in the next frame like any answer.

@@ -41,6 +41,9 @@ pub(super) struct Recovery {
     dir: Option<PathBuf>,
     last: Instant,
     beat: Option<Instant>,
+    /// Copies are wanted now, not at the next interval (Android: the app
+    /// went to the background, where the system may end it unasked).
+    pub due: bool,
     /// Per tab: the change count of the copy written.
     saved: HashMap<u64, u64>,
     /// Copies of an earlier session, offered at start.
@@ -80,7 +83,7 @@ impl Recovery {
     pub fn new() -> Recovery {
         let dir = dir();
         let found = dir.as_deref().map(scan).unwrap_or_default();
-        Recovery { dir, last: Instant::now(), beat: None, saved: HashMap::new(), found }
+        Recovery { dir, last: Instant::now(), beat: None, due: false, saved: HashMap::new(), found }
     }
 
     fn paths(&self, key: u64) -> Option<(PathBuf, PathBuf)> {
@@ -174,9 +177,10 @@ impl App {
             let _ = std::fs::write(dir.join(format!("{}.alive", std::process::id())), b"");
             self.recovery.beat = Some(Instant::now());
         }
-        if self.recovery.last.elapsed() < every {
+        if !self.recovery.due && self.recovery.last.elapsed() < every {
             return;
         }
+        self.recovery.due = false;
         self.recovery.last = Instant::now();
         // Code typed in the macro editor goes into the copy too.
         if let Some(tab) = self.macros.editor.as_ref().map(|e| e.tab) {

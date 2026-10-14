@@ -4,17 +4,33 @@
 use super::*;
 use crate::formula_help::{self, REF_COLORS};
 
+/// What a completion is.
+#[derive(Clone, Copy)]
+enum Kind {
+    Func(apex_sheet::functions::Func),
+    /// A function of the workbook's macros.
+    Macro,
+    /// A table or a defined name.
+    Name,
+}
+
 impl SheetView {
     /// Matches for the function name being typed (empty when none).
     /// Functions and table names completing the word being typed (None
     /// for a table).
-    fn completions(&self) -> Vec<(String, Option<apex_sheet::functions::Func>)> {
+    fn completions(&self) -> Vec<(String, Kind)> {
         if self.edit.is_none() || self.ac_hidden.as_deref() == Some(self.buf.as_str()) {
             return Vec::new();
         }
         let Some(w) = formula_help::word_at_end(&self.buf) else { return Vec::new() };
-        let mut v: Vec<(String, Option<apex_sheet::functions::Func>)> = if self.buf.starts_with('=') { self.table_completions(w).into_iter().chain(self.name_completions(w)).map(|n| (n, None)).collect() } else { Vec::new() };
-        v.extend(formula_help::complete(w).into_iter().map(|(n, f)| (n.to_string(), Some(f))));
+        let mut v: Vec<(String, Kind)> = if self.buf.starts_with('=') { self.table_completions(w).into_iter().chain(self.name_completions(w)).map(|n| (n, Kind::Name)).collect() } else { Vec::new() };
+        if self.buf.starts_with('=')
+            && let Some(u) = &self.wb.udf
+        {
+            let lw = w.to_lowercase();
+            v.extend(u.names().into_iter().filter(|(n, _)| n.to_lowercase().starts_with(&lw)).map(|(n, _)| (n, Kind::Macro)));
+        }
+        v.extend(formula_help::complete(w).into_iter().map(|(n, f)| (n.to_string(), Kind::Func(f))));
         // Nothing to suggest when the word is already a complete name.
         if v.len() == 1 && v[0].0.eq_ignore_ascii_case(w) {
             v.clear();
@@ -48,7 +64,7 @@ impl SheetView {
         }
         if consume(Key::Tab) || consume(Key::Enter) {
             let (name, f) = list[self.ac_index.min(list.len() - 1)].clone();
-            self.accept_completion(&name, f.is_some());
+            self.accept_completion(&name, !matches!(f, Kind::Name));
         }
     }
 
@@ -108,12 +124,13 @@ impl SheetView {
                 ui.set_width(380.0);
                 for (i, (name, f)) in list.iter().enumerate() {
                     let desc = match f {
-                        Some(f) => formula_help::help(*f, sep).1,
-                        None => tr("xtab.completion"),
+                        Kind::Func(f) => formula_help::help(*f, sep).1,
+                        Kind::Macro => tr("fncat.user"),
+                        Kind::Name => tr("xtab.completion"),
                     };
                     let r = ui.add(egui::Button::selectable(i == self.ac_index, RichText::new(name.as_str()).monospace().strong()).right_text(RichText::new(desc).small().weak()).min_size(vec2(370.0, 0.0)).truncate());
                     if r.clicked() {
-                        chosen = Some((name.clone(), f.is_some()));
+                        chosen = Some((name.clone(), !matches!(f, Kind::Name)));
                     }
                 }
                 ui.label(RichText::new(tr("fx.autocomplete_hint")).small().weak());

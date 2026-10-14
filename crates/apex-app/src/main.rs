@@ -25,6 +25,7 @@ mod merge_data;
 mod cli;
 mod clip_history;
 mod common;
+mod default_apps;
 mod diag;
 mod doc_view;
 mod file_dialog;

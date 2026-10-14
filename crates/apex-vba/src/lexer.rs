@@ -171,11 +171,13 @@ pub fn tokenize(src: &str, module: &str) -> R<Vec<Token>> {
             if let Some(len) = chars[i + 1..].iter().take_while(|&&x| x != '\n').position(|&x| x == '#') {
                 let body: String = chars[i + 1..i + 1 + len].iter().collect();
                 if body.chars().any(|x| x.is_ascii_digit()) && body.chars().all(|x| x.is_ascii_alphanumeric() || " /:-.".contains(x)) {
-                    let d = date_literal(&body).ok_or_else(|| Error::syntax(module, line, format!("Invalid date: #{body}#")))?;
-                    push(&mut out, Tok::Date(d), tok_line, sp);
-                    i += len + 2;
-                    start = false;
-                    continue;
+                    // Else `#1: Close #2`: file numbers.
+                    if let Some(d) = date_literal(&body) {
+                        push(&mut out, Tok::Date(d), tok_line, sp);
+                        i += len + 2;
+                        start = false;
+                        continue;
+                    }
                 }
             }
         }

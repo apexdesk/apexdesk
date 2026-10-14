@@ -27,6 +27,8 @@ mod dossier_ui;
 #[cfg(feature = "empresa")]
 pub(crate) use dossier_ui::make as make_dossier;
 mod convert_ui;
+mod default_apps_ui;
+mod developer_tab;
 mod encoding_ui;
 mod file_menu;
 mod fullscreen;
@@ -44,6 +46,15 @@ mod customize;
 mod mail_ui;
 mod macro_run;
 mod macros_ui;
+mod vba_edit;
+mod macro_assist;
+mod macro_browser;
+mod macro_compare;
+mod macro_explain;
+mod macro_guide;
+mod macro_form_design;
+mod macro_props;
+mod macro_trial;
 mod protected;
 mod locks;
 mod objects;
@@ -56,6 +67,9 @@ mod pdf_task;
 mod properties;
 mod recovery;
 mod toolstrip_bar;
+mod phone;
+#[cfg(target_os = "android")]
+pub(crate) use phone::phone_width;
 mod signatures_ui;
 mod vba_code;
 mod view_tab;
@@ -63,6 +77,7 @@ mod windows;
 
 pub(crate) use options::{decode as decode_list, encode as encode_list};
 pub(crate) use protected::from_internet;
+pub(crate) use macro_run::headless as macro_headless;
 
 /// Third-party license notices, shown from the About dialog (see
 /// `THIRD-PARTY-NOTICES.md` and `scripts/third_party_notices.py` at the
@@ -283,7 +298,11 @@ pub struct App {
     /// Frames the toolstrip has shown in the classic interface, for a menu
     /// chosen in the search (0: not shown).
     toolstrip_peek: u8,
+    /// The phone interface's state.
+    phone: phone::Phone,
     recovery: recovery::Recovery,
+    /// The question of the first start: open office files with ApexDesk?
+    default_offer: default_apps_ui::Offer,
     password_prompt: Option<passwords::Prompt>,
     encrypt_dlg: Option<passwords::EncryptDlg>,
     /// A file opened read-only as its author recommends: edit it after all?
@@ -409,7 +428,9 @@ impl App {
             want_commands: false,
             pending_cmd: None,
             toolstrip_peek: 0,
+            phone: Default::default(),
             recovery: recovery::Recovery::new(),
+            default_offer: default_apps_ui::Offer::Idle,
             password_prompt: None,
             encrypt_dlg: None,
             read_only_ask: None,
@@ -581,6 +602,10 @@ impl App {
                 if apex_io::is_template(&canon) {
                     self.push_tab(view, None, None);
                     self.made_from(&canon);
+                    // Enabled, a .dotm's Document_New runs, not Document_Open.
+                    if fmt.kind() == Kind::Doc && let Some(id) = self.tabs.last().map(|t| t.id) {
+                        self.macro_run.made_new.insert(id);
+                    }
                 } else if mode == locks::OpenMode::Copy {
                     self.push_tab(view, None, None);
                     self.made_from(&canon);
@@ -667,7 +692,12 @@ impl App {
 
     /// Saves the tab.
     fn save(&mut self, idx: usize, save_as: bool) {
-        self.save_then(idx, save_as, |_, _| {});
+        // Workbook_BeforeSave first: it may cancel it.
+        if self.before_save(idx, save_as) {
+            return;
+        }
+        let id = self.tabs[idx].id;
+        self.save_then(idx, save_as, move |app, ok| app.after_save_event(id, ok));
     }
 
     /// Saves the tab; `then` learns whether it was (false: the user
@@ -972,6 +1002,15 @@ impl App {
     }
 
     fn request_close_tab(&mut self, idx: usize) {
+        // Workbook_BeforeClose first: it may cancel it.
+        if self.before_close(idx) {
+            return;
+        }
+        self.close_tab_checked(idx);
+    }
+
+    /// Closes tab `idx`, asking first whether to save its changes.
+    fn close_tab_checked(&mut self, idx: usize) {
         if self.edits_object(idx) && self.tab_modified(idx) {
             // Closing an edited object puts it back, like Office.
             if self.save_object(idx) {
@@ -1078,6 +1117,9 @@ impl App {
             },
             AppCmd::Macros => self.open_macros(),
             AppCmd::RunMacro => self.open_run_macro(),
+            AppCmd::MacroOptions => self.open_macro_options(),
+            AppCmd::RecordMacro => self.toggle_record(),
+            AppCmd::RelativeRecord => self.toggle_relative(),
             AppCmd::NewDoc => self.new_doc(),
             AppCmd::NewSheet => self.new_sheet(),
             AppCmd::NewSlides => self.new_slides(),
@@ -1190,13 +1232,38 @@ impl App {
         if let Some(g) = &mut self.template_gallery
             && let Some(r) = g.ui(ctx)
         {
+            let src = g.chosen.take();
             self.template_gallery = None;
+            let made = r.is_ok();
             match r {
-                Ok(Loaded::Sheet(wb)) => self.push_tab(View::Sheet(Box::new(SheetView::new(*wb))), None, None),
-                Ok(Loaded::Doc(doc)) => self.push_tab(View::Doc(Box::new(DocView::new(*doc))), None, None),
+                Ok(Loaded::Sheet(wb)) => {
+                    let macros = wb.macros.has_code();
+                    self.push_tab(View::Sheet(Box::new(SheetView::new(*wb))), None, None);
+                    // A template's macros wait for the user, like a file's.
+                    if macros && let Some(id) = self.tabs.last().map(|t| t.id) {
+                        self.macros.note(id);
+                    }
+                }
+                Ok(Loaded::Doc(doc)) => {
+                    let macros = doc.macros.has_code();
+                    self.push_tab(View::Doc(Box::new(DocView::new(*doc))), None, None);
+                    // A .dotm's macros wait for the user too; enabled, its
+                    // Document_New runs.
+                    if macros && let Some(id) = self.tabs.last().map(|t| t.id) {
+                        self.macros.note(id);
+                        self.macro_run.made_new.insert(id);
+                    }
+                }
                 Ok(Loaded::Slides(d)) => self.push_tab(View::Slides(Box::new(SlidesView::new(*d))), None, None),
                 Err(e) if !e.is_empty() => self.notify(Notice::error(trf("error.open", &[("file", &tr("tpl.template")), ("error", &e)]))),
                 Err(_) => {}
+            }
+            // A downloaded template, as a downloaded file: Protected View.
+            if made && let Some(p) = src {
+                self.made_from(&p);
+                if self.should_protect(&p) {
+                    self.protect_last();
+                }
             }
         }
         if let Some((id, d)) = &mut self.save_template
@@ -1330,6 +1397,12 @@ impl App {
         if self.pdf_task.is_some() {
             return;
         }
+        // Workbook_BeforePrint first: it may cancel it.
+        if let Some(cmd) = &self.pending_print
+            && self.before_print(&cmd.clone())
+        {
+            self.pending_print = None;
+        }
         match self.pending_print.take() {
             Some(AppCmd::Print) => self.open_print(ctx, false),
             Some(AppCmd::ExportPdf | AppCmd::ExportPdfDialog) if matches!(self.tabs.get(self.active).map(|t| &t.view), Some(View::Pdf(_))) => self.export_pdf_copy(self.active),
@@ -1392,6 +1465,10 @@ impl App {
     fn shortcuts(&mut self, ctx: &egui::Context) {
         // Keys pressed for a new shortcut do nothing else.
         if self.custom_shortcuts(ctx) {
+            return;
+        }
+        // Keys a macro took (OnKey, its shortcut) first, like in Excel.
+        if self.macro_keys(ctx) {
             return;
         }
         let act = |s: &KeyboardShortcut| ctx.input_mut(|i| i.consume_shortcut(s));
@@ -2109,6 +2186,11 @@ impl eframe::App for App {
         #[cfg(target_os = "android")]
         {
             crate::android::frame(&ctx);
+            // Leaving for another app or the home screen: the system may end
+            // the process there without warning, so the copies go now.
+            if ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false)))) {
+                self.recovery.due = true;
+            }
             // Two fingers zoom (the spreadsheet zooms itself, as with Ctrl+wheel).
             if let Some(z) = crate::android::pinch(&ctx)
                 && self.tabs.get(self.active).is_some_and(|t| t.view.kind() != Kind::Sheet)
@@ -2143,10 +2225,20 @@ impl eframe::App for App {
             }
         }
 
-        // Window close: ask about unsaved tabs first.
-        if ctx.input(|i| i.viewport().close_requested()) && !self.quit_confirmed && self.tabs.iter().any(|t| t.view.modified()) {
+        // Window close: Workbook_BeforeClose first (it may cancel it),
+        // then ask about unsaved tabs.
+        let asked = ctx.input(|i| i.viewport().close_requested()) && !self.quit_confirmed;
+        let go_on = std::mem::take(&mut self.macro_run.quit_now);
+        if asked && self.before_quit() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        } else if (asked || go_on) && self.tabs.iter().any(|t| t.view.modified()) {
+            if asked {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
             self.closing = Some(Closing::App);
+        } else if go_on {
+            self.quit_confirmed = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
 
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
@@ -2212,9 +2304,17 @@ impl eframe::App for App {
             others,
             books: self.books_for_move(),
             side: self.side.as_ref().map(|s| s.sync),
+            recording: self.recording_state(),
         };
+        let phone = self.phone();
+        let drawer = phone && self.phone_drawer_open();
         // Read mode and focus show only the document.
-        if !immersive {
+        if !immersive && phone {
+            self.phone_top(ui, &mut shell);
+            self.protected_bar(ui);
+            self.macro_bar(ui);
+            self.signature_bar(ui);
+        } else if !immersive {
             egui::Panel::top("tabs").frame(egui::Frame::new().fill(theme::workspace_bg(ui.visuals())).inner_margin(egui::Margin { left: 6, right: 6, top: 4, bottom: 0 })).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let right = 260.0_f32.min(ui.available_width() * 0.4) + 8.0 + self.qat_width();
@@ -2240,6 +2340,7 @@ impl eframe::App for App {
         let has_tab = self.tabs.get(self.active).is_some();
         self.hold(self.active);
         let side = self.side.is_some();
+        let recording = self.macro_run.record.tab();
         if let Some(tab) = self.tabs.get_mut(self.active) {
             if matches!(tab.view, View::Sheet(_)) {
                 let name = tab.name();
@@ -2248,7 +2349,8 @@ impl eframe::App for App {
                     v.set_file_name(name);
                 }
             }
-            if !immersive {
+            // A phone has no room for the status bar.
+            if !immersive && !phone {
                 egui::Panel::bottom("status").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         match &mut tab.view {
@@ -2258,6 +2360,13 @@ impl eframe::App for App {
                             View::Pdf(v) => v.status(ui),
                             View::Db(v) => v.status(ui),
                             View::Note(v) => v.status(ui),
+                        }
+                        if recording == Some(tab.id) {
+                            ui.separator();
+                            let stop = egui::Button::new(RichText::new("\u{25A0}").color(Color32::from_rgb(0xD0, 0x30, 0x30))).frame(false);
+                            if ui.add(stop).on_hover_text(tr("macros.stop_record")).clicked() {
+                                shell.cmd = Some(AppCmd::RecordMacro);
+                            }
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             match &mut tab.view {
@@ -2300,7 +2409,7 @@ impl eframe::App for App {
                     });
                 });
             }
-            if !side {
+            if !side && !drawer {
                 egui::CentralPanel::default_margins().frame(egui::Frame::new().fill(theme::workspace_bg(ui.visuals()))).show(ui, |ui| match &mut tab.view {
                     View::Sheet(v) => {
                         v.ui(ui, &mut shell);
@@ -2329,7 +2438,9 @@ impl eframe::App for App {
                 });
             }
         }
-        if side && has_tab {
+        if drawer {
+            egui::CentralPanel::default_margins().show(ui, |ui| self.phone_drawer(ui, &mut shell));
+        } else if side && has_tab {
             egui::CentralPanel::default_margins().frame(egui::Frame::new().fill(theme::workspace_bg(ui.visuals()))).show(ui, |ui| {
                 if !self.side_by_side_ui(ui, &mut shell, &mut notices) {
                     // Nothing to compare with any more: the active tab alone.
@@ -2369,7 +2480,11 @@ impl eframe::App for App {
         self.pdf_requests();
         self.db_requests();
         self.flush_notes();
-        if !has_tab {
+        if !has_tab && drawer {
+            // The menu shows instead.
+        } else if !has_tab && phone {
+            egui::CentralPanel::default_margins().show(ui, |ui| self.phone_start(ui));
+        } else if !has_tab {
             egui::CentralPanel::default_margins().show(ui, |ui| self.start_screen(ui));
         }
         for n in notices {
@@ -2412,6 +2527,7 @@ impl eframe::App for App {
         self.options_dialog(&ctx);
         self.customize_dialog(&ctx);
         self.recovery_dialog(&ctx);
+        self.default_apps_offer(&ctx);
         self.password_dialogs(&ctx);
         self.properties_dialog(&ctx);
         self.control_dialog(&ctx);

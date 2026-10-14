@@ -213,10 +213,7 @@ impl SheetView {
         let step = |v: i32, d: i32| (v + d).clamp(c.min, c.max);
         let new = match c.kind {
             ControlKind::Button => {
-                if !c.macro_name.is_empty() {
-                    let name = c.macro_name.rsplit('!').next().unwrap_or("");
-                    self.run_macro = Some(name.rsplit('.').next().unwrap_or(name).to_string());
-                }
+                self.click_macro(&c.macro_name);
                 return;
             }
             ControlKind::CheckBox => (value != 1) as i32,
@@ -252,6 +249,8 @@ impl SheetView {
             ControlKind::GroupBox | ControlKind::Label => return,
         };
         self.wb.operate_control(sheet, id, new);
+        // Its macro runs after the linked cell changes, like in Excel.
+        self.click_macro(&c.macro_name);
     }
 
     /// The open drop-down of a combo box.
@@ -280,6 +279,7 @@ impl SheetView {
         let outside = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p) && !r.contains(p)));
         if let Some(v) = pick {
             self.wb.operate_control(sheet, id, v);
+            self.click_macro(&c.macro_name);
         }
         if pick.is_some() || outside || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.images.shapes.controls.popup = None;

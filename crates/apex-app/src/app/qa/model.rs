@@ -29,9 +29,11 @@ pub(super) enum Qv {
     Code,
     /// A notebook: sections, pages, a canvas, a page type.
     Note,
+    /// A workbook with macros, enabled, in the macro editor.
+    Macros,
 }
 
-pub(super) const ALL: [Qv; 10] = [Qv::Doc, Qv::DocSel, Qv::Sheet, Qv::SheetSel, Qv::Slides, Qv::SlidesSel, Qv::Pdf, Qv::Db, Qv::Code, Qv::Note];
+pub(super) const ALL: [Qv; 11] = [Qv::Doc, Qv::DocSel, Qv::Sheet, Qv::SheetSel, Qv::Slides, Qv::SlidesSel, Qv::Pdf, Qv::Db, Qv::Code, Qv::Note, Qv::Macros];
 
 /// The paragraphs selected in [`Qv::DocSel`] (first and last): all of
 /// them body text, alike (a format reaches all of them or none).
@@ -79,6 +81,13 @@ impl Qv {
             Qv::Pdf => app.open_path(&medium_pdf()),
             Qv::Db => app.open_db_tab(&audit::db_fixture(n)),
             Qv::Note => app.open_note_tab(&audit::note_fixture(n)),
+            Qv::Macros => {
+                app.settings.macros_enabled = true;
+                app.push_tab(View::Sheet(Box::new(crate::sheet_view::SheetView::new(audit::with_macros(medium_book())))), None, None);
+                let id = app.tabs[app.active].id;
+                app.enable_macros(id);
+                app.open_macros();
+            }
         }
         // What the samples reported while built isn't the actions'.
         super::common::take_errors();

@@ -49,6 +49,8 @@ pub const DOC_FORMATS: &[&str] = &["docx", "docm", "odt", "rtf"];
 pub const ITEMS: &[Item] = &[
     Item { name: "MacroSecurity", key: "macros", kind: Kind::Choice(MACRO_MODES) },
     Item { name: "TrustedLocations", key: "trusted_location", kind: Kind::List },
+    Item { name: "TrustedPublishers", key: "trusted_publisher", kind: Kind::List },
+    Item { name: "DisableMacroEditor", key: "macro_editor_off", kind: Kind::Bool },
     Item { name: "TemplatesFolder", key: "templates_folder", kind: Kind::Folder },
     Item { name: "BuildingBlocksFolder", key: "building_blocks_folder", kind: Kind::Folder },
     Item { name: "LibraryFolder", key: "library_folder", kind: Kind::Folder },
@@ -89,7 +91,7 @@ impl Item {
     /// and the renderer, a fix for broken graphics drivers. The rest manage
     /// many computers alike and need a license with `management`.
     pub fn free(&self) -> bool {
-        matches!(self.name, "MacroSecurity" | "TrustedLocations" | "DisableGetData" | "CertificateRoots" | "SignatureLevel" | "TimestampURL" | "Renderer" | "LinkSecurity" | "ProtectedView")
+        matches!(self.name, "MacroSecurity" | "TrustedLocations" | "TrustedPublishers" | "DisableGetData" | "CertificateRoots" | "SignatureLevel" | "TimestampURL" | "Renderer" | "LinkSecurity" | "ProtectedView")
     }
 
     pub fn by_name(name: &str) -> Option<&'static Item> {

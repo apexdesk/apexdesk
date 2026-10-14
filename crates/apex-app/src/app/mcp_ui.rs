@@ -78,6 +78,28 @@ impl App {
             return Ok(self.mcp_list());
         }
         let i = self.mcp_tab(args)?;
+        let id = self.tabs[i].id;
+        let text = |key: &str| args.get(key).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
+        match tool {
+            "read_macros" => {
+                let modules: Vec<Value> = self.read_modules(id)?.into_iter().map(|(name, kind, code)| json!({ "module": name, "kind": kind, "code": code })).collect();
+                let enabled = super::macro_run::allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id);
+                return Ok(to_text(&json!({ "modules": modules, "macros_enabled": enabled })));
+            }
+            "write_macro" => {
+                let name = text("module").ok_or("module is required")?;
+                let code = args.get("code").and_then(Value::as_str).ok_or("code is required")?;
+                let created = self.write_module(id, name, code, args.get("kind").and_then(Value::as_str) == Some("class"))?;
+                return Ok(to_text(&json!({ "created": created, "macros_enabled": false, "note": "The file's macros are disabled until the user enables them again in ApexDesk." })));
+            }
+            "run_macro" => {
+                let name = text("macro").ok_or("macro is required")?;
+                let list: Vec<String> = args.get("args").and_then(Value::as_array).map(|a| a.iter().map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string)).collect()).unwrap_or_default();
+                self.mcp_run_macro(id, name, list)?;
+                return Ok(to_text(&json!({ "started": true })));
+            }
+            _ => {}
+        }
         match (&mut self.tabs[i].view, tool) {
             (View::Sheet(v), "undo" | "redo") => {
                 let can = if tool == "undo" { v.wb.can_undo() } else { v.wb.can_redo() };
@@ -148,5 +170,43 @@ impl App {
         if closed {
             self.mcp_dlg = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn macros_for_assistants() {
+        let ctx = egui::Context::default();
+        let settings = crate::settings::Settings { macros_enabled: true, mcp: true, ..Default::default() };
+        let mut app = App::blank(&ctx, settings, None, std::time::Instant::now());
+        app.push_tab(View::Sheet(Box::new(crate::sheet_view::SheetView::new(apex_sheet::Workbook::new()))), None, None);
+        app.active = 0;
+        let id = app.tabs[0].id;
+        let call = |app: &mut App, tool: &str, args: Value| app.mcp_run(tool, &args).map(|t| serde_json::from_str::<Value>(&t).unwrap());
+        // A workbook without macros gets a project.
+        let r = call(&mut app, "write_macro", json!({ "module": "Tools", "code": "Sub Fill()\r\n    Range(\"A1\").Value = 7\r\nEnd Sub\r\n" })).unwrap();
+        assert_eq!(r["created"], true);
+        let r = call(&mut app, "read_macros", json!({})).unwrap();
+        let tools = r["modules"].as_array().unwrap().iter().find(|m| m["module"] == "Tools").unwrap();
+        assert_eq!(tools["code"], "Sub Fill()\n    Range(\"A1\").Value = 7\nEnd Sub\n");
+        assert_eq!(r["macros_enabled"], false);
+        assert!(call(&mut app, "write_macro", json!({ "module": "1bad", "code": "" })).is_err());
+        // Runs only once the user enabled them, and writing disables them.
+        assert!(call(&mut app, "run_macro", json!({ "macro": "Fill" })).unwrap_err().contains("enable"));
+        app.enable_macros(id);
+        assert_eq!(call(&mut app, "run_macro", json!({ "macro": "Fill" })).unwrap()["started"], true);
+        assert!(call(&mut app, "run_macro", json!({ "macro": "Fill" })).unwrap_err().contains("already"));
+        app.macro_run_take_queue_for_test();
+        assert!(call(&mut app, "run_macro", json!({ "macro": "PERSONAL.XLSB!Fill" })).is_err());
+        call(&mut app, "write_macro", json!({ "module": "Tools", "code": "Sub Fill()\nEnd Sub\n" })).unwrap();
+        assert!(!app.macro_run.is_enabled(id));
+        assert!(call(&mut app, "run_macro", json!({ "macro": "Fill" })).is_err());
+        // Undone as one step.
+        assert_eq!(call(&mut app, "undo", json!({})).unwrap()["done"], true);
+        let r = call(&mut app, "read_macros", json!({})).unwrap();
+        assert!(r["modules"].as_array().unwrap().iter().any(|m| m["code"].as_str().unwrap().contains("= 7")));
     }
 }

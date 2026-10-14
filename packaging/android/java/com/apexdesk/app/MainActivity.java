@@ -1,7 +1,13 @@
 package com.apexdesk.app;
 
+import android.Manifest;
 import android.app.NativeActivity;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
 import android.os.Bundle;
 import android.view.DisplayCutout;
 import android.view.View;
@@ -67,6 +73,73 @@ public class MainActivity extends NativeActivity {
         });
         hideBars();
         later(0);
+    }
+
+    /**
+     * Whether the program may read the files of the shared storage. Without
+     * it Android shows its folders but not the files in them: from Android
+     * 11 "All files access" (in the settings), before it the storage
+     * permission.
+     */
+    public boolean hasFileAccess() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            return Environment.isExternalStorageManager();
+        }
+        return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Asks for it: the settings page, or the permission's dialog. */
+    public void askFileAccess() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (Build.VERSION.SDK_INT >= 30) {
+                    // Some systems only have the list of every app, some
+                    // (televisions, Go editions) neither: then the app's page.
+                    if (!open(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + getPackageName())))
+                            && !open(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))) {
+                        openDetails();
+                    }
+                } else {
+                    // Once refused for good the dialog no longer shows: the
+                    // app's page in the settings is where to allow it.
+                    android.content.SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+                    if (prefs.getBoolean("asked", false) && !shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE)) {
+                        openDetails();
+                    } else {
+                        prefs.edit().putBoolean("asked", true).apply();
+                        requestPermissions(new String[] { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE }, 1);
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * The activity is going away (closed, or the system recreates it): the
+     * native side neither ends nor starts again in the same process (winit
+     * ignores the event, and waiting for it would block here), so the
+     * process ends. The recovery copies were written when it left the
+     * screen.
+     */
+    @Override
+    protected void onDestroy() {
+        System.exit(0);
+    }
+
+    /** Starts a settings page; false when the system has none. */
+    private boolean open(Intent intent) {
+        try {
+            startActivity(intent);
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** The app's own page in the settings. */
+    private void openDetails() {
+        open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
     }
 
     @Override

@@ -83,6 +83,16 @@ pub fn catalog() -> Vec<Value> {
             "whole_word": { "type": "boolean" },
         }), &["find", "replace"]),
         tool("format_text", "Formats characters and paragraphs of a text document (bold, font, size, colors, paragraph style, alignment) as one step the user can undo. Only the properties given change.", format_text, &["paragraph"]),
+        tool("read_macros", "Reads the VBA macros of a spreadsheet: each module's name, kind (module, class, document, form) and code, and whether the user enabled the file's macros.", json!({}), &[]),
+        tool("write_macro", "Writes the VBA code of a module of a spreadsheet (a new module when none has that name), as one step the user can undo. The file's macros are disabled until the user enables them again, and a signed project loses its signature.", json!({
+            "module": { "type": "string", "description": "Module name, like Module1 or ThisWorkbook." },
+            "code": { "type": "string", "description": "The module's whole code, without the Attribute lines." },
+            "kind": { "type": "string", "enum": ["module", "class"], "description": "For a new module; module when left out." },
+        }), &["module", "code"]),
+        tool("run_macro", "Starts a macro of a spreadsheet whose macros the user enabled; it isn't waited for (its message boxes show to the user). Read the result with read_range.", json!({
+            "macro": { "type": "string", "description": "Sub name, like Main or Module1.Main." },
+            "args": { "type": "array", "description": "Arguments for its parameters: numbers, true/false or text.", "items": {} },
+        }), &["macro"]),
         tool("undo", "Undoes the last change in a tab (the assistant's or the user's), like Ctrl+Z.", json!({}), &[]),
         tool("redo", "Redoes the last undone change in a tab, like Ctrl+Y.", json!({}), &[]),
     ]

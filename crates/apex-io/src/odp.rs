@@ -253,7 +253,7 @@ fn read_named(root: &Node) -> Named {
 
 /// A path (`svg:d`) or points (`draw:points`) as DrawingML custom
 /// geometry in the view box's units.
-fn cust_geom(n: &Node) -> Option<String> {
+pub(crate) fn cust_geom(n: &Node) -> Option<String> {
     let vb: Vec<f32> = n.attr("svg:viewBox")?.split_whitespace().filter_map(|v| v.parse().ok()).collect();
     if vb.len() != 4 || vb[2] <= 0.0 || vb[3] <= 0.0 {
         return None;

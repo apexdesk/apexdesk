@@ -78,7 +78,7 @@ impl Error {
         Error::new(1004, message)
     }
 
-    /// Something ApexDesk leaves out on purpose (UserForms, Declare,
+    /// Something ApexDesk leaves out on purpose (Declare, Shell,
     /// automating other applications).
     pub fn unsupported(what: &str) -> Error {
         Error::new(445, format!("Not supported in ApexDesk: {what}"))

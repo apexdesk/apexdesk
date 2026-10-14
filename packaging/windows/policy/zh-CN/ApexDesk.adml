@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">仅限受信任证书签名的宏</string>
       <string id="TrustedLocations">受信任位置</string>
       <string id="TrustedLocations_Help">其中文件打开时启用宏的文件夹。它们替换用户添加的文件夹。</string>
+      <string id="TrustedPublishers">受信任的宏发布者</string>
+      <string id="TrustedPublishers_Help">在“仅已签名的宏”下其签名宏可以运行的证书（SHA-256 或 SHA-1 指纹，十六进制）。设置后，只有这些证书签名的宏才会运行，用户无法添加更多。</string>
+      <string id="DisableMacroEditor">关闭宏编辑器</string>
+      <string id="DisableMacroEditor_Help">1：无法打开宏编辑器 (Alt+F11)。宏仍按宏安全策略运行。</string>
       <string id="TemplatesFolder">共享模板文件夹</string>
       <string id="TemplatesFolder_Help">模板文件夹（docx、dotx、odt、xlsx、xltx、ods 等），与用户自己的模板一起列在“从模板新建”中。</string>
       <string id="BuildingBlocksFolder">共享构建基块文件夹</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">受信任位置</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">受信任的宏发布者</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>共享模板文件夹</label></textBox>

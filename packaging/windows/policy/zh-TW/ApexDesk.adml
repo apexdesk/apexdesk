@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">僅限受信任憑證簽署的巨集</string>
       <string id="TrustedLocations">受信任位置</string>
       <string id="TrustedLocations_Help">其中檔案開啟時啟用巨集的資料夾。它們取代使用者新增的資料夾。</string>
+      <string id="TrustedPublishers">受信任的巨集發行者</string>
+      <string id="TrustedPublishers_Help">在「僅已簽署的巨集」下其簽署巨集可以執行的憑證（SHA-256 或 SHA-1 指紋，十六進位）。設定後，只有這些憑證簽署的巨集才會執行，使用者無法新增。</string>
+      <string id="DisableMacroEditor">關閉巨集編輯器</string>
+      <string id="DisableMacroEditor_Help">1：無法開啟巨集編輯器 (Alt+F11)。巨集仍依巨集安全性原則執行。</string>
       <string id="TemplatesFolder">共用範本資料夾</string>
       <string id="TemplatesFolder_Help">範本資料夾（docx、dotx、odt、xlsx、xltx、ods 等），與使用者自己的範本一起列在「從範本新增」中。</string>
       <string id="BuildingBlocksFolder">共用建置組塊資料夾</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">受信任位置</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">受信任的巨集發行者</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>共用範本資料夾</label></textBox>

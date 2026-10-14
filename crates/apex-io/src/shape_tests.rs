@@ -316,3 +316,50 @@ fn hidden_and_named_objects() {
         assert!(imgs[0].1.hidden, "{fmt}");
     }
 }
+
+const FREEFORM: &str = r#"<a:custGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="0" t="0" r="r" b="b"/><a:pathLst><a:path w="100" h="50"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="100" y="10"/></a:lnTo><a:lnTo><a:pt x="40" y="50"/></a:lnTo><a:close/></a:path></a:pathLst></a:custGeom>"#;
+
+fn freeform() -> Shape {
+    let mut s = Shape::new(ShapeKind::Rect);
+    s.custom = Some(Arc::from(FREEFORM));
+    s.fill = Some(0x336699);
+    s.flip_v = true;
+    s
+}
+
+/// A drawn geometry keeps its paths through every format.
+fn check_freeform(back: &Shape, format: &str) {
+    let c = back.custom.as_ref().unwrap_or_else(|| panic!("{format}: no drawn geometry"));
+    let (a, b) = (apex_doc::custom_paths(FREEFORM, 100.0, 50.0), apex_doc::custom_paths(c, 100.0, 50.0));
+    assert_eq!(a.len(), b.len(), "{format}");
+    assert_eq!(a[0].subpaths.len(), b[0].subpaths.len(), "{format}");
+    for (p, q) in a[0].subpaths[0].0.iter().zip(&b[0].subpaths[0].0) {
+        close(p.0, q.0, format);
+        close(p.1, q.1, format);
+    }
+    assert_eq!((back.fill, back.flip_v), (Some(0x336699), true), "{format}");
+}
+
+#[test]
+fn freeforms_in_documents() {
+    let mut d = DocShape::new(freeform(), 100.0, 50.0);
+    d.wrap = ShapeWrap::InFront;
+    let mut p = Paragraph::new("");
+    p.push(&OBJECT.to_string(), Attrs { shape: Some(Arc::new(d)), ..Default::default() });
+    let doc = Document::from_paragraphs(vec![p]);
+    for (back, format) in [(crate::docx::read(&crate::docx::write(&doc)).expect("docx"), "docx"), (crate::odt::read(&crate::odt::write(&doc)).expect("odt"), "odt")] {
+        let shapes = back.shapes();
+        assert_eq!(shapes.len(), 1, "{format}");
+        check_freeform(&shapes[0].1.shape, format);
+    }
+}
+
+#[test]
+fn freeforms_in_workbooks() {
+    let mut wb = Workbook::new();
+    wb.add_shape(0, SheetShape::new(freeform(), CellRef::new(2, 1), 100.0, 50.0));
+    for (back, format) in [(crate::xlsx::read(&crate::xlsx::write(&wb)).expect("xlsx"), "xlsx"), (crate::ods::read(&crate::ods::write(&wb)).expect("ods"), "ods")] {
+        assert_eq!(back.sheets[0].shapes.len(), 1, "{format}");
+        check_freeform(&back.sheets[0].shapes[0].shape, format);
+    }
+}

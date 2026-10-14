@@ -1,6 +1,6 @@
 //! VBA's functions: text, math, conversion, dates, arrays, information,
-//! MsgBox and InputBox. Those that would reach outside the workbook
-//! (files, Shell, other applications) give a "not supported" error.
+//! MsgBox and InputBox (the file functions are in `files`). Those that
+//! would reach other programs (Shell, SendKeys) give a "not supported" error.
 
 use std::rc::Rc;
 
@@ -13,7 +13,7 @@ use crate::value::{self, Array, VType, Value, number_text, parse_number};
 
 /// The functions below (sorted: looked up before the arguments are evaluated).
 const BUILTINS: &[&str] = &[
-    "abs", "array", "asc", "ascw", "atn", "beep", "cbool", "cbyte", "ccur", "cdate", "cdbl", "cdec", "chdir", "choose", "chr", "chrw", "cint", "clng", "clnglng", "clngptr", "cos", "createobject", "csng", "cstr", "curdir", "cvar", "cverr", "date", "dateadd", "datediff", "datepart", "dateserial", "datevalue", "day", "dir", "doevents", "environ", "erl", "exp", "filecopy", "filedatetime", "filelen", "fix", "format", "formatcurrency", "formatdatetime", "formatnumber", "formatpercent", "freefile", "getobject", "getsetting", "hex", "hour", "iif", "inputbox", "instr", "instrrev", "int", "isarray", "isdate", "isempty", "iserror", "ismissing", "isnull", "isnumeric", "isobject", "join", "kill", "lbound", "lcase", "left", "len", "log", "ltrim", "mid", "minute", "mkdir", "month", "monthname", "msgbox", "now", "oct", "randomize", "replace", "rgb", "right", "rmdir", "rnd", "round", "rtrim", "savesetting", "second", "sendkeys", "sgn", "shell", "sin", "space", "split", "sqr", "strcomp", "strconv", "string", "strreverse", "switch", "tan", "time", "timer", "timeserial", "timevalue", "trim", "typename", "ubound", "ucase", "val", "vartype", "weekday", "weekdayname", "year",
+    "abs", "array", "asc", "ascw", "atn", "beep", "cbool", "cbyte", "ccur", "cdate", "cdbl", "cdec", "chdir", "chdrive", "choose", "chr", "chrw", "cint", "clng", "clnglng", "clngptr", "cos", "createobject", "csng", "cstr", "curdir", "cvar", "cverr", "date", "dateadd", "datediff", "datepart", "dateserial", "datevalue", "day", "dir", "doevents", "environ", "eof", "erl", "exp", "fileattr", "filecopy", "filedatetime", "filelen", "fix", "format", "formatcurrency", "formatdatetime", "formatnumber", "formatpercent", "freefile", "getattr", "getobject", "getsetting", "hex", "hour", "iif", "input", "inputbox", "instr", "instrrev", "int", "isarray", "isdate", "isempty", "iserror", "ismissing", "isnull", "isnumeric", "isobject", "join", "kill", "lbound", "lcase", "left", "len", "loc", "lof", "log", "ltrim", "mid", "minute", "mkdir", "month", "monthname", "msgbox", "now", "oct", "randomize", "replace", "reset", "rgb", "right", "rmdir", "rnd", "round", "rtrim", "savesetting", "second", "seek", "sendkeys", "setattr", "sgn", "shell", "sin", "space", "split", "sqr", "strcomp", "strconv", "string", "strreverse", "switch", "tan", "time", "timer", "timeserial", "timevalue", "trim", "typename", "ubound", "ucase", "val", "vartype", "weekday", "weekdayname", "year",
 ];
 
 fn days_in_month(y: i64, m: i64) -> i64 {
@@ -142,6 +142,9 @@ impl Interp<'_> {
         let mut a = Vec::with_capacity(raw.len());
         for v in raw {
             a.push(self.scalar(v)?);
+        }
+        if let Some(r) = self.file_fn(n, &a) {
+            return r;
         }
         let arg = |i: usize| a.get(i).cloned().filter(|v| !matches!(v, Value::Missing));
         let need = |i: usize| a.get(i).cloned().filter(|v| !matches!(v, Value::Missing)).ok_or_else(|| Error::new(449, "Argument not optional"));
@@ -671,7 +674,7 @@ impl Interp<'_> {
             "sendkeys" => return Err(Error::unsupported("SendKeys")),
             "shell" => return Err(Error::unsupported("Shell")),
             "getsetting" | "savesetting" => return Err(Error::unsupported("the registry (GetSetting/SaveSetting)")),
-            _ => return Err(Error::unsupported("file access")),
+            _ => return Err(Error::unsupported(n)),
         })
     }
 

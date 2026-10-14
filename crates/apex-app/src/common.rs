@@ -48,6 +48,12 @@ pub enum AppCmd {
     Macros,
     /// Run Macro (Alt+F8): the macros of the active workbook.
     RunMacro,
+    /// File > Options > Macros: which macros may run.
+    MacroOptions,
+    /// Record Macro, or stop recording.
+    RecordMacro,
+    /// The recorder's Use Relative References.
+    RelativeRecord,
     /// Opens a notebook in a tab of its own, staying where it was asked
     /// (a book shows its pages beside the manuscript).
     OpenNoteBeside(PathBuf),
@@ -70,6 +76,9 @@ pub struct Shell {
     pub books: Vec<(u64, String, Vec<String>)>,
     /// Side by side is on, and scrolls in sync.
     pub side: Option<bool>,
+    /// In a workbook: the macro recorder records, and with relative
+    /// references.
+    pub recording: Option<(bool, bool)>,
 }
 
 // --- toolstrip groups both views have ---------------------------------------------------
@@ -138,11 +147,53 @@ pub fn macros_group(b: &mut crate::toolstrip::Body, shell: &mut Shell) {
     use crate::toolstrip;
     let a = b.accent();
     b.group("macros.title", Icon::Field, |ui| {
-        if toolstrip::large(ui, Icon::Field, tr("macros.title"), tr("macros.tip"), a, false).clicked() {
+        toolstrip::large_menu(ui, Icon::Field, tr("macros.title"), tr("macros.tip"), a, |ui| {
+            if toolstrip::menu_item_keys(ui, Icon::SpeakPlay, tr("macros.view"), "Alt+F8").clicked() {
+                shell.cmd = Some(AppCmd::RunMacro);
+                ui.close();
+            }
+            if toolstrip::menu_item_keys(ui, Icon::Field, tr("developer.vba_editor"), "Alt+F11").clicked() {
+                shell.cmd = Some(AppCmd::Macros);
+                ui.close();
+            }
+            if let Some((on, relative)) = shell.recording {
+                ui.separator();
+                if toolstrip::menu_item(ui, if on { Icon::SpeakStop } else { Icon::Video }, if on { tr("macros.stop_record") } else { tr("macros.record") }).clicked() {
+                    shell.cmd = Some(AppCmd::RecordMacro);
+                    ui.close();
+                }
+                if ui.checkbox(&mut relative.clone(), tr("macros.relative")).on_hover_text(tr("macros.relative_tip")).clicked() {
+                    shell.cmd = Some(AppCmd::RelativeRecord);
+                }
+            }
+        });
+    });
+}
+
+/// The Code group of the Developer tab: the VBA editor, the macros and
+/// their security.
+pub fn developer_code_group(b: &mut crate::toolstrip::Body, shell: &mut Shell) {
+    use crate::toolstrip;
+    let a = b.accent();
+    b.group("developer.code", Icon::Field, |ui| {
+        if toolstrip::large(ui, Icon::Field, tr("developer.vba_editor"), tr("macros.tip"), a, false).clicked() {
             shell.cmd = Some(AppCmd::Macros);
         }
-        if toolstrip::large(ui, Icon::SpeakPlay, tr("macros.run_macro"), tr("macros.run_tip"), a, false).clicked() {
+        if toolstrip::large(ui, Icon::SpeakPlay, tr("macros.title"), tr("macros.run_tip"), a, false).clicked() {
             shell.cmd = Some(AppCmd::RunMacro);
+        }
+        if let Some((on, relative)) = shell.recording {
+            toolstrip::column(ui, |ui| {
+                if toolstrip::small(ui, Some(if on { Icon::SpeakStop } else { Icon::Video }), if on { tr("macros.stop_record") } else { tr("macros.record") }, tr("macros.record_tip"), a, on).clicked() {
+                    shell.cmd = Some(AppCmd::RecordMacro);
+                }
+                if toolstrip::small(ui, Some(Icon::Table), tr("macros.relative"), tr("macros.relative_tip"), a, relative).clicked() {
+                    shell.cmd = Some(AppCmd::RelativeRecord);
+                }
+            });
+        }
+        if toolstrip::large(ui, Icon::Protect, tr("developer.security"), tr("developer.security_tip"), a, false).clicked() {
+            shell.cmd = Some(AppCmd::MacroOptions);
         }
     });
 }
@@ -397,6 +448,12 @@ impl BoxList {
 
     fn show(&self, ui: &egui::Ui, resp: &egui::Response, width: f32, content: impl FnOnce(&mut egui::Ui)) {
         let popup = egui::Popup::from_response(resp).id(self.id).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).width(width);
+        // The width given is only the first one: egui keeps the size the
+        // list had last time, which could be a sliver.
+        let content = |ui: &mut egui::Ui| {
+            ui.set_min_width(width);
+            content(ui)
+        };
         if !self.in_menu {
             popup.open_memory(None).show(content);
             return;

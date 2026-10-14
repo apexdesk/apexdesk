@@ -25,6 +25,7 @@ pub mod fill_dlg;
 pub mod format;
 pub mod handouts;
 pub mod media;
+mod merge;
 pub mod diagram_edit;
 pub mod morph;
 pub mod objects;

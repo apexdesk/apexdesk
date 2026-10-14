@@ -77,7 +77,9 @@ pub fn parse(der: &[u8]) -> Result<SignedData, Error> {
     let encap = s.req()?;
     let mut er = encap.children();
     let content_type = er.req()?.oid();
-    let content = er.next().and_then(|c| c.inner().ok()).map(|o| o.octets().into_owned());
+    // An OCTET STRING's bytes; a structure given as itself (Authenticode's
+    // SpcIndirectDataContent) is digested without its tag and length.
+    let content = er.next().and_then(|c| c.inner().ok()).map(|o| if o.tag == asn1::SEQUENCE { o.body.to_vec() } else { o.octets().into_owned() });
     let mut certs = Vec::new();
     let mut signers = Vec::new();
     let (mut crls, mut ocsps) = (Vec::new(), Vec::new());
@@ -307,6 +309,38 @@ pub fn sign_detached(signer: &dyn Signer, content_digest: &[u8], stamp: &mut dyn
     all.extend(chain.iter().filter(|c| c.der != cert.der).map(|c| c.der.as_slice()));
     let certs = asn1::tlv(0xA0, &all.concat());
     let sd = asn1::seq(&[&asn1::uint(1), &asn1::set_of(&[&digest_alg]), &asn1::seq(&[&asn1::oid(DATA)]), &certs, &asn1::set_of(&[&signer_info])]);
+    Ok(asn1::seq(&[&asn1::oid(SIGNED_DATA), &asn1::ctx(0, &[&sd])]))
+}
+
+/// A SignedData that carries its content (`content`, the DER of a
+/// structure of type `content_type`), Authenticode style: the digest is
+/// of the structure's body and it is put in as itself, not in an OCTET
+/// STRING. SHA-256 whatever the key; `attrs` are signed along with the
+/// content type, the digest and the signing time.
+pub fn sign_embedded(signer: &dyn Signer, content_type: &str, content: &[u8], attrs: &[Vec<u8>]) -> Result<Vec<u8>, Error> {
+    let (cert, chain) = (signer.certificate(), signer.chain());
+    let kind = KeyKind::of(cert)?;
+    let hash = Hash::Sha256;
+    let digest_alg = asn1::alg(hash.oid(), true);
+    let body = asn1::parse(content)?.body;
+    let attr = |oid: &str, v: &[u8]| asn1::seq(&[&asn1::oid(oid), &asn1::set_of(&[v])]);
+    let mut all_attrs = vec![attr(CONTENT_TYPE, &asn1::oid(content_type)), attr(MESSAGE_DIGEST, &asn1::octets(&hash.digest(body))), attr(SIGNING_TIME, &asn1::utc_time(crate::time::now()))];
+    all_attrs.extend(attrs.iter().cloned());
+    let refs: Vec<&[u8]> = all_attrs.iter().map(|a| a.as_slice()).collect();
+    let signed_set = asn1::set_of(&refs);
+    let signature = signer::sign_checked(signer, kind, hash, &hash.digest(&signed_set))?;
+    let mut signed_attrs = signed_set;
+    signed_attrs[0] = 0xA0;
+    let sig_alg = match kind {
+        KeyKind::Rsa(_) => asn1::alg("1.2.840.113549.1.1.1", true),
+        KeyKind::P256 | KeyKind::P384 => asn1::alg("1.2.840.10045.4.3.2", false),
+    };
+    let sid = asn1::seq(&[cert.issuer_der(), &asn1::tlv(asn1::INTEGER, &cert.serial)]);
+    let signer_info = asn1::seq(&[&asn1::uint(1), &sid, &digest_alg, &signed_attrs, &sig_alg, &asn1::octets(&signature)]);
+    let mut certs = vec![cert.der.as_slice()];
+    certs.extend(chain.iter().filter(|c| c.der != cert.der).map(|c| c.der.as_slice()));
+    let encap = asn1::seq(&[&asn1::oid(content_type), &asn1::ctx(0, &[content])]);
+    let sd = asn1::seq(&[&asn1::uint(1), &asn1::set_of(&[&digest_alg]), &encap, &asn1::tlv(0xA0, &certs.concat()), &asn1::set_of(&[&signer_info])]);
     Ok(asn1::seq(&[&asn1::oid(SIGNED_DATA), &asn1::ctx(0, &[&sd])]))
 }
 

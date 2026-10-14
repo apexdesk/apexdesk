@@ -30,7 +30,7 @@ use apex_tui::Book;
 use args::{Parsed, Spec};
 use show::Shown;
 
-const COMMANDS: &[&str] = &["convert", "cat", "eval", "get", "set", "recalc", "merge", "info", "sign", "verify", "extend", "inventory", "inspect", "policy", "api", "mcp", "tui", "help"];
+const COMMANDS: &[&str] = &["convert", "cat", "eval", "get", "set", "recalc", "run-macro", "merge", "info", "sign", "verify", "extend", "inventory", "inspect", "policy", "api", "mcp", "tui", "help"];
 
 /// The command the arguments start, if any.
 fn command(argv: &[String]) -> Option<&'static str> {
@@ -131,6 +131,7 @@ fn dispatch(cmd: &str, rest: &[String]) -> Res<i32> {
         "get" => (Spec { values: &["sheet", "format", "password"], flags: &["raw", "formulas"] }, GET_HELP),
         "set" => (Spec { values: &["sheet", "output", "password"], flags: &[] }, SET_HELP),
         "recalc" => (Spec { values: &["output", "password"], flags: &[] }, RECALC_HELP),
+        "run-macro" => (Spec { values: &["output", "password"], flags: &["trust", "save", "allow-writes", "allow-suspicious"] }, RUN_MACRO_HELP),
         "merge" => (Spec { values: &["out", "sheet", "name", "query", "sql", "password-env"], flags: &["pdf", "single", "quiet", "allow-remote"] }, MERGE_HELP),
         "info" => (Spec { values: &["password"], flags: &["json", "page-starts"] }, INFO_HELP),
         "sign" => (Spec { values: &["cert", "password-file", "password-env", "reason", "tsa", "level", "output", "pkcs11", "slot", "cert-label", "cert-subject", "cert-sha1", "pin-env"], flags: &["quiet", "store", "list"] }, sign::SIGN_HELP),
@@ -156,6 +157,7 @@ fn dispatch(cmd: &str, rest: &[String]) -> Res<i32> {
         "get" => get(&a),
         "set" => set(&a),
         "recalc" => recalc(&a),
+        "run-macro" => run_macro(&a),
         "merge" => merge(&a),
         "info" => info(&a),
         "sign" => sign::sign(&a),
@@ -192,6 +194,7 @@ Commands:
   get       print cell values
   set       change cells and save
   recalc    recalculate every formula and save
+  run-macro run a macro of a workbook (.xlsm) and save
   merge     mail merge a document with a spreadsheet, CSV file or database
   info      describe files (type, sheets, pages, author, macros...)
   sign      sign a document with a certificate file (.p12, .pfx)
@@ -219,6 +222,7 @@ fn help_of(cmd: &str) -> &'static str {
         "get" => GET_HELP,
         "set" => SET_HELP,
         "recalc" => RECALC_HELP,
+        "run-macro" => RUN_MACRO_HELP,
         "merge" => MERGE_HELP,
         "info" => INFO_HELP,
         "sign" => sign::SIGN_HELP,
@@ -340,6 +344,36 @@ Options:
   -p, --password PW   password of an encrypted file (kept when saving)
       --password-env VAR
                       the password is in environment variable VAR
+";
+
+const RUN_MACRO_HELP: &str = "Usage: apexdesk run-macro FILE MACRO [ARG...] --trust [options]
+
+Runs a VBA macro of a workbook without a window: a Sub by name
+(Module1.Main also works), with ARGs for its parameters as typed in Run
+Macro: a number, TRUE or FALSE, else text (no quotes). Debug.Print goes
+to standard output; MsgBox to standard error, answered with its default
+button; InputBox is cancelled.
+
+Macros run only with --trust, saying you trust this file's code. Even
+then they don't run when your organization turned macros off, for files
+from the Internet, when only signed macros may run and these aren't, or
+when the code looks like malware. The macro reaches the files in the
+workbook's folder (anywhere in a trusted location) and changes none
+without --allow-writes.
+
+Options:
+      --trust             run the file's macros (required)
+  -o, --output FILE       save the workbook to FILE after the macro
+      --save              save the workbook over FILE after the macro
+                          (also saved when the macro calls Save)
+      --allow-writes      let the macro write, delete or rename files
+      --allow-suspicious  run code that looks like malware anyway
+  -p, --password PW       password of an encrypted file (kept when saving)
+      --password-env VAR
+                          the password is in environment variable VAR
+
+Exit status: 0 the macro ended, 1 it failed (its error and line on
+standard error) or didn't run, 2 wrong usage.
 ";
 
 const MERGE_HELP: &str = "Usage: apexdesk merge TEMPLATE DATA [options]
@@ -968,6 +1002,94 @@ fn recalc(a: &Parsed) -> Res<i32> {
     wb.recalc_all();
     save_sheet(&wb, &out, out_fmt, a)?;
     Ok(0)
+}
+
+// --- run-macro -----------------------------------------------------------------------
+
+fn run_macro(a: &Parsed) -> Res<i32> {
+    run_macro_with(a, Box::new(emit), Box::new(say))?;
+    Ok(0)
+}
+
+/// `run-macro`, printing with `out` and `err`: where it saved, if it did.
+fn run_macro_with<'a>(a: &Parsed, out: Box<dyn FnMut(&str) + Send + 'a>, err: Box<dyn FnMut(&str) + Send + 'a>) -> Res<Option<PathBuf>> {
+    let [file, name, args @ ..] = a.pos.as_slice() else { return usage("give a FILE and a MACRO") };
+    if !a.flag("trust") {
+        return usage("macros run only with --trust (you trust this file's code)");
+    }
+    let path = PathBuf::from(file);
+    let (mut wb, fmt) = open_sheet(&path, a)?;
+    if let Some(why) = crate::app::macro_headless::refused(&path, &wb, a.flag("allow-suspicious")) {
+        return error(format!("{file}: {why}"));
+    }
+    let h = crate::app::macro_headless::Headless { allow_writes: a.flag("allow-writes"), password: a.value("password").map(str::to_string), out, err };
+    let ran = crate::app::macro_headless::run(&path, &mut wb, name, args, h).map_err(|e| Fail::Error(format!("{file}: {e}")))?;
+    if let Some(e) = &ran.error {
+        return error(format!("{file}: {name}: {} (line {} of {})", e, e.line, e.module));
+    }
+    if a.value("output").is_some() || a.flag("save") || ran.save {
+        let (target, target_fmt) = output_of(&path, fmt, a)?;
+        save_sheet(&wb, &target, target_fmt, a)?;
+        return Ok(Some(target));
+    }
+    Ok(None)
+}
+
+/// The modules of a workbook's VBA project: name, kind and code.
+fn macro_modules(wb: &Workbook) -> Res<Vec<(String, &'static str, String)>> {
+    let Some(bin) = &wb.macros.project else { return Ok(Vec::new()) };
+    let p = apex_io::vba::read(bin).map_err(|e| Fail::Error(e.to_string()))?;
+    if p.protected {
+        return error("the macro project is locked with a password");
+    }
+    Ok(p.modules.into_iter().map(|m| {
+        let kind = match m.kind {
+            apex_io::vba::ModuleKind::Standard => "module",
+            apex_io::vba::ModuleKind::Class => "class",
+            apex_io::vba::ModuleKind::Document => "document",
+            apex_io::vba::ModuleKind::Form => "form",
+        };
+        (m.name, kind, m.code)
+    }).collect())
+}
+
+/// Writes `code` as module `name` of a workbook's project (a new one
+/// when there is none by that name): true when the module is new. A
+/// signed project loses its signature.
+fn write_module(wb: &mut Workbook, name: &str, code: &str, class: bool) -> Res<bool> {
+    use apex_io::vba::{ModuleKind, VbaModule};
+    let bin = match &wb.macros.project {
+        Some(b) => b.to_vec(),
+        None => apex_io::vba::new_workbook_project(wb.code_name.as_deref().filter(|b| apex_io::vba::is_identifier(b)).unwrap_or("ThisWorkbook"), &[]).map_err(|e| Fail::Error(e.to_string()))?,
+    };
+    let mut p = apex_io::vba::read(&bin).map_err(|e| Fail::Error(e.to_string()))?;
+    if p.protected {
+        return error("the macro project is locked with a password");
+    }
+    let code = code.replace("\r\n", "\n").replace('\r', "\n");
+    let created = match p.modules.iter_mut().find(|m| m.name.eq_ignore_ascii_case(name)) {
+        Some(m) if m.kind == ModuleKind::Form => return error("forms can't be written"),
+        Some(m) => {
+            m.code = code;
+            false
+        }
+        None => {
+            p.check_name(name, None).map_err(|_| Fail::Usage(format!("'{name}' can't be the name of a module")))?;
+            let mut m = if class { VbaModule::class(name.trim()) } else { VbaModule::standard(name.trim()) };
+            m.code = code;
+            p.modules.push(m);
+            true
+        }
+    };
+    let mut book = wb.code_name.clone();
+    let mut sheets: Vec<Option<String>> = wb.sheets.iter().map(|s| s.code_name.clone()).collect();
+    p.match_book(&mut book, &mut sheets);
+    wb.code_name = book;
+    for (s, n) in wb.sheets.iter_mut().zip(sheets) {
+        s.code_name = n;
+    }
+    wb.macros.set_project(p.write().map_err(|e| Fail::Error(e.to_string()))?);
+    Ok(created)
 }
 
 // --- merge ---------------------------------------------------------------------------

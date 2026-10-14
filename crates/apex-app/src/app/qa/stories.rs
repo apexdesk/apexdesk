@@ -491,6 +491,36 @@ fn sheet_drag_selects(t: &mut T) -> Res {
     Ok(())
 }
 
+/// A sheet's tab double-clicked takes a new name; Enter, or a click on the
+/// cells, ends the rename.
+fn sheet_rename_tab(t: &mut T) -> Res {
+    for (new, end_with_click) in [("Ventas", false), ("Gastos", true)] {
+        let old = t.sheet().wb.sheets[0].name.clone();
+        let tab = t.rig.controls.iter().find(|c| c.key.1 == old).map(|c| c.rect.center()).ok_or_else(|| format!("there is no tab \"{old}\""))?;
+        click_at(&mut t.rig, tab, 2);
+        if !t.sheet().audit_renaming() {
+            return Err(format!("the tab \"{old}\" double-clicked doesn't start a rename"));
+        }
+        t.key(Key::A, Modifiers::COMMAND);
+        t.type_text(new);
+        if end_with_click {
+            let at = t.area().lerp_inside(vec2(0.5, 0.5));
+            click_at(&mut t.rig, at, 1);
+        } else {
+            t.key(Key::Enter, Modifiers::NONE);
+        }
+        let how = if end_with_click { "a click on the cells" } else { "Enter" };
+        if t.sheet().audit_renaming() {
+            return Err(format!("\"{new}\" typed in the tab's name and {how}: the name is still being edited"));
+        }
+        let name = t.sheet().wb.sheets[0].name.clone();
+        if name != new {
+            return Err(format!("\"{new}\" typed in the tab's name and {how}: the sheet is called \"{name}\""));
+        }
+    }
+    Ok(())
+}
+
 // --- slides ------------------------------------------------------------------------------------
 
 /// A text box placed on the slide takes what is typed, and shows it.
@@ -646,6 +676,7 @@ const STORIES: &[Story] = &[
     (Qv::Doc, "typing over a selection", doc_type_over_selection),
     (Qv::Sheet, "a value, a formula, undo", sheet_type_and_formula),
     (Qv::Sheet, "a drag selects the cells", sheet_drag_selects),
+    (Qv::Sheet, "a tab renamed", sheet_rename_tab),
     (Qv::Slides, "a text box takes typing", slides_text_box),
     (Qv::Slides, "a rectangle drawn, moved, deleted", slides_draw_and_move),
     (Qv::Slides, "a new slide", slides_new_slide),

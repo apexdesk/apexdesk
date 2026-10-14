@@ -54,6 +54,12 @@ fn environment(app: &AndroidApp) {
     }
 }
 
+/// The device is a phone: its smallest side under 600 dp (Android's
+/// line between phones and tablets; the keyboard doesn't change it).
+pub fn small_screen() -> bool {
+    crate::app::phone_width(APP.get().and_then(|a| a.config().smallest_screen_width_dp()))
+}
+
 /// A line in the system log (`adb logcat -s ApexDesk`).
 pub fn log(text: &str) {
     #[link(name = "log")]
@@ -486,26 +492,23 @@ fn with_activity<T>(f: impl FnOnce(&mut jni::Env, &jni::objects::JObject) -> jni
     .map_err(|e: jni::errors::Error| e.to_string())
 }
 
-/// Whether the program may read and write every file of the shared
-/// storage (Android 11 and later ask for it in the settings).
+/// Whether the program may read the files of the shared storage
+/// (MainActivity.hasFileAccess: "All files access" from Android 11, the
+/// storage permission before). Without it Android lists the folders but
+/// not the files in them.
 pub fn all_files_access() -> bool {
     use jni::{jni_sig, jni_str};
-    with_activity(|env, _| env.call_static_method(jni_str!("android/os/Environment"), jni_str!("isExternalStorageManager"), jni_sig!("()Z"), &[])?.z()).unwrap_or(true)
+    with_activity(|env, activity| env.call_method(activity, jni_str!("hasFileAccess"), jni_sig!("()Z"), &[])?.z()).unwrap_or(true)
 }
 
-/// Opens the settings page where the user lets the program reach every file.
+/// Asks the user for it (MainActivity.askFileAccess): the settings page
+/// where the program is let reach every file, or the permission's dialog.
 pub fn ask_all_files_access() {
-    use jni::objects::JValue;
     use jni::{jni_sig, jni_str};
-    let r = with_activity(|env, activity| {
-        let action = env.new_string("android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION")?;
-        let package = env.new_string(format!("package:{PACKAGE}"))?;
-        let uri = env.call_static_method(jni_str!("android/net/Uri"), jni_str!("parse"), jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"), &[JValue::Object(&package)])?.l()?;
-        let intent = env.new_object(jni_str!("android/content/Intent"), jni_sig!("(Ljava/lang/String;Landroid/net/Uri;)V"), &[JValue::Object(&action), JValue::Object(&uri)])?;
-        env.call_method(activity, jni_str!("startActivity"), jni_sig!("(Landroid/content/Intent;)V"), &[JValue::Object(&intent)])?;
+    if let Err(e) = with_activity(|env, activity| {
+        env.call_method(activity, jni_str!("askFileAccess"), jni_sig!("()V"), &[])?;
         Ok(())
-    });
-    if let Err(e) = r {
+    }) {
         log(&format!("all files access: {e}"));
     }
 }

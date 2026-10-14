@@ -352,6 +352,7 @@ pub(crate) fn read(n: &Node, st: &Styles) -> Option<Raw> {
         };
     }
     if let Some(geom) = geom {
+        s.custom = drawn_geometry(geom).map(Arc::from);
         s.flip_h = geom.attr("draw:mirror-horizontal") == Some("true");
         s.flip_v = geom.attr("draw:mirror-vertical") == Some("true");
         // LibreOffice keeps an OOXML preset's adjust values as modifiers.
@@ -805,6 +806,12 @@ impl Writer {
             let _ = write!(out, r#"<draw:frame {head}><draw:text-box{next}>{text}</draw:text-box>{desc}</draw:frame>"#);
             return;
         }
+        if let Some(c) = &s.custom {
+            let (vb, d) = drawn_path(c, w, h);
+            let mirror = format!("{}{}", if s.flip_h { r#" draw:mirror-horizontal="true""# } else { "" }, if s.flip_v { r#" draw:mirror-vertical="true""# } else { "" });
+            let _ = write!(out, r#"<draw:custom-shape {head}>{desc}{text}<draw:enhanced-geometry svg:viewBox="{vb}" draw:type="non-primitive" draw:enhanced-path="{d}"{mirror}/></draw:custom-shape>"#);
+            return;
+        }
         let path = if let Some(g) = geometry {
             preset_path(g, w, h, &s.adj)
         } else if s.kind == ShapeKind::Ellipse {
@@ -829,6 +836,51 @@ impl Writer {
 }
 
 /// The enhanced path of preset `g` in a `w` by `h` box, in a 21600 unit view box.
+/// A drawn geometry (`a:custGeom`) from the enhanced geometry of a
+/// custom shape that isn't a preset: its path of lines, curves and closes.
+fn drawn_geometry(geom: &Node) -> Option<String> {
+    if geom.attr("draw:type") != Some("non-primitive") {
+        return None;
+    }
+    let d = geom.attr("draw:enhanced-path")?;
+    // Only moves, lines, curves and closes; anything else (arcs, formulas)
+    // stays the shape's kind.
+    let mut closes = false;
+    for t in d.split_whitespace() {
+        match t {
+            "M" | "L" | "C" | "N" => {}
+            "Z" => closes = true,
+            t if t.parse::<f32>().is_ok() => {}
+            _ => return None,
+        }
+    }
+    let node = Node {
+        name: if closes { "draw:path" } else { "draw:polyline" }.into(),
+        attrs: vec![("svg:viewBox".into(), geom.attr("svg:viewBox")?.into()), ("svg:d".into(), d.replace(" N", " "))],
+        ..Default::default()
+    };
+    crate::odp::cust_geom(&node)
+}
+
+/// The view box and the enhanced path of a drawn geometry in a `w` by `h`
+/// box (in hundredths of a point).
+fn drawn_path(xml: &str, w: f32, h: f32) -> (String, String) {
+    let (w, h) = (w.max(1.0), h.max(1.0));
+    let mut d = String::new();
+    for p in apex_doc::custom_paths(xml, w, h) {
+        for (pts, closed) in &p.subpaths {
+            for (i, (x, y)) in pts.iter().enumerate() {
+                let _ = write!(d, "{}{} {} ", if i == 0 { "M " } else if i == 1 { "L " } else { "" }, (x * 100.0).round() as i64, (y * 100.0).round() as i64);
+            }
+            if *closed {
+                d.push_str("Z ");
+            }
+            d.push_str("N ");
+        }
+    }
+    (format!("0 0 {} {}", (w * 100.0).round() as i64, (h * 100.0).round() as i64), d.trim_end().to_string())
+}
+
 fn preset_path(g: &str, w: f32, h: f32, adj: &[(Arc<str>, i64)]) -> String {
     let (w, h) = (w.max(1.0), h.max(1.0));
     let mut out = String::new();

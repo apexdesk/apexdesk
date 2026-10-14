@@ -321,6 +321,7 @@ impl SheetView {
     /// to the system.
     pub(super) fn follow_link(&mut self, c: CellRef) {
         let Some(l) = self.link_at(c).cloned() else { return };
+        self.cell_hooks.followed = Some((self.sheet, c));
         match l.place() {
             Some(place) => match parse_place(&self.wb, place, self.sheet) {
                 Some((s, r)) => {

@@ -77,8 +77,22 @@ struct Raw {
     lock: bool,
     /// A shape (`xdr:sp` or a connector).
     sp: Option<Node>,
+    /// The macro of a picture.
+    macro_name: String,
     /// The `dgm:relIds` of a SmartArt frame.
     diagram: Option<Node>,
+}
+
+/// The macro of a drawing as Excel writes it (`[0]!Macro1`,
+/// `'Book.xlsm'!Module1.Macro1`): the name after the workbook.
+pub(crate) fn macro_from(v: &str) -> String {
+    let name = v.rsplit('!').next().unwrap_or_default().trim();
+    if name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') { name.to_string() } else { String::new() }
+}
+
+/// A macro of this workbook as Excel writes it.
+pub(crate) fn macro_to(name: &str) -> String {
+    if name.is_empty() { String::new() } else { format!("[0]!{name}") }
 }
 
 /// Excel anchors shapes turned 45..135 degrees (or 225..315) by their box
@@ -168,7 +182,10 @@ fn read_anchor(r: &mut Reader, a: &mut Raw) {
                     "ext" if a.pic && t.attr("cx").is_some() && a.xfrm_ext.is_none() => {
                         a.xfrm_ext = Some((emu(&t.attr("cx").unwrap_or_default()), emu(&t.attr("cy").unwrap_or_default())));
                     }
-                    "pic" if !a.pic => a.pic = true,
+                    "pic" if !a.pic => {
+                        a.pic = true;
+                        a.macro_name = macro_from(&t.attr("macro").unwrap_or_default());
+                    }
                     "grpSp" if depth == 1 => a.group = true,
                     "cNvPr" if (a.pic || a.frame) && a.name.is_none() => {
                         a.name = Some(t.attr("name").unwrap_or_default().into_owned());
@@ -278,7 +295,8 @@ pub fn read_drawing_rel(z: &ZipReader, path: &str, rid: &str, sh: &mut Sheet, bo
             // Excel's hidden stand-ins for embedded objects (read from the
             // sheet's `oleObjects`) are skipped.
             if sh.shapes.len() < MAX_PICTURES && sp.find("compatExt").is_none() {
-                if let Some(s) = to_shape(sh, &mut a, &sp) {
+                if let Some(mut s) = to_shape(sh, &mut a, &sp) {
+                    s.macro_name = macro_from(sp.attr("macro").unwrap_or_default());
                     sh.shapes.push(s);
                 }
             }
@@ -317,7 +335,8 @@ pub fn read_drawing_rel(z: &ZipReader, path: &str, rid: &str, sh: &mut Sheet, bo
             Some((Arc::from(data), fmt))
         });
         let Some((data, format)) = entry.clone() else { continue };
-        if let Some(img) = to_image(sh, &a, data, format) {
+        if let Some(mut img) = to_image(sh, &a, data, format) {
+            img.macro_name = std::mem::take(&mut a.macro_name);
             sh.images.push(img);
         }
     }
@@ -650,7 +669,8 @@ pub fn write_drawing(wb: &Workbook, sheet: usize, media: &mut Media) -> Option<(
         let (cx, cy) = (to_emu(img.width), to_emu(img.height));
         let (open, close) = anchor_tags(sh, img.from, img.dx, img.dy, img.width, img.height, img.anchor, img.rotation);
         x.push_str(&open);
-        let _ = write!(x, r#"<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="{}" name="{}""#, i + 2, esc(&img.name));
+        let mac = if img.macro_name.is_empty() { String::new() } else { format!(r#" macro="{}""#, esc(&macro_to(&img.macro_name))) };
+        let _ = write!(x, r#"<xdr:pic{mac}><xdr:nvPicPr><xdr:cNvPr id="{}" name="{}""#, i + 2, esc(&img.name));
         if !img.alt.is_empty() {
             let _ = write!(x, r#" descr="{}""#, esc(&img.alt));
         }
@@ -730,7 +750,7 @@ pub fn write_drawing(wb: &Workbook, sheet: usize, media: &mut Media) -> Option<(
             continue;
         }
         x.push_str(&open);
-        let _ = write!(x, r#"<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="{id}" name="{}""#, esc(&s.shape.name));
+        let _ = write!(x, r#"<xdr:sp macro="{}" textlink=""><xdr:nvSpPr><xdr:cNvPr id="{id}" name="{}""#, esc(&macro_to(&s.macro_name)), esc(&s.shape.name));
         if !s.shape.alt.is_empty() {
             let _ = write!(x, r#" descr="{}""#, esc(&s.shape.alt));
         }
@@ -928,5 +948,20 @@ pub(crate) mod tests {
         }
         let back = crate::xlsx::read(&w.finish()).unwrap();
         assert_eq!(back.sheets[0].images.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod macro_tests {
+    use super::{macro_from, macro_to};
+
+    #[test]
+    fn macro_names_as_excel_writes_them() {
+        assert_eq!(macro_from("[0]!Go"), "Go");
+        assert_eq!(macro_from("'Other Book.xlsm'!Module3.Go"), "Module3.Go");
+        assert_eq!(macro_from(""), "");
+        assert_eq!(macro_from("[0]!Go(1)"), "");
+        assert_eq!(macro_to("Module1.Go"), "[0]!Module1.Go");
+        assert_eq!(macro_to(""), "");
     }
 }

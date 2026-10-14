@@ -167,7 +167,10 @@ pub fn read(data: &[u8]) -> Result<Workbook, Error> {
                 }
             }
             Ev::Start(t) | Ev::Empty(t) if t.local() == "workbookProtection" => wb.protection = crate::xlsx_notes::read_workbook_protection(&t),
-            Ev::Start(t) | Ev::Empty(t) if t.local() == "workbookPr" => wb.calc.date1904 = t.attr("date1904").is_some_and(|v| v == "1" || v == "true"),
+            Ev::Start(t) | Ev::Empty(t) if t.local() == "workbookPr" => {
+                wb.calc.date1904 = t.attr("date1904").is_some_and(|v| v == "1" || v == "true");
+                wb.code_name = t.attr("codeName").map(|v| v.to_string()).filter(|v| !v.is_empty());
+            }
             Ev::Start(t) | Ev::Empty(t) if t.local() == "sheet" => {
                 let name = t.attr("name").unwrap_or_default().into_owned();
                 let rid = t.attr("r:id").or_else(|| t.attr("id")).unwrap_or_default();
@@ -967,8 +970,15 @@ fn write_book(wb: &Workbook, flavor: crate::Flavor) -> Vec<u8> {
     if wb.meta.read_only_recommended {
         w.push_str(r#"<fileSharing readOnlyRecommended="1"/>"#);
     }
-    if wb.calc.date1904 {
-        w.push_str(r#"<workbookPr date1904="1"/>"#);
+    if wb.calc.date1904 || wb.code_name.is_some() {
+        w.push_str("<workbookPr");
+        if wb.calc.date1904 {
+            w.push_str(r#" date1904="1""#);
+        }
+        if let Some(c) = &wb.code_name {
+            w.push_str(&format!(r#" codeName="{}""#, esc(c)));
+        }
+        w.push_str("/>");
     }
     crate::xlsx_notes::write_workbook_protection(&mut w, wb);
     w.push_str("<bookViews><workbookView/></bookViews><sheets>");

@@ -669,7 +669,7 @@ mod tests {
         v.select(CellRef::new(2, 1), false);
         let ctx = egui::Context::default();
         crate::fonts::install(&ctx);
-        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: true, file_name: "plan".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: true, file_name: "plan".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         for kind in ViewKind::ALL {
             v.plan.views.kind = kind;
             for _ in 0..2 {

@@ -27,7 +27,7 @@
         android:name=".MainActivity"
         android:exported="true"
         android:launchMode="singleTask"
-        android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode|locale|layoutDirection"
+        android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode|locale|layoutDirection|fontScale|colorMode|mcc|mnc|touchscreen|fontWeightAdjustment|grammaticalGender"
         android:windowSoftInputMode="adjustResize"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
       <meta-data android:name="android.app.lib_name" android:value="apexdesk" />

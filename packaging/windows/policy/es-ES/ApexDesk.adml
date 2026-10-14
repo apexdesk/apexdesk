@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">Solo macros firmadas con un certificado de confianza</string>
       <string id="TrustedLocations">Ubicaciones de confianza</string>
       <string id="TrustedLocations_Help">Carpetas cuyos archivos abren con las macros habilitadas. Sustituyen a las que añadan los usuarios.</string>
+      <string id="TrustedPublishers">Editores de macros de confianza</string>
+      <string id="TrustedPublishers_Help">Certificados (huellas SHA-256 o SHA-1, en hexadecimal) cuyas macros firmadas se ejecutan con «Solo macros firmadas». Si se fija, solo se ejecutan las firmadas por ellos y los usuarios no pueden añadir más.</string>
+      <string id="DisableMacroEditor">Desactivar el editor de macros</string>
+      <string id="DisableMacroEditor_Help">1: el editor de macros (Alt+F11) no se puede abrir. Las macros se siguen ejecutando según la política de seguridad de macros.</string>
       <string id="TemplatesFolder">Carpeta de plantillas compartidas</string>
       <string id="TemplatesFolder_Help">Una carpeta de plantillas (docx, dotx, odt, xlsx, xltx, ods...) que aparece en Nuevo desde plantilla junto a las del usuario.</string>
       <string id="BuildingBlocksFolder">Carpeta compartida de bloques de creación</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">Ubicaciones de confianza</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">Editores de macros de confianza</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>Carpeta de plantillas compartidas</label></textBox>

@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">신뢰할 수 있는 인증서로 서명된 매크로만</string>
       <string id="TrustedLocations">신뢰할 수 있는 위치</string>
       <string id="TrustedLocations_Help">열 때 매크로가 사용되는 파일의 폴더입니다. 사용자가 추가한 폴더를 대체합니다.</string>
+      <string id="TrustedPublishers">신뢰할 수 있는 매크로 게시자</string>
+      <string id="TrustedPublishers_Help">&quot;서명된 매크로만&quot;에서 서명된 매크로가 실행되는 인증서 (SHA-256 또는 SHA-1 지문, 16진수). 설정하면 이들이 서명한 매크로만 실행되며 사용자가 추가할 수 없습니다.</string>
+      <string id="DisableMacroEditor">매크로 편집기 끄기</string>
+      <string id="DisableMacroEditor_Help">1: 매크로 편집기(Alt+F11)를 열 수 없습니다. 매크로는 매크로 보안 정책에 따라 계속 실행됩니다.</string>
       <string id="TemplatesFolder">공유 서식 파일 폴더</string>
       <string id="TemplatesFolder_Help">[서식 파일에서 새로 만들기]에 사용자 서식 파일과 함께 표시되는 서식 파일(docx, dotx, odt, xlsx, xltx, ods 등) 폴더입니다.</string>
       <string id="BuildingBlocksFolder">공유 문서 블록 폴더</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">신뢰할 수 있는 위치</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">신뢰할 수 있는 매크로 게시자</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>공유 서식 파일 폴더</label></textBox>

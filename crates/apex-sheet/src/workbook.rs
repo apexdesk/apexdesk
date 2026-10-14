@@ -506,6 +506,11 @@ pub struct Workbook {
     pending_cells: dynorder::Pending,
     /// Automatic or manual calculation, and iteration of circular references.
     pub calc: CalcOptions,
+    /// The functions of the workbook's macros, while they may run
+    /// ([`Workbook::set_udf`]).
+    pub udf: Option<std::sync::Arc<dyn crate::udf::Udf>>,
+    /// The macro recorder, while it records the user's edits.
+    pub recorder: Option<Box<crate::record::Recorder>>,
     /// Formulas left out of date in manual mode (`stale_all`: every one).
     stale: HashSet<CellKey>,
     stale_all: bool,
@@ -520,6 +525,8 @@ pub struct Workbook {
     pub kept: apex_doc::KeptParts,
     /// Macros kept from the file (not run).
     pub macros: apex_doc::Macros,
+    /// The workbook's name in VBA code (Excel's codeName, ThisWorkbook).
+    pub code_name: Option<String>,
     /// Get Data queries (Data > Get Data).
     pub queries: Vec<crate::query::Query>,
     /// Tests that must stay true (Formulas > Tests), saved in a part of
@@ -613,6 +620,8 @@ impl Workbook {
             ext_ranges: Default::default(),
             pending_cells: Default::default(),
             calc: CalcOptions::default(),
+            udf: None,
+            recorder: None,
             stale: HashSet::default(),
             stale_all: false,
             circular: None,
@@ -620,6 +629,7 @@ impl Workbook {
             custom_views: Vec::new(),
             kept: apex_doc::KeptParts::default(),
             macros: apex_doc::Macros::default(),
+            code_name: None,
             queries: Vec::new(),
             checks: Vec::new(),
         }
@@ -824,6 +834,14 @@ impl Workbook {
 
     /// Rebuilds the graph and recalculates everything, working out what
     /// each formula reads once for both.
+    /// Gives the cells the functions of the workbook's macros (None:
+    /// takes them away), and calculates again.
+    pub fn set_udf(&mut self, udf: Option<std::sync::Arc<dyn crate::udf::Udf>>) {
+        self.udf = udf;
+        self.rebuild_and_recalc();
+        self.revision += 1;
+    }
+
     fn rebuild_and_recalc(&mut self) {
         let keys = self.formula_keys();
         let deps = self.deps_of_keys(&keys);
@@ -859,7 +877,7 @@ impl Workbook {
             let (is_vol, is_vis) = match last {
                 Some((p, s, v, h)) if std::ptr::eq(p, e) && s == k.sheet => (v, h),
                 _ => {
-                    let v = e.is_volatile() || self.uses_volatile_name(k.sheet as usize, e);
+                    let v = e.is_volatile() || self.uses_volatile_name(k.sheet as usize, e) || self.uses_volatile_udf(e);
                     let h = e.calls(Func::Subtotal) || e.calls(Func::Aggregate);
                     last = Some((e, k.sheet, v, h));
                     (v, h)
@@ -1026,7 +1044,8 @@ impl Workbook {
         }
         // Without formulas that find what they read as they run, all the
         // formulas ready at once are calculated on several threads.
-        let threads = if watch || n < 20_000 { 1 } else { std::thread::available_parallelism().map_or(1, |n| n.get()).min(12) };
+        // Macros' functions run one at a time (on this thread's stack).
+        let threads = if watch || n < 20_000 || self.udf.is_some() { 1 } else { std::thread::available_parallelism().map_or(1, |n| n.get()).min(12) };
         // A file's formulas may cost far more than its size: past the
         // limit, the rest keep the values they have, out of date (F9).
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(MAX_RECALC_SECS);
@@ -1469,6 +1488,10 @@ impl Workbook {
                 inv = Op::Batch(more);
             }
         }
+        if let Some(mut r) = self.recorder.take() {
+            r.step(self, &inv, label);
+            self.recorder = Some(r);
+        }
         self.undo.push((inv, label));
         if self.undo.len() > 500 {
             self.undo.remove(0);
@@ -1617,7 +1640,7 @@ impl Workbook {
                     if let Some(e) = new.as_ref().and_then(Cell::formula).map(|f| f.expr()) {
                         let deps = self.deps_of(sheet, c, &e);
                         self.graph.add(k, &deps);
-                        if e.is_volatile() {
+                        if e.is_volatile() || self.uses_volatile_udf(&e) {
                             self.volatile.insert(k);
                         }
                         if e.calls(Func::Subtotal) || e.calls(Func::Aggregate) {
@@ -2424,6 +2447,15 @@ pub struct ClipSource {
 }
 
 impl EvalContext for Workbook {
+    fn has_udf(&self, name: &str) -> bool {
+        self.udf.as_ref().is_some_and(|u| u.has(name))
+    }
+
+    fn call_udf(&self, name: &str, args: Vec<crate::udf::UdfArg>, sheet: usize, cell: CellRef) -> Option<Value> {
+        let u = self.udf.as_ref().filter(|u| u.has(name))?;
+        Some(u.call(self, name, args, sheet, cell))
+    }
+
     fn value(&self, sheet: usize, cell: CellRef) -> Value {
         self.pending_cells.read(CellKey::new(sheet, cell));
         self.sheets.get(sheet).map(|s| s.value(cell).clone()).unwrap_or(Value::Error(ErrorKind::Ref))

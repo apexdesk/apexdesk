@@ -112,6 +112,14 @@ impl PdfView {
                 }
             }
         });
+        // Only with the dark workspace on: the pages in their real colors.
+        if crate::theme::dark_canvas() {
+            b.group("pdf.see_light", Icon::Theme, |ui| {
+                if toolstrip::large(ui, Icon::Theme, tr("pdf.see_light"), tr("pdf.see_light_tip"), acc, self.see_light).clicked() {
+                    self.see_light = !self.see_light;
+                }
+            });
+        }
         b.group("toolstrip.g.zoom", Icon::Zoom100, |ui| {
             let before = self.zoom;
             common::zoom_group(ui, &mut self.zoom, acc);

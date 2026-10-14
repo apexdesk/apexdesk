@@ -49,6 +49,8 @@ pub use text_fx::{TextFill, TextFx};
 pub mod preset;
 pub use preset::{PresetFill, PresetPath, is_preset, preset_adjusts, preset_names, preset_paths, preset_sites, preset_text_rect};
 pub mod ink;
+pub mod custom_geom;
+pub use custom_geom::custom_paths;
 pub use ink::{Ink, InkSource, InkStroke, InkTool};
 pub use para_deco::*;
 pub use shape::*;
@@ -1088,6 +1090,9 @@ pub struct Meta {
     /// The author recommends opening the file read-only (Always Open
     /// Read-Only in Office).
     pub read_only_recommended: bool,
+    /// Document variables (Document.Variables in a macro): name and value,
+    /// in order. Kept in .docx.
+    pub vars: Vec<(String, String)>,
 }
 
 /// A custom property.

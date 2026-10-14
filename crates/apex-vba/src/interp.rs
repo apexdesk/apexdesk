@@ -15,6 +15,13 @@ use crate::object::{By, Obj, RangeRef};
 use crate::value::{self, Array, VType, Value, compare};
 use crate::{Options, Project, Ui};
 
+mod class;
+mod debugger;
+mod udt;
+mod userform;
+
+pub(crate) use udt::WithObj;
+
 /// A variable: its declared type (for arrays, of the elements) and value.
 #[derive(Debug)]
 pub struct Var {
@@ -24,12 +31,16 @@ pub struct Var {
     pub array: bool,
     /// The return value of the function running (its name).
     pub ret: bool,
+    /// The user-defined type it holds (its elements', for an array).
+    pub udt: Option<Rc<str>>,
+    /// `String * n`.
+    pub fixed: Option<u32>,
 }
 
 pub type Slot = Rc<RefCell<Var>>;
 
 fn slot(ty: VType, val: Value) -> Slot {
-    Rc::new(RefCell::new(Var { ty, val, konst: false, array: false, ret: false }))
+    Rc::new(RefCell::new(Var { ty, val, konst: false, array: false, ret: false, udt: None, fixed: None }))
 }
 
 /// What a statement leaves to the statements around it.
@@ -38,7 +49,11 @@ pub enum Flow {
     Normal,
     Exit(ExitKind),
     GoTo(String),
+    /// `Return` of a GoSub.
+    Return,
     Resume(ResumeKind),
+    /// The debugger moved the next statement to this line.
+    Jump(u32),
 }
 
 /// What a document module belongs to.
@@ -53,11 +68,15 @@ struct Frame {
     module: usize,
     proc: Rc<Proc>,
     locals: HashMap<String, Slot>,
-    with: Vec<Value>,
+    with: Vec<WithObj>,
     on_error: OnError,
     in_handler: bool,
     /// Top-level statement where the error being handled happened.
     err_pc: usize,
+    /// Line of the statement running.
+    line: u32,
+    /// The object a class module's procedure runs for.
+    me: Option<Rc<crate::object::Instance>>,
 }
 
 /// The Err object.
@@ -91,9 +110,40 @@ fn stack_here() -> usize {
     std::hint::black_box(&x) as *const u8 as usize
 }
 
+/// The workbook a macro works on: its own, or only to read (a function
+/// called by a formula, which may not change cells).
+pub enum Book<'a> {
+    Mut(&'a mut Workbook),
+    Ref(&'a Workbook),
+    /// Another workbook the macro opened.
+    Owned(Box<Workbook>),
+}
+
+impl std::ops::Deref for Book<'_> {
+    type Target = Workbook;
+    fn deref(&self) -> &Workbook {
+        match self {
+            Book::Mut(w) => w,
+            Book::Ref(w) => w,
+            Book::Owned(w) => w,
+        }
+    }
+}
+
+impl Book<'_> {
+    /// The same workbook, for a shorter while.
+    pub fn reborrow(&mut self) -> Book<'_> {
+        match self {
+            Book::Mut(w) => Book::Mut(w),
+            Book::Ref(w) => Book::Ref(w),
+            Book::Owned(w) => Book::Mut(w),
+        }
+    }
+}
+
 pub struct Interp<'a> {
     pub project: &'a Project,
-    pub wb: &'a mut Workbook,
+    pub wb: Book<'a>,
     pub ui: &'a mut dyn Ui,
     pub active: usize,
     pub selection: Range,
@@ -106,6 +156,11 @@ pub struct Interp<'a> {
     pub err: ErrState,
     pub app: AppState,
     pub save: bool,
+    /// OnKey and OnTime, for the application after the macro.
+    pub requests: Vec<crate::Request>,
+    /// A Change handler runs: what it writes doesn't run one again (no
+    /// endless loop when it forgets EnableEvents).
+    pub(crate) in_change: bool,
     pub file_name: String,
     pub file_path: String,
     pub user_name: String,
@@ -118,14 +173,67 @@ pub struct Interp<'a> {
     max_time: Duration,
     started: Instant,
     /// Time spent in dialogs, which doesn't count against the limit.
-    paused: Duration,
+    pub(crate) paused: Duration,
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// Other workbooks' code (Application.Run "Book!Macro").
+    pub libraries: Vec<crate::Library>,
+    /// The cell whose formula called the function running
+    /// (Application.Caller).
+    pub caller: Option<crate::object::RangeRef>,
+    /// ActiveWindow.SplitRow and SplitColumn set, for FreezePanes.
+    pub split: Option<(u32, u32)>,
+    /// What Copy or Cut (true) without a destination put aside.
+    pub clip: Option<(RangeRef, bool)>,
+    dbg: Option<Box<debugger::State>>,
+    /// The object the next procedure called runs for (a method call).
+    next_me: Option<Rc<crate::object::Instance>>,
+    /// The WithEvents variables, for RaiseEvent.
+    sinks: Vec<class::Sink>,
+    /// Every object of a class made, weakly (see `let_go_instances`).
+    instances: Vec<std::rc::Weak<crate::object::Instance>>,
+    prune_at: usize,
+    /// The lists Range.AdvancedFilter filtered in place, for ShowAllData.
+    pub(crate) filtered: Vec<(usize, apex_sheet::Range)>,
+    /// What Worksheet.Sort holds, by sheet: SortFields, SetRange, Header.
+    pub(crate) sorts: HashMap<usize, crate::object::SortState>,
+    /// The chart selected or added last: ActiveChart.
+    pub(crate) active_chart: Option<(usize, u32)>,
+    /// Files the macro opened, and what it may reach.
+    pub(crate) files: crate::files::Files,
+    pub(crate) dialogs_shown: u32,
+    /// Workbook.SaveAs: the path and how many changes there were then.
+    pub(crate) saved_as: Option<(String, usize)>,
+    interrupt: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// The UserForms loaded, and the designs of the form modules.
+    pub(crate) forms: userform::Forms,
+    pub(crate) form_designs: Vec<(String, std::sync::Arc<crate::forms::Design>)>,
+    /// Other workbooks opened (None once closed: numbers aren't reused).
+    pub(crate) books: Vec<Option<crate::excel::books::BookState<'a>>>,
+    /// The one unqualified `Range`, `ActiveSheet`... refer to (None: the
+    /// macro's own).
+    pub(crate) active_book: Option<usize>,
+    /// The one swapped in (None: the macro's own).
+    pub(crate) current_book: Option<usize>,
+    /// The macro's own workbook's file while another one is swapped in.
+    pub(crate) outer_book: Option<std::path::PathBuf>,
+    /// The workbook `clip` is in (None: the macro's own).
+    pub(crate) clip_in: Option<usize>,
+    /// Cells copied in another workbook, for a paste in the one swapped in.
+    pub(crate) carried: Option<apex_sheet::Clip>,
+    /// The last Range.Find, for FindNext.
+    pub(crate) find_with: Option<crate::excel::FindWith>,
+    /// The document of a Word macro (None: a workbook's).
+    pub(crate) word: Option<crate::word::WordState<'a>>,
 }
 
 impl<'a> Interp<'a> {
     pub fn new(project: &'a Project, wb: &'a mut Workbook, ui: &'a mut dyn Ui, opts: &Options) -> R<Interp<'a>> {
+        Self::with_book(project, Book::Mut(wb), ui, opts)
+    }
+
+    pub fn with_book(project: &'a Project, wb: Book<'a>, ui: &'a mut dyn Ui, opts: &Options) -> R<Interp<'a>> {
         value::set_locale(wb.locale);
-        let owners = project.modules.iter().map(|m| owner_for(m, wb)).collect();
+        let owners = project.modules.iter().map(|m| owner_for(m, &wb)).collect();
         let active = opts.active_sheet.min(wb.sheets.len().saturating_sub(1));
         let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64) | 1;
         let mut it = Interp {
@@ -142,6 +250,8 @@ impl<'a> Interp<'a> {
             err: ErrState::default(),
             app: AppState { screen_updating: true, display_alerts: true, enable_events: true, calculation: -4105, status_bar: None },
             save: false,
+            requests: Vec::new(),
+            in_change: false,
             file_name: opts.file_name.clone(),
             file_path: opts.file_path.clone(),
             user_name: opts.user_name.clone(),
@@ -155,8 +265,37 @@ impl<'a> Interp<'a> {
             started: Instant::now(),
             paused: Duration::ZERO,
             cancel: opts.cancel.clone(),
+            libraries: opts.libraries.clone(),
+            caller: None,
+            split: None,
+            clip: None,
+            dbg: None,
+            next_me: None,
+            instances: Vec::new(),
+            sinks: Vec::new(),
+            prune_at: 1024,
+            filtered: Vec::new(),
+            sorts: HashMap::new(),
+            active_chart: None,
+            files: crate::files::Files::new(&opts.file_path, &opts.file_name, &opts.files),
+            dialogs_shown: 0,
+            saved_as: None,
+            interrupt: opts.interrupt.clone(),
+            forms: userform::Forms::default(),
+            form_designs: opts.forms.clone(),
+            books: Vec::new(),
+            active_book: None,
+            current_book: None,
+            outer_book: None,
+            clip_in: None,
+            carried: None,
+            find_with: None,
+            word: None,
         };
         it.init_modules()?;
+        if let Some(d) = &opts.debug {
+            it.dbg = Some(Box::new(debugger::State::new(project, d)));
+        }
         Ok(it)
     }
 
@@ -164,15 +303,22 @@ impl<'a> Interp<'a> {
     fn init_modules(&mut self) -> R<()> {
         let project = self.project;
         for (mi, m) in project.modules.iter().enumerate() {
+            // A class's variables are each object's (see new_instance).
+            if m.kind == ModuleKind::Class {
+                continue;
+            }
             for (v, _) in &m.vars {
                 let s = self.new_var(v, m.base)?;
+                if v.withevents {
+                    self.listen(&s, None, mi, &v.name);
+                }
                 self.module_vars[mi].insert(v.name.clone(), s);
             }
         }
         // Constants may use earlier ones (and those of other modules).
         for (mi, m) in project.modules.iter().enumerate() {
             for (name, e, _) in &m.consts {
-                self.frames.push(Frame { module: mi, proc: Rc::new(Proc { name: String::new(), kind: ProcKind::Sub, public: false, params: Vec::new(), ret: VType::Variant, body: Vec::new(), line: 0, is_static: false }), locals: HashMap::new(), with: Vec::new(), on_error: OnError::Off, in_handler: false, err_pc: 0 });
+                self.frames.push(Frame { module: mi, proc: Rc::new(Proc { name: String::new(), kind: ProcKind::Sub, public: false, params: Vec::new(), ret: VType::Variant, ret_name: None, body: Vec::new(), line: 0, is_static: false }), locals: HashMap::new(), with: Vec::new(), on_error: OnError::Off, in_handler: false, err_pc: 0, line: 0, me: None });
                 let v = self.eval(e).map_err(|err| err.at(&m.name, 0));
                 self.frames.pop();
                 let s = slot(VType::Variant, v?);
@@ -190,11 +336,16 @@ impl<'a> Interp<'a> {
         if self.steps > self.max_steps {
             return Err(Error::new(18, format!("The macro was stopped: it ran more than {} steps", self.max_steps)).fatal());
         }
-        if self.steps % 1024 == 0 {
+        // Often enough that steps on huge strings or arrays (tens of
+        // milliseconds each) can't overrun the time by much.
+        if self.steps % 64 == 0 {
             if self.started.elapsed().saturating_sub(self.paused) > self.max_time {
                 return Err(Error::new(18, format!("The macro was stopped: it ran for more than {} seconds", self.max_time.as_secs())).fatal());
             }
             if self.cancel.as_ref().is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)) {
+                return Err(Error::new(18, "The macro was stopped").fatal());
+            }
+            if self.interrupt.as_ref().is_some_and(|c| c.swap(false, std::sync::atomic::Ordering::Relaxed)) && !self.interrupt() {
                 return Err(Error::new(18, "The macro was stopped").fatal());
             }
         }
@@ -221,7 +372,7 @@ impl<'a> Interp<'a> {
         self.frames.last_mut().expect("a running procedure")
     }
 
-    fn module(&self) -> usize {
+    pub(crate) fn module(&self) -> usize {
         self.frames.last().map_or(0, |f| f.module)
     }
 
@@ -240,32 +391,70 @@ impl<'a> Interp<'a> {
 
     // --- variables ---------------------------------------------------------------
 
-    fn new_var(&mut self, v: &DimVar, base: i64) -> R<Slot> {
-        if let Some(bounds) = &v.bounds {
-            let mut b = Vec::new();
-            for (lo, hi) in bounds {
-                let lo = match lo {
-                    Some(e) => self.eval_scalar(e)?.to_i64()?,
-                    None => base,
-                };
-                b.push((lo, self.eval_scalar(hi)?.to_i64()?));
-            }
-            let arr = Array::new(b, v.ty)?;
-            let s = slot(v.ty, Value::Array(Rc::new(arr)));
-            s.borrow_mut().array = true;
-            return Ok(s);
+    fn bounds_of(&mut self, bounds: &[(Option<Expr>, Expr)], base: i64) -> R<Vec<(i64, i64)>> {
+        let mut b = Vec::with_capacity(bounds.len());
+        for (lo, hi) in bounds {
+            let lo = match lo {
+                Some(e) => self.eval_scalar(e)?.to_i64()?,
+                None => base,
+            };
+            b.push((lo, self.eval_scalar(hi)?.to_i64()?));
         }
-        let val = match &v.new {
-            Some(class) => self.new_object(class)?,
-            None => v.ty.default_value(),
+        Ok(b)
+    }
+
+    /// What a new element of a variable declared `v` holds when it isn't
+    /// its type's default: a record, a fixed-length string. With the
+    /// user-defined type's name.
+    pub(crate) fn first_value(&mut self, ty_name: Option<&str>, fixed: Option<u32>) -> R<(Option<Value>, Option<Rc<str>>)> {
+        let rec = match ty_name {
+            Some(n) => self.new_record(n)?,
+            None => None,
         };
-        Ok(slot(v.ty, val))
+        let udt = rec.as_ref().and(ty_name).map(Rc::from);
+        Ok((rec.or_else(|| fixed.map(udt::blank_fixed)), udt))
+    }
+
+    fn new_var(&mut self, v: &DimVar, base: i64) -> R<Slot> {
+        let (one, udt) = match &v.new {
+            Some(_) => (None, None),
+            None => self.first_value(v.ty_name.as_deref(), v.fixed)?,
+        };
+        let ty = if udt.is_some() { VType::Variant } else { v.ty };
+        let s = if let Some(bounds) = &v.bounds {
+            let b = self.bounds_of(bounds, base)?;
+            let mut arr = Array::new(b, ty)?;
+            if let Some(one) = &one {
+                arr.data.fill(one.clone());
+            }
+            let s = slot(ty, Value::Array(Rc::new(arr)));
+            s.borrow_mut().array = true;
+            s
+        } else {
+            let val = match (&v.new, one) {
+                (Some(class), _) => self.new_object(class)?,
+                (None, Some(one)) => one,
+                (None, None) => ty.default_value(),
+            };
+            slot(ty, val)
+        };
+        {
+            let mut b = s.borrow_mut();
+            b.udt = udt;
+            b.fixed = v.fixed;
+        }
+        Ok(s)
     }
 
     /// The variable `name` in scope: local, module, then public ones.
     pub fn lookup(&self, name: &str) -> Option<Slot> {
         let f = self.frames.last()?;
         if let Some(s) = f.locals.get(name) {
+            return Some(s.clone());
+        }
+        if let Some(me) = &f.me
+            && let Some(s) = me.vars.borrow().get(name)
+        {
             return Some(s.clone());
         }
         if let Some(s) = self.module_vars[f.module].get(name) {
@@ -303,12 +492,17 @@ impl<'a> Interp<'a> {
 
     /// Stores `v` in a variable (Let converts to its type; objects need Set).
     pub(crate) fn store(&mut self, s: &Slot, v: Value, set: bool) -> R<()> {
-        let (ty, array, konst, cur_obj) = {
+        let (ty, array, konst, cur_obj, udt, fixed) = {
             let b = s.borrow();
-            (b.ty, b.array, b.konst, matches!(b.val, Value::Object(Obj::Range(_))))
+            (b.ty, b.array, b.konst, matches!(b.val, Value::Object(Obj::Range(_))), b.udt.clone(), b.fixed)
         };
         if konst {
             return Err(Error::new(0, "Assignment to constant not permitted"));
+        }
+        if !array && (udt.is_some() || fixed.is_some()) {
+            let v = self.fit(ty, fixed, udt.as_deref(), v, set)?;
+            s.borrow_mut().val = v;
+            return Ok(());
         }
         if set {
             if !v.is_object() {
@@ -317,8 +511,8 @@ impl<'a> Interp<'a> {
             if ty != VType::Variant && ty != VType::Object {
                 return Err(Error::type_mismatch());
             }
-            s.borrow_mut().val = v;
-            return Ok(());
+            let old = std::mem::replace(&mut s.borrow_mut().val, v);
+            return self.terminate(&old, 1);
         }
         // `rng = 5` on a Range variable sets its value.
         if cur_obj && ty == VType::Object {
@@ -356,6 +550,9 @@ impl<'a> Interp<'a> {
 
     /// Calls a procedure with the caller's argument expressions.
     pub fn call_proc(&mut self, module: usize, proc: Rc<Proc>, args: &[Arg]) -> R<Value> {
+        // Taken before the arguments, which may call other procedures; a
+        // class's procedure calling another of it keeps its Me.
+        let me = self.next_me.take().or_else(|| self.frames.last().filter(|f| f.module == module).and_then(|f| f.me.clone()));
         if self.frames.len() >= MAX_DEPTH || stack_here().abs_diff(self.stack_base) > self.max_stack {
             return Err(Error::new(28, "Out of stack space").fatal());
         }
@@ -429,18 +626,72 @@ impl<'a> Interp<'a> {
         }
         let lname = proc.name.to_lowercase();
         let ret = if matches!(proc.kind, ProcKind::Function | ProcKind::PropertyGet) {
-            let s = slot(proc.ret, proc.ret.default_value());
-            s.borrow_mut().ret = true;
+            let (one, udt) = self.first_value(proc.ret_name.as_deref(), None)?;
+            let ty = if udt.is_some() { VType::Variant } else { proc.ret };
+            let s = slot(ty, one.unwrap_or_else(|| ty.default_value()));
+            {
+                let mut b = s.borrow_mut();
+                b.ret = true;
+                b.udt = udt;
+            }
             locals.insert(lname.clone(), s.clone());
             Some(s)
         } else {
             None
         };
-        self.frames.push(Frame { module, proc: proc.clone(), locals, with: Vec::new(), on_error: OnError::Off, in_handler: false, err_pc: 0 });
+        self.frames.push(Frame { module, proc: proc.clone(), locals, with: Vec::new(), on_error: OnError::Off, in_handler: false, err_pc: 0, line: 0, me });
+        let res = self.run_body(&proc.body);
+        let f = self.frames.pop();
+        let out = ret.map(|s| std::mem::take(&mut s.borrow_mut().val)).unwrap_or_default();
+        res?;
+        if let Some(f) = f {
+            self.terminate_locals(f.locals)?;
+        }
+        Ok(out)
+    }
+
+    /// Calls an event handler with the values Excel passes; returns them
+    /// as the handler left them (`Cancel = True`).
+    pub fn call_event(&mut self, module: usize, proc: Rc<Proc>, values: Vec<Value>) -> R<Vec<Value>> {
+        if self.frames.len() >= MAX_DEPTH || stack_here().abs_diff(self.stack_base) > self.max_stack {
+            return Err(Error::new(28, "Out of stack space").fatal());
+        }
+        if proc.params.len() != values.len() || proc.params.iter().any(|p| p.paramarray) {
+            return Err(Error::app(format!("Procedure declaration does not match description of event: {}", proc.name)).at(&self.project.modules[module].name, proc.line));
+        }
+        let mut locals = HashMap::new();
+        let mut slots = Vec::new();
+        for (p, v) in proc.params.iter().zip(values) {
+            let v = match v {
+                v @ (Value::Object(_) | Value::Nothing) if matches!(p.ty, VType::Object | VType::Variant) => v,
+                v @ (Value::Object(_) | Value::Nothing) => self.scalar(v)?.coerce(p.ty)?,
+                v => v.coerce(p.ty)?,
+            };
+            let s = slot(p.ty, v);
+            slots.push(s.clone());
+            locals.insert(p.name.clone(), s);
+        }
+        self.frames.push(Frame { module, proc: proc.clone(), locals, with: Vec::new(), on_error: OnError::Off, in_handler: false, err_pc: 0, line: 0, me: None });
         let res = self.run_body(&proc.body);
         self.frames.pop();
         res?;
-        Ok(ret.map(|s| std::mem::take(&mut s.borrow_mut().val)).unwrap_or_default())
+        Ok(slots.iter().map(|s| s.borrow().val.clone()).collect())
+    }
+
+    /// Runs an event procedure of a form with `me` and its arguments
+    /// already made.
+    pub(crate) fn run_handler(&mut self, module: usize, proc: Rc<Proc>, locals: HashMap<String, Slot>, me: Option<Rc<crate::object::Instance>>) -> R<()> {
+        if self.frames.len() >= MAX_DEPTH || stack_here().abs_diff(self.stack_base) > self.max_stack {
+            return Err(Error::new(28, "Out of stack space").fatal());
+        }
+        self.frames.push(Frame { module, proc: proc.clone(), locals, with: Vec::new(), on_error: OnError::Off, in_handler: false, err_pc: 0, line: 0, me });
+        let res = self.run_body(&proc.body);
+        let f = self.frames.pop();
+        res?;
+        if let Some(f) = f {
+            self.terminate_locals(f.locals)?;
+        }
+        Ok(())
     }
 
     /// The variable an argument passes ByRef, when it is a plain variable.
@@ -463,6 +714,11 @@ impl<'a> Interp<'a> {
             match res {
                 Ok(Flow::Normal) | Ok(Flow::Exit(_)) => return Ok(()),
                 Ok(Flow::GoTo(l)) => pc = Self::find_label(body, &l)?,
+                Ok(Flow::Return) => {
+                    let line = body.get(pc).map_or(0, |l| l.line);
+                    return Err(Error::new(3, "Return without GoSub").at(self.module_name(), line));
+                }
+                Ok(Flow::Jump(line)) => pc = body.iter().position(|l| l.line == line).ok_or_else(|| Error::new(0, "Cannot move the next statement there"))?,
                 Ok(Flow::Resume(k)) => {
                     let f = self.frame();
                     if !f.in_handler {
@@ -496,36 +752,61 @@ impl<'a> Interp<'a> {
 
     fn exec_top(&mut self, body: &[Line], pc: &mut usize) -> R<Flow> {
         while *pc < body.len() {
-            let f = self.exec_line(&body[*pc])?;
-            if !matches!(f, Flow::Normal) {
-                return Ok(f);
+            match self.exec_line(&body[*pc])? {
+                Flow::Normal => *pc += 1,
+                // A line of this block: the debugger moved there.
+                Flow::Jump(line) if body.iter().any(|l| l.line == line) => *pc = body.iter().position(|l| l.line == line).unwrap_or(0),
+                f => return Ok(f),
             }
-            *pc += 1;
         }
         Ok(Flow::Normal)
     }
 
-    fn exec_block(&mut self, body: &[Line]) -> R<Flow> {
-        for l in body {
-            let f = self.exec_line(l)?;
-            if !matches!(f, Flow::Normal) {
-                return Ok(f);
-            }
+    /// GoSub: the procedure from `label` until `Return`, then on after
+    /// the GoSub. Falling off the end ends the procedure, like VBA.
+    fn gosub(&mut self, label: &str) -> R<Flow> {
+        if stack_here().abs_diff(self.stack_base) > self.max_stack {
+            return Err(Error::new(28, "Out of stack space").fatal());
         }
-        Ok(Flow::Normal)
+        let proc = self.frame().proc.clone();
+        let mut pc = Self::find_label(&proc.body, label)?;
+        match self.exec_top(&proc.body, &mut pc)? {
+            Flow::Return => Ok(Flow::Normal),
+            Flow::Normal => Ok(Flow::Exit(ExitKind::Sub)),
+            f => Ok(f),
+        }
+    }
+
+    fn exec_block(&mut self, body: &[Line]) -> R<Flow> {
+        let mut pc = 0;
+        self.exec_top(body, &mut pc)
     }
 
     fn exec_line(&mut self, l: &Line) -> R<Flow> {
         self.tick().map_err(|e| e.at(self.module_name(), l.line))?;
-        match self.exec(&l.stmt) {
-            Ok(f) => Ok(f),
-            Err(e) => {
-                let e = e.at(self.module_name(), l.line);
-                if !e.fatal && self.frame().on_error == OnError::ResumeNext {
-                    self.set_err(&e);
-                    Ok(Flow::Normal)
-                } else {
-                    Err(e)
+        self.frame().line = l.line;
+        if self.dbg.is_some() {
+            if let Some(f) = self.before_line(l)? {
+                return Ok(f);
+            }
+        }
+        loop {
+            match self.exec(&l.stmt) {
+                Ok(f) => return Ok(f),
+                Err(e) => {
+                    let e = e.at(self.module_name(), l.line);
+                    if !e.fatal && self.frame().on_error == OnError::ResumeNext {
+                        self.set_err(&e);
+                        return Ok(Flow::Normal);
+                    }
+                    if !e.fatal && self.debugging() && !self.handled() {
+                        // Stopped at the error: continuing runs it again.
+                        match self.pause(debugger::Reason::Error(e), l.line)? {
+                            None => continue,
+                            Some(f) => return Ok(f),
+                        }
+                    }
+                    return Err(e);
                 }
             }
         }
@@ -559,13 +840,10 @@ impl<'a> Interp<'a> {
             Stmt::ReDim { preserve, vars } => {
                 let base = self.project.modules[self.module()].base;
                 for v in vars {
-                    let mut b = Vec::new();
-                    for (lo, hi) in v.bounds.as_deref().unwrap_or(&[]) {
-                        let lo = match lo {
-                            Some(e) => self.eval_scalar(e)?.to_i64()?,
-                            None => base,
-                        };
-                        b.push((lo, self.eval_scalar(hi)?.to_i64()?));
+                    let b = self.bounds_of(v.bounds.as_deref().unwrap_or(&[]), base)?;
+                    if !v.fields.is_empty() {
+                        self.redim_field(v, b, *preserve)?;
+                        continue;
                     }
                     let s = match self.lookup(&v.name) {
                         Some(s) => s,
@@ -575,14 +853,40 @@ impl<'a> Interp<'a> {
                             s
                         }
                     };
-                    let mut var = s.borrow_mut();
-                    let ty = if v.ty != VType::Variant { v.ty } else { var.ty };
-                    let arr = match (&var.val, preserve) {
-                        (Value::Array(old), true) if !old.bounds.is_empty() => old.resized(b)?,
-                        _ => Array::new(b, ty)?,
+                    // The elements a record or a fixed-length string, new
+                    // ones too.
+                    let (ty_name, fixed) = {
+                        let var = s.borrow();
+                        (v.ty_name.clone().or_else(|| var.udt.as_deref().map(str::to_string)), v.fixed.or(var.fixed))
                     };
+                    let (one, udt) = self.first_value(ty_name.as_deref(), fixed)?;
+                    let mut var = s.borrow_mut();
+                    let ty = if udt.is_some() { VType::Variant } else if v.ty != VType::Variant { v.ty } else { var.ty };
+                    let mut arr = match (&var.val, preserve) {
+                        (Value::Array(old), true) if !old.bounds.is_empty() => {
+                            let mut a = old.resized(b)?;
+                            if let Some(one) = &one {
+                                // Elements of records or fixed strings are
+                                // never Empty: these are the new ones.
+                                for x in a.data.iter_mut().filter(|x| matches!(x, Value::Empty)) {
+                                    *x = one.clone();
+                                }
+                            }
+                            a
+                        }
+                        _ => {
+                            let mut a = Array::new(b, ty)?;
+                            if let Some(one) = &one {
+                                a.data.fill(one.clone());
+                            }
+                            a
+                        }
+                    };
+                    arr.ty = ty;
                     var.ty = ty;
                     var.array = true;
+                    var.udt = udt;
+                    var.fixed = fixed;
                     var.val = Value::Array(Rc::new(arr));
                 }
             }
@@ -702,7 +1006,7 @@ impl<'a> Interp<'a> {
                 }
             },
             Stmt::With { obj, body } => {
-                let o = self.eval(obj)?;
+                let o = self.with_of(obj)?;
                 self.frame().with.push(o);
                 let res = self.exec_block(body);
                 self.frame().with.pop();
@@ -720,6 +1024,19 @@ impl<'a> Interp<'a> {
             }
             Stmt::Resume(k) => return Ok(Flow::Resume(k.clone())),
             Stmt::GoTo(l) => return Ok(Flow::GoTo(l.clone())),
+            Stmt::GoSub(l) => return self.gosub(l),
+            Stmt::RaiseEvent(name, args) => self.raise_event(name, args)?,
+            Stmt::Return => return Ok(Flow::Return),
+            Stmt::Align { target, value, right } => {
+                let cur = self.eval_scalar(target)?.to_str()?;
+                let v = self.eval_scalar(value)?.to_str()?;
+                let len = cur.chars().count();
+                let have = v.chars().count().min(len);
+                let pad = " ".repeat(len - have);
+                let v: String = v.chars().take(len).collect();
+                let out = if *right { pad + &v } else { v + &pad };
+                self.assign(target, Value::str(out), false)?;
+            }
             Stmt::Label(_) => {}
             Stmt::Erase(list) => {
                 for e in list {
@@ -735,23 +1052,37 @@ impl<'a> Interp<'a> {
                     }
                 }
             }
-            Stmt::Print(parts, _) => {
-                let mut out = Vec::new();
-                for p in parts {
-                    let v = self.eval_scalar(p)?;
-                    out.push(if matches!(v, Value::Null) { "Null".to_string() } else { v.to_str()? });
-                }
-                let text = out.join(" ");
-                self.ui.debug_print(&text);
+            Stmt::Print(items) => {
+                // Like `Print #` (a `;` or `,` at the end doesn't hold the line).
+                let (text, _, _) = self.print_line(items, 0)?;
+                self.ui.debug_print(&text.replace("\r\n", "\n"));
             }
             Stmt::End => return Err(Error::new(END, "End").fatal()),
+            Stmt::Stop => {
+                if !self.debugging() {
+                    return Err(Error::new(END, "End").fatal());
+                }
+                let line = self.frame().line;
+                if let Some(f) = self.pause(debugger::Reason::Stop, line)? {
+                    return Ok(f);
+                }
+            }
+            Stmt::Assert(e) => {
+                if self.debugging() && !self.truth(e)? {
+                    let line = self.frame().line;
+                    if let Some(f) = self.pause(debugger::Reason::Assert, line)? {
+                        return Ok(f);
+                    }
+                }
+            }
+            Stmt::File(f) => self.file_stmt(f)?,
             Stmt::Unsupported(what) => return Err(Error::unsupported(what)),
         }
         Ok(Flow::Normal)
     }
 
     /// Items of a For Each: array elements, cells, sheets, collection items.
-    fn items_of(&mut self, g: Value) -> R<Box<dyn Iterator<Item = R<Value>>>> {
+    pub(crate) fn items_of(&mut self, g: Value) -> R<Box<dyn Iterator<Item = R<Value>>>> {
         Ok(match g {
             Value::Array(a) => Box::new(a.data.clone().into_iter().map(Ok)),
             Value::Object(Obj::Range(r)) => {
@@ -769,9 +1100,27 @@ impl<'a> Interp<'a> {
                     }
                 }
             }
+            Value::Object(Obj::Multi(items)) => {
+                let mut all = Vec::with_capacity(items.len());
+                for o in items.iter() {
+                    all.push(self.items_of(Value::Object(o.clone()))?);
+                }
+                Box::new(all.into_iter().flatten())
+            }
+            Value::Object(Obj::Part(p)) if let Some(items) = self.part_items(&p) => Box::new(items.into_iter().map(Ok)),
+            Value::Object(Obj::In(b, o)) => return self.items_in(b, *o),
+            Value::Object(Obj::Word(o)) => Box::new(self.word_items(*o)?.into_iter().map(Ok)),
+            Value::Object(Obj::Workbook) if self.word.is_some() => Box::new(self.word_items(crate::word::WObj::Doc)?.into_iter().map(Ok)),
+            Value::Object(Obj::Workbooks) => {
+                let mut all = vec![Ok(Value::Object(Obj::Workbook))];
+                all.extend((0..self.books.len()).filter(|&b| self.books[b].is_some()).map(|b| Ok(Value::Object(Obj::In(b, Box::new(Obj::Workbook))))));
+                Box::new(all.into_iter())
+            }
             Value::Object(Obj::Sheets) | Value::Object(Obj::Workbook) => Box::new((0..self.wb.sheets.len()).map(|i| Ok(Value::Object(Obj::Sheet(i))))),
             Value::Object(Obj::Collection(c)) => Box::new(c.borrow().items.iter().map(|x| Ok(x.1.clone())).collect::<Vec<_>>().into_iter()),
             Value::Object(Obj::Dictionary(d)) => Box::new(d.borrow().keys.clone().into_iter().map(Ok)),
+            Value::Object(Obj::Controls(i, k, pages)) => Box::new(self.controls_items(&i, k, pages)?.into_iter().map(Ok)),
+            Value::Object(Obj::Instance(i)) if i.form.is_some() => Box::new(self.controls_items(&i, None, false)?.into_iter().map(Ok)),
             Value::Nothing => return Err(Error::not_set()),
             _ => return Err(Error::new(92, "For Each may only iterate over a collection object or an array")),
         })
@@ -780,8 +1129,29 @@ impl<'a> Interp<'a> {
     // --- assignment ------------------------------------------------------------------
 
     pub fn assign(&mut self, target: &Expr, v: Value, set: bool) -> R<()> {
+        // Into a record or an array of them (or of fixed-length strings).
+        if matches!(target, Expr::Member(..) | Expr::Call(..) | Expr::WithMember(_))
+            && let Some((s, steps)) = self.path(target)?
+            && !steps.is_empty()
+        {
+            return self.put(&s, &steps, v, set);
+        }
+        if let Expr::Call(f, args) = target
+            && let Expr::Name(n) = &**f
+            && (n == "mid" || n == "mid$")
+            && self.lookup(n).is_none()
+        {
+            return self.mid_stmt(args, v);
+        }
         match target {
             Expr::Name(n) => {
+                // A control or property of the form whose code runs.
+                if self.lookup(n).is_none()
+                    && let Some(me) = self.form_me()
+                    && self.form_knows(&me, n)
+                {
+                    return self.form_set(me, n, v);
+                }
                 let s = self.target_slot(n)?;
                 self.store(&s, v, set)
             }
@@ -841,6 +1211,31 @@ impl<'a> Interp<'a> {
         }
     }
 
+    /// `Mid(s, start[, length]) = text`: characters of `s` replaced in
+    /// place, its length kept.
+    fn mid_stmt(&mut self, args: &[Arg], v: Value) -> R<()> {
+        let [s, start, rest @ ..] = args else { return Err(Error::new(450, "Wrong number of arguments or invalid property assignment")) };
+        let (Some(se), Some(start)) = (&s.expr, &start.expr) else { return Err(Error::new(5, "Invalid procedure call or argument")) };
+        if rest.len() > 1 {
+            return Err(Error::new(450, "Wrong number of arguments or invalid property assignment"));
+        }
+        let cur: Vec<char> = self.eval_scalar(se)?.to_str()?.chars().collect();
+        let start = self.eval_scalar(start)?.to_i64()?;
+        let len = match rest.first().and_then(|a| a.expr.as_ref()) {
+            Some(e) => Some(self.eval_scalar(e)?.to_i64()?),
+            None => None,
+        };
+        if start < 1 || start as usize > cur.len() || len.is_some_and(|l| l < 0) {
+            return Err(Error::new(5, "Invalid procedure call or argument"));
+        }
+        let at = start as usize - 1;
+        let new: Vec<char> = self.scalar(v)?.to_str()?.chars().collect();
+        let n = new.len().min(cur.len() - at).min(len.map_or(usize::MAX, |l| l as usize));
+        let mut out = cur;
+        out[at..at + n].copy_from_slice(&new[..n]);
+        self.assign(se, Value::str(out.into_iter().collect::<String>()), false)
+    }
+
     fn indexes(&mut self, args: &[Arg]) -> R<Vec<i64>> {
         let mut idx = Vec::with_capacity(args.len());
         for a in args {
@@ -851,7 +1246,8 @@ impl<'a> Interp<'a> {
     }
 
     pub fn with_obj(&self) -> R<Value> {
-        self.frames.last().and_then(|f| f.with.last().cloned()).ok_or_else(|| Error::new(0, "Invalid or unqualified reference"))
+        let w = self.frames.last().and_then(|f| f.with.last()).ok_or_else(|| Error::new(0, "Invalid or unqualified reference"))?;
+        udt::with_value(w)
     }
 
     // --- expressions -----------------------------------------------------------------
@@ -943,10 +1339,14 @@ impl<'a> Interp<'a> {
                 let v = self.eval(e)?;
                 let name = v.type_name().to_lowercase();
                 Ok(Value::Bool(match &v {
+                    Value::Object(Obj::Instance(i)) => class == "object" || self.instance_is(i, class) || i.form.is_some() && class.trim_start_matches("msforms.") == "userform",
+                    Value::Object(Obj::Control(..)) => matches!(class.trim_start_matches("msforms.").as_ref(), "object" | "control") || name == class.trim_start_matches("msforms."),
                     Value::Object(_) => class == "object" || name == *class || class == "sheet" && name == "worksheet",
                     _ => false,
                 }))
             }
+            Expr::Me if self.frames.last().is_some_and(|f| f.me.is_some()) => Ok(Value::Object(Obj::Instance(self.frames.last().and_then(|f| f.me.clone()).ok_or_else(Error::not_set)?))),
+            Expr::Me if self.word.is_some() && self.owners.get(self.module()) == Some(&Owner::Workbook) => Ok(crate::word::wo(crate::word::WObj::Doc)),
             Expr::Me => match self.owners.get(self.module()) {
                 Some(Owner::Sheet(s)) => Ok(Value::Object(Obj::Sheet(*s))),
                 Some(Owner::Workbook) => Ok(Value::Object(Obj::Workbook)),
@@ -976,6 +1376,10 @@ impl<'a> Interp<'a> {
         let integral = value::is_integral(&a) && value::is_integral(&b);
         Ok(match op {
             Concat => {
+                // Too long refused before copying (a copy is what takes long).
+                if let (Value::Str(x), Value::Str(y)) = (&a, &b) {
+                    crate::value::string_room(x.len() + y.len())?;
+                }
                 let (a, b) = (a.to_str()?, b.to_str()?);
                 crate::value::string_room(a.len() + b.len())?;
                 Value::str(format!("{a}{b}"))
@@ -1071,6 +1475,28 @@ impl<'a> Interp<'a> {
         }
     }
 
+    /// A function of `Declare`: the harmless ones acted out (see
+    /// [`crate::api`]), the rest refused.
+    fn windows_api(&mut self, d: &Declare, args: &[Arg]) -> R<Value> {
+        if !crate::api::harmless(&d.lib, &d.api) {
+            return Err(Error::unsupported(&format!("{} (Declare, Windows API)", d.name)));
+        }
+        let ms = crate::api::uptime() * 1000.0;
+        Ok(match d.api.as_str() {
+            // Like Application.Wait: time isn't spent.
+            "sleep" | "messagebeep" => Value::Long(1),
+            "gettickcount" | "timegettime" => Value::Long(ms as u32 as i32),
+            "gettickcount64" => Value::Double(ms.floor()),
+            _ => {
+                let v = if d.api == "queryperformancefrequency" { crate::api::FREQUENCY } else { (ms * crate::api::FREQUENCY / 1000.0).floor() };
+                if let Some(e) = args.first().and_then(|a| a.expr.as_ref()) {
+                    self.assign(e, Value::Double(v), false)?;
+                }
+                Value::Long(1)
+            }
+        })
+    }
+
     /// A name with arguments: a variable (indexed), a procedure, a VBA
     /// function or constant, or a global of Excel's object model.
     pub fn call_name(&mut self, n: &str, args: &[Arg], stmt: bool) -> R<Value> {
@@ -1084,17 +1510,37 @@ impl<'a> Interp<'a> {
                 return self.index_value(v, args);
             }
         }
+        // A control of the form whose code runs.
+        if let Some(me) = self.form_me() {
+            let control = me.form.as_ref().is_some_and(|v| v.borrow().find(n).is_some());
+            if control {
+                return self.form_member(me, n, args);
+            }
+        }
         if let Some((m, p)) = self.find_proc(n) {
             return self.call_proc(m, p, args);
         }
+        // The form's own members (Hide, Caption...) by themselves.
+        if let Some(me) = self.form_me()
+            && (args.is_empty() || n != "left")
+            && self.form_knows(&me, n)
+        {
+            return self.form_member(me, n, args);
+        }
+        if (n == "load" || n == "unload") && args.len() == 1 {
+            return self.load_statement(n == "unload", args);
+        }
         let project = self.project;
-        if project.modules.iter().any(|m| m.declares.iter().any(|d| d == n)) {
-            return Err(Error::unsupported(&format!("{n} (Declare, Windows API)")));
+        if let Some(d) = project.modules.iter().flat_map(|m| &m.declares).find(|d| d.name == n) {
+            return self.windows_api(d, args);
         }
         if let Some(mi) = project.modules.iter().position(|m| m.name.eq_ignore_ascii_case(n)) {
             match project.modules[mi].kind {
-                ModuleKind::Form => return Err(Error::unsupported("UserForms")),
-                ModuleKind::Class => return Err(Error::unsupported("class modules")),
+                ModuleKind::Form => {
+                    let inst = Value::Object(Obj::Instance(self.form_default(mi)?));
+                    return if args.is_empty() { Ok(inst) } else { self.index_value(inst, args) };
+                }
+                ModuleKind::Class => return Err(Error::new(0, format!("Invalid use of the class name {}: make an object with New", project.modules[mi].name))),
                 // Sheet1 (a code name), ThisWorkbook, Module1.
                 _ if args.is_empty() => return Ok(Value::Object(self.module_object(mi))),
                 _ => {}
@@ -1159,9 +1605,10 @@ impl<'a> Interp<'a> {
         match class.to_lowercase().as_str() {
             "collection" | "vba.collection" => Ok(Value::Object(Obj::Collection(Default::default()))),
             "dictionary" | "scripting.dictionary" => Ok(Value::Object(Obj::Dictionary(Default::default()))),
+            "filesystemobject" | "scripting.filesystemobject" => self.new_fso(),
             c => {
-                if self.project.modules.iter().any(|m| m.kind == ModuleKind::Class && m.name.eq_ignore_ascii_case(c)) {
-                    Err(Error::unsupported("class modules"))
+                if let Some(mi) = self.project.modules.iter().position(|m| matches!(m.kind, ModuleKind::Class | ModuleKind::Form) && m.name.eq_ignore_ascii_case(c)) {
+                    self.new_instance(mi)
                 } else {
                     Err(Error::new(429, format!("ActiveX component can't create object: {c} (not supported in ApexDesk)")))
                 }
@@ -1170,6 +1617,58 @@ impl<'a> Interp<'a> {
     }
 
     /// Runs a procedure found by name ("Module.Proc" or "Proc") with values.
+    /// Macro `name` of another workbook's code `lib`, on this workbook:
+    /// an interpreter of its own, within what is left of this one's
+    /// limits; its changes join this macro's.
+    /// The workbook, to change: not in a function called by a formula.
+    pub fn wb_mut(&mut self) -> R<&mut Workbook> {
+        match &mut self.wb {
+            Book::Mut(w) => Ok(w),
+            Book::Owned(w) => Ok(w),
+            Book::Ref(_) => Err(Error::new(1004, "A function called from a cell can't change the workbook")),
+        }
+    }
+
+    pub fn run_library(&mut self, lib: &crate::Library, name: &str, values: Vec<Value>) -> R<Value> {
+        let used = self.stack_base.abs_diff(stack_here());
+        // What this one may still use (it can't call back into another).
+        let opts = crate::Options {
+            active_sheet: self.active,
+            selection: self.selection,
+            file_name: self.file_name.clone(),
+            file_path: self.file_path.clone(),
+            user_name: self.user_name.clone(),
+            utc_offset: self.utc_offset,
+            max_steps: self.max_steps.saturating_sub(self.steps),
+            max_time: self.max_time.saturating_sub(self.started.elapsed().saturating_sub(self.paused)),
+            max_stack: self.max_stack.saturating_sub(used + (64 << 10)),
+            cancel: self.cancel.clone(),
+            debug: None,
+            interrupt: self.interrupt.clone(),
+            libraries: Vec::new(),
+            files: self.files.access(),
+            forms: Vec::new(),
+        };
+        let project = crate::Project::parse(&lib.sources)?;
+        let (mi, pi) = project.find(name).ok_or_else(|| Error::app(format!("Cannot run the macro '{}!{name}'", lib.name)))?;
+        let mut it = Interp::with_book(&project, self.wb.reborrow(), &mut *self.ui, &opts)?;
+        it.app = self.app.clone();
+        let args: Vec<Arg> = values.into_iter().map(|v| Arg { name: None, expr: Some(Expr::Lit(v)) }).collect();
+        let proc = project.modules[mi].procs[pi].clone();
+        let r = it.call_proc(mi, proc, &args);
+        let (undo, active, selection, save, app, requests, steps) = (std::mem::take(&mut it.undo), it.active, it.selection, it.save, it.app.clone(), std::mem::take(&mut it.requests), it.steps);
+        drop(it);
+        self.undo.extend(undo);
+        self.active = active;
+        self.selection = selection;
+        self.save |= save;
+        self.app = app;
+        let room = 1000usize.saturating_sub(self.requests.len());
+        self.requests.extend(requests.into_iter().take(room).map(|r| r.in_book(&lib.name)));
+        self.steps += steps;
+        r
+    }
+
     pub fn run_named(&mut self, name: &str, values: Vec<Value>) -> R<Value> {
         let (module, proc) = self.project.find(name).ok_or_else(|| Error::app(format!("Cannot run the macro '{name}'")))?;
         let args: Vec<Arg> = values.into_iter().map(|v| Arg { name: None, expr: Some(Expr::Lit(v)) }).collect();
@@ -1187,7 +1686,7 @@ pub fn owner_for(m: &Module, wb: &Workbook) -> Owner {
         return Owner::None;
     }
     let lname = m.name.to_lowercase();
-    if ["thisworkbook", "estelibro", "estelibrodetrabajo", "estelibro_de_trabajo", "diesearbeitsmappe", "ceclasseur", "questacartella_di_lavoro", "estapasta_de_trabalho", "estapastadetrabalho"].contains(&lname.as_str()) || m.procs.iter().any(|p| p.name.to_lowercase().starts_with("workbook_")) {
+    if wb.code_name.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(&m.name)) || ["thisworkbook", "estelibro", "estelibrodetrabajo", "estelibro_de_trabajo", "diesearbeitsmappe", "ceclasseur", "questacartella_di_lavoro", "estapasta_de_trabalho", "estapastadetrabalho"].contains(&lname.as_str()) || m.procs.iter().any(|p| p.name.to_lowercase().starts_with("workbook_")) {
         return Owner::Workbook;
     }
     if let Some(i) = wb.sheets.iter().position(|s| s.code_name.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(&m.name))) {
@@ -1207,4 +1706,10 @@ pub fn owner_for(m: &Module, wb: &Workbook) -> Owner {
         }
     }
     Owner::Workbook
+}
+
+impl Drop for Interp<'_> {
+    fn drop(&mut self) {
+        self.let_go_instances();
+    }
 }

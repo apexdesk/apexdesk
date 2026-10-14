@@ -32,7 +32,7 @@ fn run(v: &mut SheetView, events: Vec<egui::Event>) -> Vec<egui::epaint::Clipped
         };
     }
     let ctx = CTX.with(|c| c.clone());
-    let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "panes".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+    let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "panes".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
     let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0))), events, ..Default::default() };
     let mut out = ctx.run_ui(input, |ui| {
         v.ui(ui, &mut shell);

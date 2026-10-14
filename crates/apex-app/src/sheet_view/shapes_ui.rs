@@ -264,6 +264,12 @@ impl SheetView {
                     self.click_control(id, r, p, g.z);
                     return true;
                 }
+                // A shape with a macro runs it.
+                if let Some(m) = sh.shapes.iter().find(|s| s.id == id && !s.macro_name.is_empty()).map(|s| s.macro_name.clone()) {
+                    self.images.shapes.selected = None;
+                    self.click_macro(&m);
+                    return true;
+                }
             }
             self.select_shape(id);
             if let Some(orig) = self.sh().shapes.iter().find(|s| s.id == id).cloned() {
@@ -349,6 +355,12 @@ impl SheetView {
         }
         if ui.add(egui::Button::new(tr("shape.delete")).shortcut_text("Del")).clicked() {
             self.delete_shape();
+            ui.close();
+        }
+        if self.selected_shape().is_some_and(|s| s.control.is_none()) && ui.button(format!("{}…", tr("macros.assign"))).clicked() {
+            if let Some((_, id)) = self.images.shapes.selected {
+                self.open_assign_macro(super::macro_hooks::Clickable::Shape(id));
+            }
             ui.close();
         }
         if self.selected_shape().is_some_and(|s| s.shape.can_have_text() && s.control.is_none()) {

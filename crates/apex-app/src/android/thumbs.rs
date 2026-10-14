@@ -17,7 +17,7 @@ const KEEP: usize = 200;
 const QUEUE: usize = 64;
 /// Larger files, and pictures of more pixels, get no thumbnail (memory).
 const MAX_FILE: u64 = 32 << 20;
-const MAX_PIXELS: u64 = 48_000_000;
+const MAX_PIXELS: u64 = 16_000_000;
 
 /// The extensions that get a thumbnail.
 pub const EXTS: &[&str] = &["png", "jpg", "jpeg", "jpe", "jfif", "gif", "bmp", "webp"];

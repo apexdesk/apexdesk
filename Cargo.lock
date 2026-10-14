@@ -218,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "apex-android"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "apex-db",
  "apex-doc",
@@ -244,6 +244,7 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "serde_json",
+ "sha2 0.10.9",
  "skrifa",
  "unicode-width",
  "weezl",
@@ -253,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "apex-app"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "apex-db",
  "apex-doc",
@@ -268,6 +269,7 @@ dependencies = [
  "apex-tui",
  "apex-vba",
  "arboard",
+ "core-foundation 0.10.1",
  "cpal",
  "eframe",
  "getrandom 0.3.4",
@@ -294,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "apex-bench"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "apex-doc",
  "apex-io",
@@ -309,7 +311,7 @@ dependencies = [
 
 [[package]]
 name = "apex-db"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "encoding_rs",
  "miniz_oxide 0.9.1",
@@ -318,21 +320,21 @@ dependencies = [
 
 [[package]]
 name = "apex-doc"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "apex-i18n"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "apex-sheet",
 ]
 
 [[package]]
 name = "apex-io"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "aes",
  "apex-db",
@@ -358,20 +360,21 @@ dependencies = [
  "sha1",
  "sha2 0.10.9",
  "skrifa",
+ "uuid",
  "vello_cpu",
  "zune-jpeg",
 ]
 
 [[package]]
 name = "apex-pdf"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "miniz_oxide 0.9.1",
 ]
 
 [[package]]
 name = "apex-query"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "apex-db",
  "apex-io",
@@ -392,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "apex-sheet"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "apex-doc",
  "regex",
@@ -400,7 +403,7 @@ dependencies = [
 
 [[package]]
 name = "apex-sign"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "aes",
  "apex-io",
@@ -425,18 +428,19 @@ dependencies = [
 
 [[package]]
 name = "apex-slides"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "apex-doc",
+ "i_overlay",
 ]
 
 [[package]]
 name = "apex-spell"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "apex-tui"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "apex-doc",
  "apex-i18n",
@@ -448,8 +452,9 @@ dependencies = [
 
 [[package]]
 name = "apex-vba"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
+ "apex-doc",
  "apex-sheet",
 ]
 
@@ -476,7 +481,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
  "x11rb",
 ]
 
@@ -2489,6 +2494,48 @@ checksum = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17"
 dependencies = [
  "typenum",
 ]
+
+[[package]]
+name = "i_float"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ecaff1ce29bcacd72cdf581ba6fce636ef4c4e0b2da7e7846dd0137d98141e2"
+dependencies = [
+ "libm",
+]
+
+[[package]]
+name = "i_key_sort"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c6c58d0c60705e66264ce0f788a69a2f21472aeb8188559e7c8c619dbdc10fa"
+
+[[package]]
+name = "i_overlay"
+version = "9.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a518dce2d7cf7e3758159747e7175c8b86ccdcd8d333dfcb7dbeb3eac2e324fc"
+dependencies = [
+ "i_float",
+ "i_key_sort",
+ "i_shape",
+ "i_tree",
+]
+
+[[package]]
+name = "i_shape"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa1878f91ef7921feaf1b2346253ebc5e661878b22d5715195c1d5dcf0f20ae5"
+dependencies = [
+ "i_float",
+]
+
+[[package]]
+name = "i_tree"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "180cbc5c4af5d8f57b8096c3cf39efdac3642ece00ca54710db44db3536baed4"
 
 [[package]]
 name = "iana-time-zone"

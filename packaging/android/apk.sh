@@ -51,10 +51,13 @@ javac -source 8 -target 8 -Xlint:-options -classpath "$jar" -d "$work/classes" $
 
 "$tools/aapt2" compile --dir "$here/res" -o "$work/res.zip"
 "$tools/aapt2" link -o "$work/base.apk" -I "$jar" --manifest "$here/AndroidManifest.xml" \
-    --version-code "$code" --version-name "$version" -R "$work/res.zip" --auto-add-overlay
+    --version-code "$code" --version-name "$version" --replace-version -R "$work/res.zip" --auto-add-overlay
 (cd "$work" && zip -qr base.apk lib classes.dex)
 "$tools/zipalign" -f -p 4 "$work/base.apk" "$work/aligned.apk"
 out=dist/apexdesk-$version-android.apk
+# The password from the environment, not the command line (where any
+# process can read it).
+export APEXDESK_ANDROID_KEY_PASS=${APEXDESK_ANDROID_KEY_PASS:-android}
 "$tools/apksigner" sign --ks "${APEXDESK_ANDROID_KEYSTORE:-$HOME/.android/debug.keystore}" \
-    --ks-pass "pass:${APEXDESK_ANDROID_KEY_PASS:-android}" --out "$out" "$work/aligned.apk"
+    --ks-pass env:APEXDESK_ANDROID_KEY_PASS --out "$out" "$work/aligned.apk"
 echo "$out"

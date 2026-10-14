@@ -69,7 +69,7 @@ impl PdfView {
         let s = self.shown_size(next);
         let z = (rect.width() / s[0].max(1.0)).min(rect.height() / s[1].max(1.0));
         let r = Rect::from_center_size(rect.center(), vec2(s[0] * z, s[1] * z));
-        painter.rect_filled(r, 0.0, Color32::WHITE);
+        painter.rect_filled(r, 0.0, self.paper());
         let map = self.map_of(next, r, z);
         let ctx = ui.ctx().clone();
         let mut drawn = false;

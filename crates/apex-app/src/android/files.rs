@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
 
 use eframe::egui;
 
@@ -24,7 +25,17 @@ struct Browser {
     dir: PathBuf,
     name: String,
     picked: Vec<PathBuf>,
+    /// The list shown: of which folder and when it was read. Reading a
+    /// folder of the shared storage takes milliseconds (tens with a few
+    /// hundred files), too long to do every frame while scrolling.
+    listing: Option<(PathBuf, Instant, Result<Vec<(String, bool)>, String>)>,
+    /// Saving over this existing file was asked once: the next press replaces it.
+    replace: Option<PathBuf>,
 }
+
+/// How long a folder's list is shown before it is read again (files the
+/// user adds meanwhile show then).
+const RELIST: Duration = Duration::from_secs(3);
 
 static OPEN: Mutex<Option<Browser>> = Mutex::new(None);
 /// The folder of the last answer, where the next browser starts (kept in
@@ -42,7 +53,7 @@ pub fn ask(req: Request, tx: Sender<Option<Vec<PathBuf>>>) {
     let last = LAST.lock().unwrap_or_else(|e| e.into_inner()).clone().or_else(|| last_file().and_then(|f| std::fs::read_to_string(f).ok()).map(PathBuf::from)).filter(|d| d.is_dir());
     let dir = req.dir.clone().filter(|d| d.is_dir()).or(last).unwrap_or_else(|| PathBuf::from(STORAGE));
     let name = req.file_name.clone();
-    let old = OPEN.lock().unwrap_or_else(|e| e.into_inner()).replace(Browser { req, tx, dir, name, picked: Vec::new() });
+    let old = OPEN.lock().unwrap_or_else(|e| e.into_inner()).replace(Browser { req, tx, dir, name, picked: Vec::new(), listing: None, replace: None });
     if let Some(old) = old {
         let _ = old.tx.send(None);
     }
@@ -72,7 +83,7 @@ fn entries(dir: &Path, exts: &[String], folders_only: bool) -> std::io::Result<V
             takes.then_some((name, is_dir))
         })
         .collect();
-    v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+    v.sort_by_cached_key(|(name, is_dir)| (!is_dir, name.to_lowercase()));
     Ok(v)
 }
 
@@ -112,24 +123,36 @@ pub fn show(ctx: &egui::Context) {
             }
         });
         ui.label(egui::RichText::new(b.dir.display().to_string()).weak());
+        // Without access Android lists the folders but none of the files.
+        no_access_note(ui);
         // Above the list, where the keyboard leaves it in sight.
         if b.req.kind == Kind::Save {
             ui.horizontal(|ui| {
                 ui.label(t("Nombre:", "Name:"));
                 ui.add(egui::TextEdit::singleline(&mut b.name).desired_width(f32::INFINITY));
             });
+            if b.replace.as_ref().is_some_and(|p| *p == b.dir.join(b.name.trim())) {
+                ui.colored_label(ui.visuals().warn_fg_color, t("Ya existe un archivo con ese nombre: «Reemplazar» lo sustituye.", "A file with that name exists: Replace overwrites it."));
+            }
         }
         ui.separator();
-        let list = entries(&b.dir, &b.req.exts, b.req.kind == Kind::Folder);
+        if !b.listing.as_ref().is_some_and(|(d, at, _)| *d == b.dir && at.elapsed() < RELIST) {
+            let list = entries(&b.dir, &b.req.exts, b.req.kind == Kind::Folder).map_err(|e| e.to_string());
+            b.listing = Some((b.dir.clone(), Instant::now(), list));
+            // Read again when it is due, even if nothing moves.
+            ui.ctx().request_repaint_after(RELIST);
+        }
+        // Taken out while the rows change the browser, put back after.
+        let listing = b.listing.take().expect("just listed");
+        let list = &listing.2;
         let row_h = 44.0;
         let line_h = 56.0;
         // One per folder: each starts at its top.
         let scroll = egui::ScrollArea::vertical().id_salt(&b.dir).max_height((screen.height() * 0.6).max(120.0)).auto_shrink([false, false]);
-        match &list {
+        match list {
             Ok(list) if list.is_empty() => {
                 scroll.show(ui, |ui| {
                     ui.label(t("(vacía)", "(empty)"));
-                    no_access_note(ui);
                 });
             }
             // Only the rows in sight are drawn (and their pictures decoded).
@@ -165,24 +188,34 @@ pub fn show(ctx: &egui::Context) {
             Err(e) => {
                 scroll.show(ui, |ui| {
                     ui.label(format!("{e}"));
-                    no_access_note(ui);
                 });
             }
         }
+        b.listing = Some(listing);
         ui.separator();
         ui.horizontal(|ui| {
             if ui.add_sized([140.0, row_h], egui::Button::new(t("Cancelar", "Cancel"))).clicked() {
                 answer = Some(None);
             }
+            let target = b.dir.join(b.name.trim());
+            let replacing = b.req.kind == Kind::Save && b.replace.as_ref() == Some(&target);
             let (ok_label, ok_enabled) = match b.req.kind {
-                Kind::Save => (t("Guardar", "Save"), !b.name.trim().is_empty()),
+                // A name, not a path: the file goes in the folder shown.
+                Kind::Save if replacing => (t("Reemplazar", "Replace"), true),
+                Kind::Save => (t("Guardar", "Save"), !b.name.trim().is_empty() && !b.name.contains('/') && !matches!(b.name.trim(), "." | "..")),
                 Kind::Folder => (t("Elegir esta carpeta", "Choose this folder"), true),
                 Kind::PickMany => (t("Abrir", "Open"), !b.picked.is_empty()),
                 Kind::Pick => ("", false),
             };
             if !ok_label.is_empty() && ui.add_enabled(ok_enabled, egui::Button::new(ok_label).min_size(egui::vec2(140.0, row_h))).clicked() {
+                // As the system's dialogs do, an existing file is replaced
+                // only when asked twice.
+                if b.req.kind == Kind::Save && !replacing && target.exists() {
+                    b.replace = Some(target.clone());
+                    return;
+                }
                 answer = Some(Some(match b.req.kind {
-                    Kind::Save => vec![b.dir.join(b.name.trim())],
+                    Kind::Save => vec![target.clone()],
                     Kind::Folder => vec![b.dir.clone()],
                     _ => b.picked.clone(),
                 }));
@@ -351,17 +384,33 @@ fn paint_icon(painter: &egui::Painter, r: egui::Rect, format: Format, ext: &str)
     painter.text(pos2(r.center().x, b - 0.17 * s), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(0.2 * s), Color32::WHITE);
 }
 
-/// Without "All files access" the shared storage looks empty.
+/// Without access to the files a bar above the list asks for it.
 fn no_access_note(ui: &mut egui::Ui) {
-    if super::all_files_access() {
+    // Asked of the system once a second, not every frame (a call into
+    // Java); the user may come back from the settings with it.
+    static ACCESS: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+    let mut access = ACCESS.lock().unwrap_or_else(|e| e.into_inner());
+    let ok = match *access {
+        Some((at, ok)) if at.elapsed() < Duration::from_secs(1) => ok,
+        _ => {
+            let ok = super::all_files_access();
+            *access = Some((Instant::now(), ok));
+            ok
+        }
+    };
+    drop(access);
+    if ok {
         return;
     }
-    ui.add_space(8.0);
-    ui.label(t(
-        "ApexDesk necesita permiso para ver tus archivos.",
-        "ApexDesk needs permission to see your files.",
-    ));
-    if ui.button(t("Dar acceso a los archivos", "Allow access to files")).clicked() {
-        super::ask_all_files_access();
-    }
+    ui.ctx().request_repaint_after(Duration::from_secs(1));
+    egui::Frame::new().fill(ui.visuals().warn_fg_color.gamma_multiply(0.15)).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(t(
+            "ApexDesk necesita permiso para ver tus archivos: sin él solo se ven las carpetas.",
+            "ApexDesk needs permission to see your files: without it only the folders show.",
+        ));
+        if ui.add_sized([ui.available_width().min(260.0), 44.0], egui::Button::new(t("Dar acceso a los archivos", "Allow access to files"))).clicked() {
+            super::ask_all_files_access();
+        }
+    });
 }

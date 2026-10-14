@@ -60,6 +60,33 @@ impl Document {
         (0..items.len()).map(|i| Pos::new(to, i * OBJECT.len_utf8())).collect()
     }
 
+    /// Puts `made` in place of the shapes at `gone` (Merge Shapes): they go
+    /// to the start of paragraph `to`, in order. One undo step. Returns
+    /// where they are.
+    pub fn replace_shapes(&mut self, to: usize, gone: &[Pos], made: Vec<DocShape>) -> Vec<Pos> {
+        let mut seen = std::collections::HashSet::new();
+        if gone.is_empty() || made.is_empty() || to >= self.paragraphs.len() || gone.iter().any(|p| self.shape_at(*p).is_none() || !seen.insert(*p)) {
+            return Vec::new();
+        }
+        let lo = gone.iter().map(|p| p.para).min().unwrap_or(to).min(to);
+        let hi = gone.iter().map(|p| p.para).max().unwrap_or(to).max(to);
+        let before = self.paragraphs[lo..=hi].to_vec();
+        let mut attrs = self.paragraphs[gone[0].para].attrs_at(gone[0].offset + OBJECT.len_utf8());
+        let mut from = gone.to_vec();
+        from.sort_by(|a, b| b.cmp(a));
+        for p in &from {
+            self.paragraphs[p.para].remove(p.offset, p.offset + OBJECT.len_utf8());
+        }
+        for s in made.iter().rev() {
+            attrs.shape = Some(Arc::new(s.clone()));
+            self.paragraphs[to].insert_str(0, &OBJECT.to_string(), attrs.clone());
+        }
+        let at = Pos::new(to, 0);
+        let after = Selection { anchor: at, cursor: Pos::new(to, OBJECT.len_utf8()) };
+        self.record(lo, before, hi - lo + 1, Selection::caret(gone[0]), after, EditKind::Shape);
+        (0..made.len()).map(|i| Pos::new(to, i * OBJECT.len_utf8())).collect()
+    }
+
     /// Ungroups the group of the shape at `at`. One undo step.
     pub fn ungroup_shapes(&mut self, at: Pos) -> bool {
         let members = self.shape_group(at);

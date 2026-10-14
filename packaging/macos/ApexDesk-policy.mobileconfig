@@ -23,6 +23,12 @@
 				<string>/Volumes/Company/Macros</string>
 				<string>/Users/Shared/Macros</string>
 			</array>
+			<key>TrustedPublishers</key>
+			<array>
+				<string>5F:3A:9C:12:E4:7B:08:D6:21:AF:64:C3:90:1E:B7:58:2D:F0:46:9A:BB:13:7C:E5:08:42:D9:61:FA:2C:85:30</string>
+			</array>
+			<key>DisableMacroEditor</key>
+			<false/>
 			<key>TemplatesFolder</key>
 			<string>/Volumes/Company/Templates</string>
 			<key>BuildingBlocksFolder</key>

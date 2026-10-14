@@ -23,11 +23,13 @@ pub struct SheetShape {
     pub anchor: Anchor,
     /// A form control drawn instead of the shape (see [`crate::form_control`]).
     pub control: Option<Box<crate::FormControl>>,
+    /// The macro a click runs (`Macro1`, `Module1.Macro1`); empty for none.
+    pub macro_name: String,
 }
 
 impl SheetShape {
     pub fn new(shape: Shape, from: CellRef, width: f32, height: f32) -> SheetShape {
-        let mut s = SheetShape { id: 0, shape, from, dx: 0.0, dy: 0.0, width, height, anchor: Anchor::TwoCell, control: None };
+        let mut s = SheetShape { id: 0, shape, from, dx: 0.0, dy: 0.0, width, height, anchor: Anchor::TwoCell, control: None, macro_name: String::new() };
         s.sanitize();
         s
     }

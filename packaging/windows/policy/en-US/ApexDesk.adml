@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">Only macros signed by a trusted certificate</string>
       <string id="TrustedLocations">Trusted locations</string>
       <string id="TrustedLocations_Help">Folders whose files' macros are enabled when opened. They replace the ones users add.</string>
+      <string id="TrustedPublishers">Trusted macro publishers</string>
+      <string id="TrustedPublishers_Help">Certificates (SHA-256 or SHA-1 fingerprints, in hex) whose signed macros run under &quot;Only signed macros&quot;. When set, only macros signed by these run and users can't add more.</string>
+      <string id="DisableMacroEditor">Turn off the macro editor</string>
+      <string id="DisableMacroEditor_Help">1: the macro editor (Alt+F11) can't be opened. Macros still run under the macro security policy.</string>
       <string id="TemplatesFolder">Shared templates folder</string>
       <string id="TemplatesFolder_Help">A folder of templates (docx, dotx, odt, xlsx, xltx, ods...) listed in New from Template next to the user's own.</string>
       <string id="BuildingBlocksFolder">Shared building blocks folder</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">Trusted locations</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">Trusted macro publishers</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>Shared templates folder</label></textBox>

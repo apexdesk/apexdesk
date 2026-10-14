@@ -765,6 +765,7 @@ impl DocView {
             if ui.add_enabled_ui(can_ungroup, |ui| toolstrip::large(ui, Icon::Ungroup, tr("arrange.ungroup"), "", a, false)).inner.clicked() {
                 self.ungroup_selected();
             }
+            ui.add_enabled_ui(self.can_merge(), |ui| toolstrip::large_menu(ui, Icon::Shapes, tr("shape.merge"), &tr("shape.merge_none"), a, |ui| self.merge_menu(ui)));
             if toolstrip::large(ui, Icon::Select, tr("selpane.title"), "", a, self.pane_open).clicked() {
                 self.pane_open = !self.pane_open;
             }

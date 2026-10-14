@@ -101,8 +101,41 @@ pub(super) fn tokens(text: &str) -> Vec<(usize, Tok)> {
     out
 }
 
-/// Colors of the tokens, for a light or dark background.
-fn color(t: Tok, dark: bool, text: Color32) -> Color32 {
+/// The kinds whose color can be chosen, in the order of [`Colors`], with
+/// their names in the settings.
+pub(super) const CHOSEN: [(Tok, &str); 4] = [(Tok::Keyword, "keyword"), (Tok::Str, "string"), (Tok::Comment, "comment"), (Tok::Number, "number")];
+
+/// Colors chosen for keywords, strings, comments and numbers (None: the
+/// usual one for the theme).
+pub(super) type Colors = [Option<Color32>; 4];
+
+/// `keyword=#0000B0;comment=#008000` back into colors; what can't be read
+/// is left as usual.
+pub(super) fn parse_colors(text: &str) -> Colors {
+    let mut out = Colors::default();
+    for part in text.split(';') {
+        let Some((name, hex)) = part.split_once('=') else { continue };
+        let Some(i) = CHOSEN.iter().position(|(_, n)| *n == name.trim()) else { continue };
+        let hex = hex.trim().trim_start_matches('#');
+        if hex.len() == 6
+            && let Ok(v) = u32::from_str_radix(hex, 16)
+        {
+            out[i] = Some(Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8));
+        }
+    }
+    out
+}
+
+pub(super) fn format_colors(colors: &Colors) -> String {
+    let parts: Vec<String> = CHOSEN.iter().zip(colors).filter_map(|((_, n), c)| c.map(|c| format!("{n}=#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b()))).collect();
+    parts.join(";")
+}
+
+/// Colors of the tokens, for a light or dark background, unless chosen.
+pub(super) fn color(t: Tok, dark: bool, text: Color32, chosen: &Colors) -> Color32 {
+    if let Some(c) = CHOSEN.iter().position(|(k, _)| *k == t).and_then(|i| chosen[i]) {
+        return c;
+    }
     let rgb = |l: (u8, u8, u8), d: (u8, u8, u8)| {
         let (r, g, b) = if dark { d } else { l };
         Color32::from_rgb(r, g, b)
@@ -118,12 +151,12 @@ fn color(t: Tok, dark: bool, text: Color32) -> Color32 {
 }
 
 /// The text laid out with its colors (no wrapping: code keeps its lines).
-pub(super) fn job(text: &str, font: FontId, dark: bool, fg: Color32) -> LayoutJob {
+pub(super) fn job(text: &str, font: FontId, dark: bool, fg: Color32, chosen: &Colors) -> LayoutJob {
     let mut job = LayoutJob::default();
     let mut at = 0;
     for (end, t) in tokens(text) {
         if end > at {
-            job.append(&text[at..end], 0.0, TextFormat { font_id: font.clone(), color: color(t, dark, fg), ..Default::default() });
+            job.append(&text[at..end], 0.0, TextFormat { font_id: font.clone(), color: color(t, dark, fg, chosen), ..Default::default() });
             at = end;
         }
     }
@@ -168,5 +201,14 @@ mod tests {
         // `.Name` is a member, not the Name statement; non-ASCII stays plain.
         assert!(!s.iter().any(|(t, k)| *t == "Name" && *k == Tok::Keyword));
         assert_eq!(s.iter().map(|x| x.0).collect::<String>(), text);
+    }
+
+    #[test]
+    fn chosen_colors() {
+        let c = parse_colors("comment=#112233; keyword=#zz0000;bogus=#FFFFFF;number=#0A0B0C");
+        assert_eq!(c, [None, None, Some(Color32::from_rgb(0x11, 0x22, 0x33)), Some(Color32::from_rgb(10, 11, 12))]);
+        assert_eq!(format_colors(&c), "comment=#112233;number=#0A0B0C");
+        assert_eq!(color(Tok::Comment, true, Color32::WHITE, &c), Color32::from_rgb(0x11, 0x22, 0x33));
+        assert_eq!(color(Tok::Plain, true, Color32::WHITE, &c), Color32::WHITE);
     }
 }

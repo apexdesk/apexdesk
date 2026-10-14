@@ -1646,6 +1646,7 @@ pub fn read(data: &[u8]) -> Result<Document, Error> {
     crate::docx_defaults::finish(&mut doc);
     doc.meta = crate::props::read_ooxml(&z);
     doc.meta.read_only_recommended = z.read_string("word/settings.xml").is_ok_and(|s| read_only_recommended(&s));
+    doc.meta.vars = z.read_string("word/settings.xml").map(|s| read_doc_vars(&s)).unwrap_or_default();
     doc.macros = crate::macro_parts::read(&z, "word", &z.read_string("word/_rels/document.xml.rels").unwrap_or_default());
     doc.fonts = crate::docx_fonts::read(&z);
     doc.tidy_text_links();
@@ -2449,8 +2450,9 @@ pub fn write_as(doc: &Document, flavor: crate::Flavor) -> Vec<u8> {
     let mirror = if doc.page.mirror { "<w:mirrorMargins/>" } else { "" };
     let gutter_top = if doc.page.gutter_top { "<w:gutterAtTop/>" } else { "" };
     let write_protect = if doc.meta.read_only_recommended { r#"<w:writeProtection w:recommended="1"/>"# } else { "" };
+    let doc_vars = doc_vars_xml(&doc.meta.vars);
     let asian = doc.kept.xml.iter().find(|(slot, _)| slot == crate::docx_asian::SETTINGS_SLOT).map_or("", |(_, x)| x.as_str());
-    z.add("word/settings.xml", format!(r#"{HEADER}<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{write_protect}{bg}{mirror}{gutter_top}{track}{protect}{hyph}{even}{asian}{note_settings}</w:settings>"#).as_bytes(), true);
+    z.add("word/settings.xml", format!(r#"{HEADER}<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{write_protect}{bg}{mirror}{gutter_top}{track}{protect}{hyph}{even}{asian}{note_settings}{doc_vars}</w:settings>"#).as_bytes(), true);
     for (file, xml, _, _, prels) in &note_parts {
         z.add(&format!("word/{file}"), xml.as_bytes(), true);
         if let Some(r) = prels {
@@ -2470,6 +2472,35 @@ pub fn write_as(doc: &Document, flavor: crate::Flavor) -> Vec<u8> {
     }
     crate::props::write_ooxml(&mut z, &doc.meta);
     z.finish()
+}
+
+/// The document variables of settings.xml (`w:docVars`).
+fn read_doc_vars(settings: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut r = Reader::new(settings);
+    loop {
+        match r.next() {
+            Ev::Eof => return out,
+            Ev::Start(t) | Ev::Empty(t) if t.local() == "docVar" => {
+                if let Some(n) = t.attr("w:name").filter(|n| !n.is_empty() && out.len() < 10_000 && !out.iter().any(|(x, _)| x.eq_ignore_ascii_case(n))) {
+                    out.push((n.to_string(), t.attr("w:val").unwrap_or_default().to_string()));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn doc_vars_xml(vars: &[(String, String)]) -> String {
+    if vars.is_empty() {
+        return String::new();
+    }
+    let mut x = String::from("<w:docVars>");
+    for (n, v) in vars {
+        let _ = write!(x, r#"<w:docVar w:name="{}" w:val="{}"/>"#, esc(n), esc(v));
+    }
+    x.push_str("</w:docVars>");
+    x
 }
 
 /// "Always open read-only" in settings.xml (`w:writeProtection`).
@@ -2593,6 +2624,14 @@ pub(crate) mod tests {
         d.meta.author = "Ana".into();
         d.page = PageSetup { margin_left: 90.0, margin_right: 54.0, ..PageSetup::LETTER };
         d
+    }
+
+    #[test]
+    fn document_variables_round_trip() {
+        let mut d = Document::from_plain_text("x");
+        d.meta.vars = vec![("Cliente".into(), "A & \"B\"\nline 2".into()), ("n".into(), String::new())];
+        let back = read(&write(&d)).unwrap();
+        assert_eq!(back.meta.vars, d.meta.vars);
     }
 
     pub(crate) fn check(back: &Document, orig: &Document) {

@@ -309,3 +309,62 @@ fn japanese_lines_take_one_grid_line() {
     let sect = r#"<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1985" w:right="1701" w:bottom="1701" w:left="1701" w:header="851" w:footer="992" w:gutter="0"/><w:cols w:space="425"/><w:docGrid w:type="lines" w:linePitch="360"/>"#;
     assert_eq!(starts(&docx(&plain(80, "あいうえお漢字テスト"), sect, styles)), [0, 36, 72]);
 }
+
+/// A macro workbook whose Module1 holds `code`.
+fn macro_book(path: &Path, code: &str) {
+    let bin = apex_io::vba::new_workbook_project("ThisWorkbook", &["Sheet1".to_string()]).unwrap();
+    let mut p = apex_io::vba::read(&bin).unwrap();
+    let mut m = apex_io::vba::VbaModule::standard("Module1");
+    m.code = code.to_string();
+    p.modules.push(m);
+    let mut wb = Workbook::new();
+    wb.macros.set_project(p.write().unwrap());
+    std::fs::write(path, apex_io::xlsx::write_as(&wb, apex_io::Flavor::from_path(path))).unwrap();
+}
+
+/// `run-macro` with settings of its own (none: macros as installed).
+fn run_macro(dir: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_apexdesk")).arg("run-macro").args(args).current_dir(dir).env("LC_ALL", "C").env("LANG", "C").env("APEXDESK_SCRIPT", "1").env("XDG_CONFIG_HOME", dir.join("config")).env("HOME", dir).output().unwrap()
+}
+
+#[test]
+fn macros_run_from_the_command_line() {
+    let d = folder("run_macro");
+    macro_book(&d.join("m.xlsm"), "Sub Fill(n As Long)\n    Dim i As Long\n    For i = 1 To n\n        Cells(i, 1).Value = i * 2\n    Next\n    Debug.Print \"filled\"; n\n    MsgBox \"done\"\nEnd Sub\n\nSub Boom()\n    Dim x As Long\n    x = 1 / 0\nEnd Sub\n\nSub Saves()\n    Range(\"B1\").Value = \"saved\"\n    ThisWorkbook.Save\nEnd Sub\n\nSub Writes()\n    Open ThisWorkbook.Path & \"/out.txt\" For Output As #1\n    Print #1, \"x\"\n    Close #1\nEnd Sub\n");
+    // Only with --trust.
+    assert_eq!(run_macro(&d, &["m.xlsm", "Fill", "3"]).status.code(), Some(2));
+    let o = run_macro(&d, &["m.xlsm", "Fill", "3", "--trust", "-o", "out.xlsx"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(stdout(&o), "filled 3 \n");
+    assert!(String::from_utf8_lossy(&o.stderr).contains("done"));
+    let wb = open_sheet(&d.join("out.xlsx"));
+    assert_eq!(wb.display(0, CellRef::new(2, 0)).0, "6");
+    // Not saved over the file unless asked (or the macro saves).
+    assert_eq!(open_sheet(&d.join("m.xlsm")).display(0, CellRef::new(0, 0)).0, "");
+    ok_macro(&d, &["m.xlsm", "Saves", "--trust"]);
+    assert_eq!(open_sheet(&d.join("m.xlsm")).display(0, CellRef::new(0, 1)).0, "saved");
+    // Errors say where.
+    let o = run_macro(&d, &["m.xlsm", "Boom", "--trust"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("line 12 of Module1"), "{}", String::from_utf8_lossy(&o.stderr));
+    // Files change only with --allow-writes.
+    assert_eq!(run_macro(&d, &["m.xlsm", "Writes", "--trust"]).status.code(), Some(1));
+    assert!(!d.join("out.txt").exists());
+    ok_macro(&d, &["m.xlsm", "Writes", "--trust", "--allow-writes"]);
+    assert!(d.join("out.txt").exists());
+    // Code that looks like malware doesn't run.
+    macro_book(&d.join("bad.xlsm"), "Sub Auto_Open()\n    Shell \"powershell -enc AAAA\"\nEnd Sub\n");
+    let o = run_macro(&d, &["bad.xlsm", "Auto_Open", "--trust"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("malware"));
+    // Nor unsigned code when only signed macros may run.
+    std::fs::create_dir_all(d.join("config/apexdesk")).unwrap();
+    std::fs::write(d.join("config/apexdesk/settings.txt"), "macros_enabled=1\nmacros_signed_only=1\n").unwrap();
+    let o = run_macro(&d, &["m.xlsm", "Fill", "1", "--trust"]);
+    assert_eq!(o.status.code(), Some(1), "{}", String::from_utf8_lossy(&o.stderr));
+}
+
+fn ok_macro(dir: &Path, args: &[&str]) {
+    let o = run_macro(dir, args);
+    assert!(o.status.success(), "{args:?}: {}", String::from_utf8_lossy(&o.stderr));
+}

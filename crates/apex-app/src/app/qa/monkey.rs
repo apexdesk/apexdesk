@@ -22,7 +22,7 @@ const RUNAWAY: u64 = 2 << 30;
 /// Undo steps tried at most when undoing everything.
 const MAX_UNDO: usize = 3000;
 
-const VIEWS: [Qv; 7] = [Qv::Doc, Qv::Sheet, Qv::Slides, Qv::Pdf, Qv::Db, Qv::Code, Qv::Note];
+const VIEWS: [Qv; 8] = [Qv::Doc, Qv::Sheet, Qv::Slides, Qv::Pdf, Qv::Db, Qv::Code, Qv::Note, Qv::Macros];
 
 fn seeds() -> (u64, usize) {
     if common::full() { (20, 500) } else { (3, 150) }

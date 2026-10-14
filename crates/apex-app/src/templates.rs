@@ -48,7 +48,7 @@ fn dir() -> Option<PathBuf> {
 }
 
 /// Template file extensions: the regular ones and the template variants.
-const EXTS: &[&str] = &["docx", "dotx", "odt", "ott", "md", "xlsx", "xltx", "ods", "ots", "pptx", "potx", "odp", "otp"];
+const EXTS: &[&str] = &["docx", "dotx", "dotm", "odt", "ott", "md", "xlsx", "xltx", "xltm", "ods", "ots", "pptx", "potx", "odp", "otp"];
 
 static SHARED: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
 
@@ -144,7 +144,7 @@ fn templates_in(d: &Path, shared: bool) -> Vec<Template> {
                 return None;
             }
             let kind = match ext.as_str() {
-                "xlsx" | "xltx" | "ods" | "ots" => Kind::Sheet,
+                "xlsx" | "xltx" | "xltm" | "ods" | "ots" => Kind::Sheet,
                 "pptx" | "potx" | "odp" | "otp" => Kind::Slides,
                 _ => Kind::Doc,
             };
@@ -166,6 +166,7 @@ fn builtin() -> Vec<Template> {
         b("tpl.blank_sheet", Kind::Sheet, blank_sheet),
         b("tpl.budget", Kind::Sheet, budget),
         b("tpl.invoice", Kind::Sheet, invoice),
+        b("tpl.macro_sample", Kind::Sheet, macro_sample),
         b("tpl.blank_slides", Kind::Slides, || Loaded::Slides(Box::new(apex_slides::build::new_deck(0)))),
     ]
 }
@@ -374,6 +375,201 @@ fn invoice() -> Loaded {
     Loaded::Sheet(Box::new(wb))
 }
 
+/// A VBA string literal of `s`: the characters the project's code page
+/// (1252) lacks go as `ChrW(n)`, so every language reads right.
+fn vba_str(s: &str) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut lit = String::new();
+    for c in s.chars() {
+        if (c as u32) < 0x80 || (0xA0..0x100).contains(&(c as u32)) {
+            lit.push(c);
+            if c == '"' {
+                lit.push('"');
+            }
+        } else {
+            if !lit.is_empty() {
+                parts.push(format!("\"{}\"", std::mem::take(&mut lit)));
+            }
+            parts.push(format!("ChrW({})", c as u32));
+        }
+    }
+    if !lit.is_empty() || parts.is_empty() {
+        parts.push(format!("\"{lit}\""));
+    }
+    parts.join(" & ")
+}
+
+/// Macros at work: a sales table with buttons that run macros, a form
+/// to add a sale, a function used in the cells (AddTax) and an event
+/// that stamps the rows changed.
+fn macro_sample() -> Loaded {
+    use apex_io::vba::VbaModule;
+    use apex_sheet::form_control::{ControlKind, FormControl};
+    use apex_vba::forms::{Control, Design, Kind as Ctl};
+
+    let mut wb = new_workbook();
+    put(&mut wb, "A1", tr("tpl.macro_title"));
+    style(&mut wb, "A1", |s| {
+        s.bold = true;
+        s.font_size = 160;
+        s.color = Some(HEADER_FILL);
+    });
+    put(&mut wb, "A2", tr("tpl.macro_intro"));
+    for (c, key) in ["A4", "B4", "C4", "D4", "E4"].iter().zip(["tpl.product", "tpl.quantity", "tpl.unit_price", "tpl.macro_with_tax", "tpl.macro_changed"]) {
+        put(&mut wb, c, tr(key));
+    }
+    header(&mut wb, "A4:E4");
+    for (i, (qty, price)) in [("3", "12.5"), ("1", "240"), ("10", "4.2"), ("2", "75")].iter().enumerate() {
+        let r = i + 5;
+        put(&mut wb, &format!("A{r}"), &format!("{} {}", tr("tpl.item"), i + 1));
+        put(&mut wb, &format!("B{r}"), qty);
+        put(&mut wb, &format!("C{r}"), price);
+        put(&mut wb, &format!("D{r}"), &format!("=AddTax(B{r}*C{r})"));
+    }
+    money(&mut wb, "C5:D200");
+    style(&mut wb, "E5:E200", |s| s.num_fmt = "yyyy-mm-dd hh:mm".into());
+    let sh = &mut wb.sheets[0];
+    let w = sh.default_col_width;
+    sh.row_heights.insert(0, sh.default_row_height * 1.5);
+    sh.col_widths.insert(0, w * 2.2);
+    for c in 1..5 {
+        sh.col_widths.insert(c, w * 1.5);
+    }
+    sh.code_name = Some("Sheet1".into());
+    wb.code_name = Some("ThisWorkbook".into());
+    // The buttons, to the right of the table.
+    for (i, (key, mac)) in [("tpl.macro_add", "ShowSaleForm"), ("tpl.macro_sort", "SortByTotal"), ("tpl.macro_summary", "ShowSummary")].iter().enumerate() {
+        let mut shape = apex_doc::Shape::new(apex_doc::ShapeKind::Rect);
+        shape.fill = Some(0xFFFFFF);
+        shape.name = format!("Button {}", i + 1);
+        let mut s = apex_sheet::shape::SheetShape::new(shape, CellRef::new(3 + 2 * i as u32, 6), 150.0, 28.0);
+        let mut c = FormControl::new(ControlKind::Button);
+        c.text = tr(key).to_string();
+        c.macro_name = mac.to_string();
+        s.control = Some(Box::new(c));
+        s.anchor = apex_sheet::Anchor::OneCell;
+        wb.add_shape(0, s);
+    }
+
+    let module = format!(
+        r##"Option Explicit
+
+' A function for the cells: =AddTax(B5*C5) adds 21% (or the rate given).
+Public Function AddTax(ByVal amount As Double, Optional ByVal rate As Double = 0.21) As Double
+    AddTax = Round(amount * (1 + rate), 2)
+End Function
+
+' The buttons on the sheet run these (right-click a button > Assign macro).
+Sub ShowSaleForm()
+    frmSale.Show
+End Sub
+
+Sub AddSale(ByVal product As String, ByVal qty As Double, ByVal price As Double)
+    Dim ws As Worksheet, r As Long
+    Set ws = ThisWorkbook.Worksheets(1)
+    r = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+    ws.Cells(r, 1).Value = product
+    ws.Cells(r, 2).Value = qty
+    ws.Cells(r, 3).Value = price
+    ws.Cells(r, 4).Formula = "=AddTax(B" & r & "*C" & r & ")"
+End Sub
+
+Sub SortByTotal()
+    Dim ws As Worksheet, last As Long
+    Set ws = ThisWorkbook.Worksheets(1)
+    last = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If last < 6 Then Exit Sub
+    Application.EnableEvents = False
+    ws.Range("A4:E" & last).Sort Key1:=ws.Range("D4"), Order1:=xlDescending, Header:=xlYes
+    Application.EnableEvents = True
+End Sub
+
+Sub ShowSummary()
+    Dim ws As Worksheet, last As Long
+    Set ws = ThisWorkbook.Worksheets(1)
+    last = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    MsgBox {count} & ": " & (last - 4) & vbCrLf & {total} & ": " & Format(Application.Sum(ws.Range("D5:D" & last)), "#,##0.00"), vbInformation, {title}
+End Sub
+"##,
+        count = vba_str(tr("tpl.macro_count")),
+        total = vba_str(tr("tpl.total")),
+        title = vba_str(tr("tpl.macro_summary")),
+    );
+    let sheet_code = r#"Option Explicit
+
+' Runs when cells of the sheet change: stamps the time in column E.
+Private Sub Worksheet_Change(ByVal Target As Range)
+    Dim rows As Range, c As Range
+    Set rows = Intersect(Target, Me.Range("A5:C1000"))
+    If rows Is Nothing Then Exit Sub
+    Application.EnableEvents = False
+    For Each c In rows.Rows
+        Me.Cells(c.Row, 5).Value = Now
+    Next
+    Application.EnableEvents = True
+End Sub
+"#
+    .to_string();
+    let form_code = format!(
+        r#"Option Explicit
+
+Private Sub cmdOK_Click()
+    If Trim(txtProduct.Text) = "" Or Not IsNumeric(txtQty.Text) Or Not IsNumeric(txtPrice.Text) Then
+        MsgBox {bad}, vbExclamation
+        Exit Sub
+    End If
+    AddSale Trim(txtProduct.Text), CDbl(txtQty.Text), CDbl(txtPrice.Text)
+    Unload Me
+End Sub
+
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
+"#,
+        bad = vba_str(tr("tpl.macro_bad_input")),
+    );
+    // The form: three labelled boxes and OK / Cancel.
+    let mut controls = Vec::new();
+    for (i, (key, name)) in [("tpl.product", "txtProduct"), ("tpl.quantity", "txtQty"), ("tpl.unit_price", "txtPrice")].iter().enumerate() {
+        let top = 12.0 + 30.0 * i as f32;
+        let mut l = Control::new(Ctl::Label, &format!("Label{}", i + 1));
+        (l.left, l.top, l.width, l.caption) = (12.0, top + 3.0, 90.0, tr(key).to_string());
+        let mut t = Control::new(Ctl::TextBox, name);
+        (t.left, t.top, t.width) = (108.0, top, 120.0);
+        controls.push(l);
+        controls.push(t);
+    }
+    for (name, key, left, default, cancel) in [("cmdOK", "dialog.ok", 66.0, true, false), ("cmdCancel", "dialog.cancel", 150.0, false, true)] {
+        let mut b = Control::new(Ctl::CommandButton, name);
+        (b.left, b.top, b.width, b.caption, b.default, b.cancel) = (left, 110.0, 78.0, tr(key).to_string(), default, cancel);
+        controls.push(b);
+    }
+    for (i, c) in controls.iter_mut().enumerate() {
+        c.tab_index = i as i32;
+    }
+    let design = Design { caption: tr("tpl.macro_add").trim_end_matches(['.', '…']).to_string(), width: 240.0, height: 146.0, controls, ..Default::default() };
+
+    let built = (|| -> Result<Vec<u8>, apex_io::Error> {
+        let bin = apex_io::vba::new_workbook_project("ThisWorkbook", &["Sheet1".to_string()])?;
+        let mut p = apex_io::vba::read(&bin)?;
+        if let Some(m) = p.modules.iter_mut().find(|m| m.name == "Sheet1") {
+            m.code = sheet_code;
+        }
+        let mut m = VbaModule::standard("Module1");
+        m.code = module;
+        p.modules.push(m);
+        let mut f = VbaModule::form("frmSale", design.write("frmSale"));
+        f.code = form_code;
+        p.modules.push(f);
+        p.write()
+    })();
+    if let Ok(bin) = built {
+        wb.macros.set_project(bin);
+    }
+    wb.finish_load();
+    Loaded::Sheet(Box::new(wb))
+}
+
 fn load(t: &Template) -> Result<Loaded, String> {
     match &t.source {
         Source::Builtin(f) => Ok(f()),
@@ -396,13 +592,15 @@ pub struct Gallery {
     list: Vec<Template>,
     selected: usize,
     filter: Option<Kind>,
+    /// The file of the template chosen (not for built-in ones).
+    pub chosen: Option<PathBuf>,
 }
 
 impl Gallery {
     pub fn new(filter: Option<Kind>) -> Gallery {
         let only = !can_save();
         let list = all_templates(dir().as_deref(), shared_dir().as_deref(), only);
-        Gallery { list, selected: 0, filter }
+        Gallery { list, selected: 0, filter, chosen: None }
     }
 
     /// Returns a loaded template to open, when chosen; `Err` closes.
@@ -490,6 +688,13 @@ impl Gallery {
             DialogResult::Ok if !shown.is_empty() => result = self.list.get(self.selected).map(load),
             DialogResult::Ok | DialogResult::Cancel => result = Some(Err(String::new())),
             DialogResult::None => {}
+        }
+        // Both ways to choose select it first.
+        if result.as_ref().is_some_and(|r| r.is_ok()) {
+            self.chosen = self.list.get(self.selected).and_then(|t| match &t.source {
+                Source::File(p) | Source::Shared(p) => Some(p.clone()),
+                Source::Builtin(_) => None,
+            });
         }
         if let Some(i) = remove
             && let Source::File(p) = &self.list[i].source
@@ -587,6 +792,79 @@ mod tests {
         assert_eq!(total, Some(apex_sheet::Value::Number(121.0)));
     }
 
+    #[derive(Default)]
+    struct Shown(Vec<String>);
+
+    impl apex_vba::Ui for Shown {
+        fn msg_box(&mut self, prompt: &str, _buttons: i32, _title: &str) -> i32 {
+            self.0.push(prompt.to_string());
+            1
+        }
+
+        fn input_box(&mut self, _prompt: &str, _title: &str, _default: &str) -> Option<String> {
+            None
+        }
+    }
+
+    /// The macro sample's code runs: its function in the cells, its
+    /// buttons' macros, its event and its form.
+    #[test]
+    fn macro_sample_runs() {
+        use std::sync::Arc;
+        let Loaded::Sheet(mut wb) = macro_sample() else { panic!() };
+        assert!(!wb.modified);
+        let p = apex_io::vba::read(wb.macros.project.as_ref().expect("a project")).unwrap();
+        let kind = |k| match k {
+            apex_io::vba::ModuleKind::Standard => apex_vba::ModuleKind::Standard,
+            apex_io::vba::ModuleKind::Class => apex_vba::ModuleKind::Class,
+            apex_io::vba::ModuleKind::Document => apex_vba::ModuleKind::Document,
+            apex_io::vba::ModuleKind::Form => apex_vba::ModuleKind::Form,
+        };
+        let srcs: Arc<Vec<apex_vba::Source>> = Arc::new(p.modules.iter().map(|m| apex_vba::Source { name: m.name.clone(), kind: kind(m.kind), code: m.code.clone() }).collect());
+        let form = p.modules.iter().position(|m| m.name == "frmSale").unwrap();
+        let design = apex_vba::forms::Design::read(&p.form_streams(form).unwrap());
+        assert_eq!(design.controls.len(), 8);
+        assert!(design.controls.iter().any(|c| c.name == "cmdOK" && c.default));
+        let opts = apex_vba::Options::default();
+        let f = apex_vba::udf::Functions::new(srcs.clone(), &opts).unwrap();
+        wb.set_udf(Some(Arc::new(f) as Arc<dyn apex_sheet::udf::Udf>));
+        wb.recalc_all();
+        let num = |wb: &Workbook, a1: &str| match wb.cell(0, CellRef::parse(a1).unwrap()).map(|c| c.value().clone()) {
+            Some(apex_sheet::Value::Number(n)) => n,
+            v => panic!("{a1}: {v:?}"),
+        };
+        assert_eq!(num(&wb, "D6"), 290.4);
+        let project = apex_vba::Project::parse(&srcs).unwrap();
+        let mut ui = Shown::default();
+        let out = apex_vba::run_macro(&project, &mut wb, &mut ui, &opts, "ShowSummary");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(ui.0[0].contains(": 4"), "{:?}", ui.0);
+        let out = apex_vba::call_macro(&project, &mut wb, &mut ui, &opts, "AddSale", &["Zed".into(), "2".into(), "10".into()]);
+        assert!(out.error.is_none(), "{:?}", out.error);
+        wb.recalc_all();
+        assert_eq!(num(&wb, "D9"), 24.2);
+        let out = apex_vba::worksheet_change(&project, &mut wb, &mut ui, &opts, 0, Range::parse("A9:C9").unwrap()).expect("the sheet has the event");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(num(&wb, "E9") > 40000.0);
+        let out = apex_vba::run_macro(&project, &mut wb, &mut ui, &opts, "SortByTotal");
+        assert!(out.error.is_none(), "{:?}", out.error);
+        wb.recalc_all();
+        assert_eq!(num(&wb, "D5"), 290.4);
+        assert_eq!(num(&wb, "D9"), 24.2);
+        // The buttons name macros that exist.
+        for s in &wb.sheets[0].shapes {
+            let m = &s.control.as_ref().unwrap().macro_name;
+            assert!(project.modules.iter().any(|x| x.proc(&m.to_ascii_lowercase()).is_some()), "{m}");
+        }
+    }
+
+    #[test]
+    fn vba_strings_in_any_language() {
+        assert_eq!(vba_str("Año \"x\""), "\"Año \"\"x\"\"\"");
+        assert_eq!(vba_str("合计: "), "ChrW(21512) & ChrW(35745) & \": \"");
+        assert_eq!(vba_str(""), "\"\"");
+    }
+
     fn temp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("apex-tpl-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
@@ -598,7 +876,7 @@ mod tests {
     fn shared_categories_and_only_shared() {
         let (user, shared) = (temp("user"), temp("shared"));
         std::fs::create_dir_all(shared.join("Legal")).unwrap();
-        for f in ["Memo.dotx", "Legal/Contract.docx", "Legal/notes.txt"] {
+        for f in ["Memo.dotx", "Macros.dotm", "Legal/Contract.docx", "Legal/notes.txt"] {
             std::fs::write(shared.join(f), b"x").unwrap();
         }
         std::fs::write(user.join("Mine.xlsx"), b"x").unwrap();
@@ -609,7 +887,7 @@ mod tests {
         assert_eq!((contract.category.as_str(), contract.source.group()), ("Legal", 1));
         let only = all_templates(Some(&user), Some(&shared), true);
         let names: Vec<&str> = only.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, ["Memo", "Contract"]);
+        assert_eq!(names, ["Macros", "Memo", "Contract"]);
         assert!(only.iter().all(|t| t.source.group() == 1));
         let _ = (std::fs::remove_dir_all(&user), std::fs::remove_dir_all(&shared));
     }

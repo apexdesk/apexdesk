@@ -148,7 +148,7 @@ pub(crate) fn node_xml(out: &mut String, n: &Node) {
     let _ = write!(out, "</{}>", n.name);
 }
 
-fn node_string(n: &Node) -> String {
+pub(crate) fn node_string(n: &Node) -> String {
     let mut s = String::new();
     node_xml(&mut s, n);
     s

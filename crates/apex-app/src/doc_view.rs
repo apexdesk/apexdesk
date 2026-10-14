@@ -556,6 +556,35 @@ impl DocView {
         self.scroll_to_caret = true;
     }
 
+    /// Shows or hides the rulers (a phone has no room for them).
+    pub fn set_ruler(&mut self, on: bool) {
+        self.show_ruler = on;
+    }
+
+    /// The selection a macro starts with (Word's `Selection`), with code
+    /// typed in the code view read into the document first.
+    pub fn macro_context(&mut self) -> Selection {
+        self.md_apply();
+        self.sel
+    }
+
+    /// Takes the document a macro changed (`None`: it changed nothing) as
+    /// one undo step, and selects what it left selected.
+    pub fn macro_done(&mut self, doc: Option<Document>, sel: Selection) {
+        if let Some(d) = doc {
+            let sel_after = Selection { anchor: d.clamp(sel.anchor), cursor: d.clamp(sel.cursor) };
+            self.doc.take_changed(d, self.sel, sel_after, apex_doc::EditKind::Replace);
+            // A macro edits only while unprotected (it may protect the
+            // document after): the protection starts from what it left.
+            if !self.read_only && self.views.mode != ViewMode::Read {
+                self.protect.guard = self.doc.undo_len();
+                self.forms_unprotected();
+            }
+        }
+        self.preedit.clear();
+        self.set_sel(sel);
+    }
+
     #[cfg(test)]
     pub fn put_caret(&mut self, p: Pos) {
         self.set_sel(Selection { anchor: p, cursor: p });
@@ -3387,6 +3416,34 @@ mod tests {
         let mut v = DocView::new(doc);
         v.layout = v.build_layout(&ctx, 1.0, (1, 0, 0, 0, 0), Layout::default());
         (v, ctx)
+    }
+
+    #[test]
+    fn shapes_merge_in_one_step() {
+        use apex_doc::{DocShape, Shape, ShapeKind};
+        let mut doc = Document::from_paragraphs(vec![Paragraph::new("Text")]);
+        for x in [0.0, 50.0] {
+            let s = DocShape { x, y: 0.0, ..DocShape::new(Shape::new(ShapeKind::Rect), 100.0, 100.0) };
+            doc.insert_shape(Selection::caret(Pos::new(0, 0)), s);
+        }
+        let (mut v, ctx) = laid_out(doc);
+        let at: Vec<Pos> = v.doc.shapes().iter().map(|s| s.0).collect();
+        v.select_shape(at[0]);
+        v.toggle_picked(at[1]);
+        assert!(v.can_merge());
+        v.merge_picked(apex_slides::combine::Merge::Union);
+        let shapes = v.doc.shapes();
+        assert_eq!(shapes.len(), 1);
+        let s = &shapes[0].1;
+        assert!(s.shape.custom.is_some());
+        assert!((s.width - 150.0).abs() < 0.5 && (s.height - 100.0).abs() < 0.5, "{} {}", s.width, s.height);
+        // Laid out again, the drawn shape stands where the two were.
+        v.layout = v.build_layout(&ctx, 1.0, (1, 0, 0, 0, 0), Layout::default());
+        let b = v.all_boxes();
+        assert!((b[0].rect.width() - 150.0 * PT).abs() < 1.0, "{:?}", b[0].rect);
+        // One undo brings both back.
+        v.doc.undo();
+        assert_eq!(v.doc.shapes().len(), 2);
     }
 
     #[test]

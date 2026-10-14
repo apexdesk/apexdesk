@@ -96,7 +96,8 @@ fresh window. Then:
 
 ### monkey (`qa/monkey.rs`)
 
-In each view (`Doc`, `Sheet`, `Slides`, `Pdf`, `Db`, `Code`), sequences
+In each view (`Doc`, `Sheet`, `Slides`, `Pdf`, `Db`, `Code`, `Note`, and
+`Macros`: a workbook with macros enabled, in the macro editor), sequences
 drawn from fixed seeds (quick: 3 seeds × 150 steps; full: 20 × 500) of
 clicks on the controls shown, clicks and right-clicks in the page or the
 cells, keys (arrows, Enter, Delete, Ctrl+Z/Y/B/I/C/X/V…) and typed text.

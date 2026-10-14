@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">Uniquement les macros signées par un certificat approuvé</string>
       <string id="TrustedLocations">Emplacements approuvés</string>
       <string id="TrustedLocations_Help">Dossiers dont les fichiers s'ouvrent avec les macros activées. Ils remplacent ceux ajoutés par les utilisateurs.</string>
+      <string id="TrustedPublishers">Éditeurs de macros approuvés</string>
+      <string id="TrustedPublishers_Help">Certificats (empreintes SHA-256 ou SHA-1, en hexadécimal) dont les macros signées s'exécutent avec « Uniquement les macros signées ». Si défini, seules les macros signées par eux s'exécutent et les utilisateurs ne peuvent pas en ajouter.</string>
+      <string id="DisableMacroEditor">Désactiver l'éditeur de macros</string>
+      <string id="DisableMacroEditor_Help">1 : l'éditeur de macros (Alt+F11) ne peut pas être ouvert. Les macros s'exécutent toujours selon la stratégie de sécurité des macros.</string>
       <string id="TemplatesFolder">Dossier des modèles partagés</string>
       <string id="TemplatesFolder_Help">Un dossier de modèles (docx, dotx, odt, xlsx, xltx, ods...) affichés dans Nouveau à partir d'un modèle à côté de ceux de l'utilisateur.</string>
       <string id="BuildingBlocksFolder">Dossier partagé de blocs de construction</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">Emplacements approuvés</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">Éditeurs de macros approuvés</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>Dossier des modèles partagés</label></textBox>

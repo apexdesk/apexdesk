@@ -382,6 +382,8 @@ pub struct SheetView {
     pub notices: Vec<Notice>,
     /// A macro a form button asks to run (the app runs it).
     pub run_macro: Option<String>,
+    /// Double and right clicks on cells the sheet's macros handle.
+    pub cell_hooks: macro_hooks::CellHooks,
     uid: u64,
     sheet: usize,
     anchor: CellRef,
@@ -404,6 +406,8 @@ pub struct SheetView {
     /// A paste was requested from the menu; accept it without focus.
     paste_expected: bool,
     renaming: Option<(usize, String)>,
+    /// The name box of a tab being renamed takes the focus once.
+    rename_focus: bool,
     move_copy: Option<movecopy_ui::MoveCopyDlg>,
     views_dlg: Option<views_ui::ViewsDlg>,
     links_dlg: Option<links_ui::LinksDlg>,
@@ -486,6 +490,12 @@ impl SheetView {
         self.cursor
     }
 
+    /// Whether a sheet tab is being renamed, for the QA.
+    #[cfg(test)]
+    pub fn audit_renaming(&self) -> bool {
+        self.renaming.is_some()
+    }
+
     /// The tool armed (a shape to draw, the pen), for the QA.
     #[cfg(test)]
     pub fn audit_tool(&self) -> String {
@@ -516,6 +526,7 @@ impl SheetView {
             zoom: 1.0,
             notices: Vec::new(),
             run_macro: None,
+            cell_hooks: Default::default(),
             uid: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             sheet: 0,
             anchor: CellRef::new(0, 0),
@@ -531,6 +542,7 @@ impl SheetView {
             clip_pane: false,
             paste_expected: false,
             renaming: None,
+            rename_focus: false,
             move_copy: None,
             views_dlg: None,
             links_dlg: None,
@@ -1500,6 +1512,7 @@ impl SheetView {
     }
 
     fn pointer(&mut self, ui: &mut egui::Ui, resp: &egui::Response, g: &Geo, rect: Rect) {
+        self.cell_hooks_frame(ui.ctx());
         let (pos, pressed, down, released, mods) =
             ui.input(|i| (i.pointer.interact_pos(), i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.primary_released(), i.modifiers));
         let Some(p) = pos else {
@@ -1618,6 +1631,8 @@ impl SheetView {
             match hit {
                 // In a pivot table: Show Details of the value.
                 Hit::Cell(c) if c == self.cursor && self.wb.pivot_at(self.sheet, c).is_some() && self.show_pivot_details() => {}
+                // BeforeDoubleClick first; it may cancel the editing.
+                Hit::Cell(c) if c == self.cursor && self.cell_hooks.double => self.cell_hooks.clicked = Some((false, self.sheet, Range::single(c))),
                 Hit::Cell(c) if c == self.cursor => self.begin_edit(ui.ctx(), EditOrigin::Cell, false, None),
                 Hit::ColBorder(c) => self.autofit_cols(ui, c, c),
                 _ => {}
@@ -1637,6 +1652,10 @@ impl SheetView {
                     self.cursor = CellRef::new(r, LAST.col);
                 }
                 _ => {}
+            }
+            // BeforeRightClick: it may close the menu.
+            if self.cell_hooks.right && matches!(hit, Hit::Cell(_)) {
+                self.cell_hooks.clicked = Some((true, self.sheet, self.sel()));
             }
         }
         resp.context_menu(|ui| self.context_menu(ui));
@@ -2794,7 +2813,7 @@ mod tests {
     /// Runs frames of the Home tab over a sheet, with AccessKit on, and
     /// returns the named nodes of the last one: (label, toggled).
     fn a11y_nodes(v: &mut SheetView, ctx: &egui::Context) -> Vec<(String, Option<bool>)> {
-        let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "a11y".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "a11y".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         let mut nodes = Vec::new();
         for _ in 0..3 {
             let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0))), ..Default::default() };
@@ -2907,7 +2926,7 @@ mod tests {
         wb.finish_load();
         let mut v = SheetView::new(wb);
         let ctx = crate::headless::context();
-        let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "big".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "big".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         let mut frame = |v: &mut SheetView| {
             let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0))), ..Default::default() };
             let t = std::time::Instant::now();

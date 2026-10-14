@@ -5,6 +5,8 @@
 use std::path::PathBuf;
 
 const MAX_RECENT: usize = 12;
+/// Files remembered as allowed to let their macros change files.
+pub const MAX_GRANTS: usize = 500;
 
 static MINI_TOOLBAR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
@@ -51,6 +53,8 @@ pub struct Settings {
     pub show_toolbar: bool,
     /// Menus and a toolbar instead of the toolstrip.
     pub classic: bool,
+    /// On a phone, its own interface (else the whole one, as on a tablet).
+    pub phone_ui: bool,
     pub show_formula_bar: bool,
     pub recent_colors: Vec<u32>,
     pub recent_fonts: Vec<String>,
@@ -64,6 +68,9 @@ pub struct Settings {
     pub spell_auto: bool,
     /// The Mini Toolbar shows on selection.
     pub mini_toolbar: bool,
+    /// The Developer tab shows (macros, form controls), off at first as
+    /// in Office.
+    pub developer_tab: bool,
     /// With the dark theme, pages, cells and slides are drawn dark too
     /// (only on screen).
     pub dark_canvas: bool,
@@ -76,6 +83,8 @@ pub struct Settings {
     pub draft_vruler: bool,
     /// The mouse wheel and touchpad scroll this many times as far (0.5–5).
     pub scroll_speed: f32,
+    /// The first start asked whether to open office files with ApexDesk.
+    pub default_asked: bool,
     /// The window was maximized when the program last closed.
     pub window_maximized: bool,
     /// The normal (not maximized) window size when it last closed.
@@ -108,9 +117,29 @@ pub struct Settings {
     pub macros_enabled: bool,
     /// Folders whose files' macros run without asking (when enabled).
     pub trusted_locations: Vec<PathBuf>,
+    /// Workbooks whose macros may change files without asking: hashes of
+    /// the file's path and its macros' code (other code, other file:
+    /// asked again).
+    pub macro_file_grants: Vec<String>,
+    /// Installed add-ins (`.xlam`, `.xlsm`): their macros are reachable
+    /// from Run Macro and `Application.Run`.
+    pub addins: Vec<PathBuf>,
     /// Macros only run when their project is signed by a trusted
     /// certificate.
     pub macros_signed_only: bool,
+    /// Signers whose macros run under `macros_signed_only` even without a
+    /// chain to a trusted root: their certificates' SHA-256 (or SHA-1).
+    pub trusted_publishers: Vec<String>,
+    /// The macro editor can't be opened (an organization's policy).
+    pub macro_editor_off: bool,
+    /// The macro editor: new modules start with `Option Explicit`
+    /// (Require Variable Declaration), and the code's size.
+    pub vba_explicit: bool,
+    pub vba_font_size: f32,
+    /// The macro editor in a window of its own (not inside the program's).
+    pub vba_window: bool,
+    /// Syntax colors chosen in the macro editor (`keyword=#RRGGBB;...`).
+    pub vba_colors: String,
     /// Files downloaded from the Internet open in Protected View
     /// (read-only, macros off) until the user enables editing.
     pub protected_view: bool,
@@ -218,6 +247,7 @@ impl Default for Settings {
             recent: Vec::new(),
             show_toolbar: true,
             classic: false,
+            phone_ui: true,
             show_formula_bar: true,
             recent_colors: Vec::new(),
             recent_fonts: Vec::new(),
@@ -226,12 +256,14 @@ impl Default for Settings {
             spell_lang: String::new(),
             spell_auto: true,
             mini_toolbar: true,
+            developer_tab: false,
             dark_canvas: false,
             contrast: false,
             sharp_text: false,
             vruler: true,
             draft_vruler: false,
             scroll_speed: 1.0,
+            default_asked: false,
             window_maximized: false,
             window_size: None,
             mcp: false,
@@ -247,7 +279,15 @@ impl Default for Settings {
             speech_rate: 1.0,
             macros_enabled: false,
             trusted_locations: Vec::new(),
+            macro_file_grants: Vec::new(),
+            addins: Vec::new(),
             macros_signed_only: false,
+            trusted_publishers: Vec::new(),
+            macro_editor_off: false,
+            vba_explicit: false,
+            vba_font_size: 13.0,
+            vba_window: false,
+            vba_colors: String::new(),
             protected_view: true,
             templates_folder: String::new(),
             building_blocks_folder: String::new(),
@@ -296,6 +336,19 @@ pub(crate) fn make_private_dir(dir: &std::path::Path) {
 pub(crate) fn config_dir() -> Option<PathBuf> {
     // Tests never read or write the user's profile.
     if cfg!(test) {
+        // Those of earlier runs are left behind (tests have no end to
+        // clean up at): removed once their process is gone.
+        static SWEPT: std::sync::Once = std::sync::Once::new();
+        SWEPT.call_once(|| {
+            let Ok(dir) = std::fs::read_dir(std::env::temp_dir()) else { return };
+            for e in dir.flatten() {
+                let name = e.file_name();
+                let Some(pid) = name.to_str().and_then(|n| n.strip_prefix("apexdesk-test-")).and_then(|p| p.parse::<u32>().ok()) else { continue };
+                if cfg!(target_os = "linux") && pid != std::process::id() && !std::path::Path::new(&format!("/proc/{pid}")).exists() {
+                    let _ = std::fs::remove_dir_all(e.path());
+                }
+            }
+        });
         return Some(std::env::temp_dir().join(format!("apexdesk-test-{}", std::process::id())));
     }
     if let Some(d) = crate::portable::data_dir() {
@@ -361,6 +414,8 @@ impl Settings {
         for set in &p.set {
             match set.item.key {
                 "trusted_location" => self.trusted_locations.clear(),
+                "trusted_publisher" => self.trusted_publishers.clear(),
+                "addin" => self.addins.clear(),
                 "required_property" => self.required_properties.clear(),
                 "brand_font" => self.brand_fonts.clear(),
                 "brand_color" => self.brand_colors.clear(),
@@ -410,6 +465,7 @@ impl Settings {
                 "recent" => s.recent.push(PathBuf::from(v)),
                 "toolbar" => s.show_toolbar = v.trim() != "0",
                 "interface" => s.classic = v.trim() == "classic",
+                "phone_ui" => s.phone_ui = v.trim() != "0",
                 "formula_bar" => s.show_formula_bar = v.trim() != "0",
                 "recent_colors" => s.recent_colors = v.split(',').filter_map(|c| u32::from_str_radix(c.trim(), 16).ok()).collect(),
                 "recent_symbols" => s.recent_symbols = v.split(',').filter_map(|c| u32::from_str_radix(c.trim(), 16).ok().and_then(char::from_u32)).collect(),
@@ -417,12 +473,14 @@ impl Settings {
                 "spell_lang" => s.spell_lang = v.trim().to_string(),
                 "spell_auto" => s.spell_auto = v.trim() != "0",
                 "mini_toolbar" => s.mini_toolbar = v.trim() != "0",
+                "developer_tab" => s.developer_tab = v.trim() == "1",
                 "dark_canvas" => s.dark_canvas = v.trim() == "1",
                 "contrast" => s.contrast = v.trim() == "1",
                 "sharp_text" => s.sharp_text = v.trim() == "1",
                 "vruler" => s.vruler = v.trim() == "1",
                 "draft_vruler" => s.draft_vruler = v.trim() == "1",
                 "scroll_speed" => s.scroll_speed = v.trim().parse::<f32>().ok().filter(|v| v.is_finite()).unwrap_or(1.0).clamp(SCROLL_SPEED.0, SCROLL_SPEED.1),
+                "default_asked" => s.default_asked = v.trim() == "1",
                 "window_maximized" => s.window_maximized = v.trim() == "1",
                 "window_size" => {
                     s.window_size = v.split_once('x').and_then(|(w, h)| Some([w.trim().parse::<f32>().ok()?, h.trim().parse::<f32>().ok()?])).filter(|z| z.iter().all(|n| n.is_finite()))
@@ -435,6 +493,10 @@ impl Settings {
                 "user_name" => s.user_name = v.trim().to_string(),
                 "autosave_minutes" => s.autosave_minutes = v.trim().parse().unwrap_or(10),
                 "lock_files" => s.lock_files = v.trim() != "0",
+                "vba_explicit" => s.vba_explicit = v.trim() == "1",
+                "vba_window" => s.vba_window = v.trim() == "1",
+                "vba_colors" => s.vba_colors = v.trim().chars().take(200).collect(),
+                "vba_font_size" => s.vba_font_size = v.trim().parse::<f32>().ok().filter(|f| (8.0..=32.0).contains(f)).unwrap_or(13.0),
                 "speech_voice" => s.speech_voice = v.trim().to_string(),
                 "speech_rate" => s.speech_rate = v.trim().parse::<f32>().unwrap_or(1.0).clamp(0.5, 2.0),
                 "sign_cert" => s.sign_cert = v.trim().to_string(),
@@ -453,6 +515,10 @@ impl Settings {
                 "status_stats" => s.status_stats = v.trim().parse().unwrap_or(0b000111),
                 "macros_enabled" => s.macros_enabled = v.trim() == "1",
                 "trusted_location" => s.trusted_locations.push(PathBuf::from(v)),
+                "macro_file_grant" if s.macro_file_grants.len() < MAX_GRANTS && v.trim().len() == 64 && v.trim().bytes().all(|b| b.is_ascii_hexdigit()) => s.macro_file_grants.push(v.trim().to_ascii_lowercase()),
+                "trusted_publisher" if !v.trim().is_empty() => s.trusted_publishers.push(v.trim().to_string()),
+                "macro_editor_off" => s.macro_editor_off = v.trim() == "1",
+                "addin" => s.addins.push(PathBuf::from(v)),
                 "qat" => s.qat.extend(Command::decode(&decode_fields(v))),
                 "keybind" => {
                     let mut f = decode_fields(v);
@@ -509,19 +575,22 @@ impl Settings {
             Some(false) => "light",
             None => "system",
         });
-        out.push_str(&format!("interface={}\n", if self.classic { "classic" } else { "toolstrip" }));
+        out.push_str(&format!("interface={}\nphone_ui={}\n", if self.classic { "classic" } else { "toolstrip" }, self.phone_ui as u8));
         out.push_str(&format!("toolbar={}\nformula_bar={}\nstatus_stats={}\n", self.show_toolbar as u8, self.show_formula_bar as u8, self.status_stats));
         out.push_str(&format!("spell_lang={}\nspell_auto={}\n", self.spell_lang.replace('\n', " "), self.spell_auto as u8));
         out.push_str(&format!("user_name={}\n", self.user_name.replace('\n', " ")));
         out.push_str(&format!("autosave_minutes={}\n", self.autosave_minutes));
+        out.push_str(&format!("vba_explicit={}\nvba_font_size={}\nvba_window={}\nvba_colors={}\n", self.vba_explicit as u8, self.vba_font_size, self.vba_window as u8, self.vba_colors));
         out.push_str(&format!("lock_files={}\nspeech_voice={}\nspeech_rate={}\n", self.lock_files as u8, self.speech_voice.replace('\n', " "), self.speech_rate));
         out.push_str(&format!("mini_toolbar={}\n", self.mini_toolbar as u8));
+        out.push_str(&format!("developer_tab={}\n", self.developer_tab as u8));
         out.push_str(&format!("dark_canvas={}\n", self.dark_canvas as u8));
         out.push_str(&format!("contrast={}\n", self.contrast as u8));
         out.push_str(&format!("sharp_text={}\n", self.sharp_text as u8));
         out.push_str(&format!("vruler={}\n", self.vruler as u8));
         out.push_str(&format!("draft_vruler={}\n", self.draft_vruler as u8));
         out.push_str(&format!("scroll_speed={}\n", self.scroll_speed));
+        out.push_str(&format!("default_asked={}\n", self.default_asked as u8));
         out.push_str(&format!("window_maximized={}\n", self.window_maximized as u8));
         if let Some([w, h]) = self.window_size {
             out.push_str(&format!("window_size={w:.0}x{h:.0}\n"));
@@ -539,6 +608,18 @@ impl Settings {
         // a setting of its own: such paths aren't kept.
         for p in self.trusted_locations.iter().map(|p| p.to_string_lossy()).filter(|p| !p.contains('\n')) {
             out.push_str(&format!("trusted_location={p}\n"));
+        }
+        for g in &self.macro_file_grants {
+            out.push_str(&format!("macro_file_grant={g}\n"));
+        }
+        for p in self.trusted_publishers.iter().filter(|p| !p.contains('\n')) {
+            out.push_str(&format!("trusted_publisher={p}\n"));
+        }
+        if self.macro_editor_off {
+            out.push_str("macro_editor_off=1\n");
+        }
+        for p in self.addins.iter().map(|p| p.to_string_lossy()).filter(|p| !p.contains('\n')) {
+            out.push_str(&format!("addin={p}\n"));
         }
         out.push_str(&format!("sign_cert={}\ntsa_url={}\nsign_level={}\n", self.sign_cert.replace('\n', " "), self.tsa_url.replace('\n', " "), self.sign_level.replace('\n', " ")));
         out.push_str(&format!("sign_source={}\nsign_key={}\npkcs11_module={}\n", self.sign_source.replace('\n', " "), self.sign_key.replace('\n', " "), self.pkcs11_module.replace('\n', " ")));
@@ -631,6 +712,15 @@ mod tests {
     }
 
     #[test]
+    fn macro_file_grants() {
+        let mut s = Settings::default();
+        s.set("macro_file_grant", &"AB".repeat(32));
+        s.set("macro_file_grant", "short");
+        s.set("macro_file_grant", &"zz".repeat(32));
+        assert_eq!(s.macro_file_grants, ["ab".repeat(32)]);
+    }
+
+    #[test]
     fn scroll_speed_stays_in_range() {
         let mut s = Settings::default();
         assert_eq!(s.scroll_speed, 1.0);
@@ -657,6 +747,19 @@ mod tests {
         let new = "lang=es\nmacros_enabled=1\nmacros_signed_only=1\ntrusted_location=/srv/m\nautosave_minutes=3\n";
         let old = "lang=en\nmacros_enabled=0\ntrusted_location=/home/me/m\nautosave_minutes=10\n";
         assert_eq!(keep_user_values(new, old, &p), "lang=es\nmacros_enabled=0\ntrusted_location=/home/me/m\nautosave_minutes=10\n");
+    }
+
+    #[test]
+    fn trusted_publishers_are_kept_or_fixed() {
+        let mut s = Settings::default();
+        s.set("trusted_publisher", "AA:BB Mine");
+        s.set("trusted_publisher", " ");
+        s.set("macro_editor_off", "1");
+        assert_eq!(s.trusted_publishers, ["AA:BB Mine"]);
+        assert!(s.macro_editor_off);
+        let p = crate::policy::Policy::from_entries(vec![("TrustedPublishers".into(), "CC:DD".into(), "t".into())], true);
+        s.apply_policy(&p);
+        assert_eq!(s.trusted_publishers, ["CC:DD"]);
     }
 }
 

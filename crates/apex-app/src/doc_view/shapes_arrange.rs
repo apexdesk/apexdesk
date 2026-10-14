@@ -4,9 +4,11 @@
 use std::collections::HashSet;
 
 use apex_doc::{DocShape, Pos};
-use eframe::egui::{self, Rect, Stroke, Vec2};
+use apex_slides::combine::{self, Merge};
+use apex_slides::{Frame, Geometry};
+use eframe::egui::{self, Rect, Stroke, Vec2, pos2};
 
-use super::DocView;
+use super::{DocView, PT};
 use super::shapes_ui::{ACCENT, Boxed};
 use crate::i18n::tr;
 use crate::shapes;
@@ -218,6 +220,78 @@ impl DocView {
         self.shapes.multi.1.clear();
     }
 
+    /// The picked shapes Merge Shapes takes, in the order they were
+    /// picked: floating, ungrouped shapes with an area (not text boxes,
+    /// lines, pictures or ink).
+    fn mergeable(&self) -> Vec<Boxed> {
+        let Some(sel) = self.selected_shape() else { return Vec::new() };
+        let boxes = self.all_boxes();
+        std::iter::once(sel.at)
+            .chain(self.picked_extra())
+            .filter_map(|at| boxes.iter().find(|b| b.at == at).cloned())
+            .filter(|b| {
+                let s = &b.shape.shape;
+                b.shape.wrap.floats() && b.shape.group.is_none() && s.picture.is_none() && s.ink.is_none() && !s.kind.is_line() && !s.is_text_box()
+            })
+            .collect()
+    }
+
+    pub(super) fn can_merge(&self) -> bool {
+        self.mergeable().len() > 1
+    }
+
+    /// Shape Format > Merge Shapes on the picked shapes, as one step: the
+    /// result takes the first one's look (and its text, but for Fragment).
+    pub(super) fn merge_picked(&mut self, how: Merge) {
+        let members = self.mergeable();
+        if members.len() < 2 {
+            return;
+        }
+        let px = PT * self.zoom;
+        let outlines: Vec<_> = members
+            .iter()
+            .map(|b| {
+                let s = &b.shape.shape;
+                let g = match &s.custom {
+                    Some(xml) => Geometry::Custom(xml.clone()),
+                    None => Geometry::Preset(s.geometry().unwrap_or(s.kind.preset()).into(), s.adj.clone()),
+                };
+                let f = Frame { rot: s.rotation, flip_h: s.flip_h, flip_v: s.flip_v, ..Frame::new(b.rect.min.x, b.rect.min.y, b.rect.width(), b.rect.height()) };
+                combine::outline(&g, &f)
+            })
+            .collect();
+        let first = &members[0];
+        let to = first.at.para;
+        let made: Vec<DocShape> = combine::merge(&outlines, how)
+            .iter()
+            .filter_map(combine::to_geometry)
+            .map(|(f, g)| {
+                let Geometry::Custom(xml) = g else { unreachable!("merges make drawn shapes") };
+                let mut s = DocShape { h_align: None, width: f.w / px, height: f.h / px, group: None, ..(*first.shape).clone() };
+                s.shape.custom = Some(xml);
+                s.shape.preset = None;
+                s.shape.adj.clear();
+                (s.shape.rotation, s.shape.flip_h, s.shape.flip_v) = (0.0, false, false);
+                if how == Merge::Fragment {
+                    s.shape.text.clear();
+                }
+                (s.x, s.y) = self.float_offsets(to, &s, pos2(f.x, f.y));
+                s.sanitize();
+                s
+            })
+            .collect();
+        if made.is_empty() {
+            return;
+        }
+        let gone: Vec<Pos> = members.iter().map(|b| b.at).collect();
+        let at = self.doc.replace_shapes(to, &gone, made);
+        if let Some(a) = at.first() {
+            self.select_shape(*a);
+        }
+        self.shapes.multi.1 = at.iter().skip(1).copied().collect();
+        self.shapes.multi.0 = self.sel;
+    }
+
     pub(super) fn ungroup_selected(&mut self) {
         if let Some(b) = self.selected_shape() {
             self.doc.ungroup_shapes(b.at);
@@ -234,6 +308,23 @@ impl DocView {
         if ui.add_enabled(self.can_ungroup(), egui::Button::new(tr("arrange.ungroup"))).clicked() {
             self.ungroup_selected();
             ui.close();
+        }
+        ui.add_enabled_ui(self.can_merge(), |ui| crate::widgets::menu_button(ui, tr("shape.merge"), |ui| self.merge_menu(ui))).response.on_disabled_hover_text(tr("shape.merge_none"));
+    }
+
+    /// The five ways of Merge Shapes.
+    pub(super) fn merge_menu(&mut self, ui: &mut egui::Ui) {
+        for (how, key) in [
+            (Merge::Union, "shape.merge_union"),
+            (Merge::Combine, "shape.merge_combine"),
+            (Merge::Fragment, "shape.merge_fragment"),
+            (Merge::Intersect, "shape.merge_intersect"),
+            (Merge::Subtract, "shape.merge_subtract"),
+        ] {
+            if ui.button(tr(key)).clicked() {
+                self.merge_picked(how);
+                ui.close();
+            }
         }
     }
 

@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">Nur mit vertrauenswürdigem Zertifikat signierte Makros</string>
       <string id="TrustedLocations">Vertrauenswürdige Speicherorte</string>
       <string id="TrustedLocations_Help">Ordner, deren Dateien beim Öffnen mit aktivierten Makros geladen werden. Sie ersetzen die von Benutzern hinzugefügten.</string>
+      <string id="TrustedPublishers">Vertrauenswürdige Makro-Herausgeber</string>
+      <string id="TrustedPublishers_Help">Zertifikate (SHA-256- oder SHA-1-Fingerabdrücke, hexadezimal), deren signierte Makros unter „Nur signierte Makros“ laufen. Wenn gesetzt, laufen nur von ihnen signierte Makros und Benutzer können keine hinzufügen.</string>
+      <string id="DisableMacroEditor">Makro-Editor deaktivieren</string>
+      <string id="DisableMacroEditor_Help">1: Der Makro-Editor (Alt+F11) kann nicht geöffnet werden. Makros laufen weiterhin gemäß der Makrosicherheitsrichtlinie.</string>
       <string id="TemplatesFolder">Ordner für freigegebene Vorlagen</string>
       <string id="TemplatesFolder_Help">Ein Ordner mit Vorlagen (docx, dotx, odt, xlsx, xltx, ods...), die unter „Neu aus Vorlage“ neben den eigenen erscheinen.</string>
       <string id="BuildingBlocksFolder">Freigegebener Ordner für Bausteine</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">Vertrauenswürdige Speicherorte</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">Vertrauenswürdige Makro-Herausgeber</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>Ordner für freigegebene Vorlagen</label></textBox>

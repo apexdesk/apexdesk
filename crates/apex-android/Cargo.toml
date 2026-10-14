@@ -59,6 +59,7 @@ regex = { version = "1", default-features = false, features = ["std", "unicode"]
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 unicode-width = "0.2"
 serde_json = "1"
+sha2 = "0.10"
 libloading = "0.8"
 cpal = "0.18"
 libc = "0.2"

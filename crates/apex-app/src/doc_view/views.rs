@@ -427,6 +427,18 @@ impl DocView {
 
     /// Hands the document to another window of it; each keeps its own
     /// selection, zoom and view.
+    /// Shows `doc` with `sel` (a paused macro's copy, or the document
+    /// back after it); returns what it showed.
+    pub fn show_macro_doc(&mut self, doc: Document, sel: Selection) -> (Document, Selection) {
+        self.md_apply();
+        let old = std::mem::replace(&mut self.doc, doc);
+        let old_sel = self.sel;
+        self.layout.key = Default::default();
+        self.preedit.clear();
+        self.sel = Selection { anchor: self.doc.clamp(sel.anchor), cursor: self.doc.clamp(sel.cursor) };
+        (old, old_sel)
+    }
+
     pub fn swap_document(&mut self, other: &mut DocView) {
         self.md_apply();
         other.md_apply();

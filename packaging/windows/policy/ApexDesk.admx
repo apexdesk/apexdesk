@@ -33,6 +33,19 @@
         <list id="TrustedLocations" key="Software\Policies\ApexDesk\TrustedLocations" valuePrefix="" />
       </elements>
     </policy>
+    <policy name="TrustedPublishers" class="Both" displayName="$(string.TrustedPublishers)" explainText="$(string.TrustedPublishers_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.TrustedPublishers)">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <elements>
+        <list id="TrustedPublishers" key="Software\Policies\ApexDesk\TrustedPublishers" valuePrefix="" />
+      </elements>
+    </policy>
+    <policy name="DisableMacroEditor" class="Both" displayName="$(string.DisableMacroEditor)" explainText="$(string.DisableMacroEditor_Help)" key="Software\Policies\ApexDesk" valueName="DisableMacroEditor">
+      <parentCategory ref="ApexDesk" />
+      <supportedOn ref="SUPPORTED_ApexDesk" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
     <policy name="TemplatesFolder" class="Both" displayName="$(string.TemplatesFolder)" explainText="$(string.TemplatesFolder_Help)" key="Software\Policies\ApexDesk" presentation="$(presentation.TemplatesFolder)">
       <parentCategory ref="ApexDesk" />
       <supportedOn ref="SUPPORTED_ApexDesk" />

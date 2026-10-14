@@ -19,7 +19,7 @@ pub(super) enum Dialog {
     Special(SpecialDlg),
     Calc(apex_sheet::CalcOptions),
     MergeWarn(u8),
-    Functions { query: String, cat: usize, selected: Option<Func> },
+    Functions { query: String, cat: usize, selected: Option<Pick> },
 }
 
 /// Go To Special: the option picked (as in `SPECIAL_OPTS`), the value
@@ -360,7 +360,7 @@ impl SheetView {
     }
 
     pub(super) fn open_functions(&mut self) {
-        self.dialog = Some(Dialog::Functions { query: String::new(), cat: 0, selected: Some(Func::Sum) });
+        self.dialog = Some(Dialog::Functions { query: String::new(), cat: 0, selected: Some(Pick::Func(Func::Sum)) });
     }
 
     pub(super) fn open_find(&mut self, replace: bool) {
@@ -462,7 +462,10 @@ impl SheetView {
             Dialog::MergeWarn(_) => widgets::dialog(ctx, "merge_warn", tr("merge.title"), 340.0, |ui| {
                 ui.label(tr("merge.warning"));
             }),
-            Dialog::Functions { query, cat, selected } => widgets::dialog(ctx, "functions", tr("fx.title"), 520.0, |ui| functions_ui(ui, query, cat, selected, self.wb.locale.arg_sep)),
+            Dialog::Functions { query, cat, selected } => {
+                let udfs = self.wb.udf.as_ref().map(|u| u.names()).unwrap_or_default();
+                widgets::dialog(ctx, "functions", tr("fx.title"), 520.0, |ui| functions_ui(ui, query, cat, selected, self.wb.locale.arg_sep, &udfs))
+            }
         };
         match res {
             widgets::DialogResult::None => self.dialog = Some(d),
@@ -524,8 +527,10 @@ impl SheetView {
             Dialog::Calc(o) => self.set_calc(o),
             Dialog::MergeWarn(k) => self.merge_cmd(k, true),
             Dialog::Functions { selected, .. } => {
-                if let Some(f) = selected {
-                    self.insert_function(f);
+                match selected {
+                    Some(Pick::Func(f)) => self.insert_function(formula_help::display_name(f)),
+                    Some(Pick::Macro(name)) => self.insert_function(&name),
+                    None => {}
                 }
             }
         }
@@ -584,8 +589,7 @@ impl SheetView {
         }
     }
 
-    fn insert_function(&mut self, f: Func) {
-        let name = formula_help::display_name(f);
+    fn insert_function(&mut self, name: &str) {
         if self.edit.is_none() {
             let ctx = self.ctx.clone();
             let cur = self.wb.edit_text(self.sheet, self.cursor);
@@ -1108,13 +1112,23 @@ fn place_combo(ui: &mut egui::Ui, i: usize, top: &mut bool, by_cols: bool) {
     });
 }
 
-fn functions_ui(ui: &mut egui::Ui, query: &mut String, cat: &mut usize, selected: &mut Option<Func>, sep: char) {
+/// A function of the Insert Function dialog.
+#[derive(Clone, PartialEq)]
+pub(super) enum Pick {
+    Func(Func),
+    /// Of the workbook's macros.
+    Macro(String),
+}
+
+fn functions_ui(ui: &mut egui::Ui, query: &mut String, cat: &mut usize, selected: &mut Option<Pick>, sep: char, udfs: &[(String, Vec<String>)]) {
     ui.horizontal(|ui| {
         let r = ui.add(egui::TextEdit::singleline(query).hint_text(tr("fx.search")).desired_width(200.0));
         if !r.has_focus() && query.is_empty() && ui.memory(|m| m.focused().is_none()) {
             r.request_focus();
         }
-        let cats: Vec<&str> = std::iter::once("fncat.all").chain(formula_help::CATEGORIES).collect();
+        let user = (!udfs.is_empty()).then_some("fncat.user");
+        let cats: Vec<&str> = std::iter::once("fncat.all").chain(formula_help::CATEGORIES).chain(user).collect();
+        *cat = (*cat).min(cats.len() - 1);
         let r = egui::ComboBox::from_id_salt("fx_cat").width(170.0).selected_text(tr_dyn(cats[*cat])).show_ui(ui, |ui| {
             for (i, c) in cats.iter().enumerate() {
                 ui.selectable_value(cat, i, tr_dyn(c));
@@ -1124,17 +1138,22 @@ fn functions_ui(ui: &mut egui::Ui, query: &mut String, cat: &mut usize, selected
         widgets::name(&r.response, egui::WidgetType::ComboBox, tr("fmtdlg.category"), None);
     });
     let q = query.to_lowercase();
-    let mut list: Vec<Func> = Func::ALL
+    let user_cat = formula_help::CATEGORIES.len() + 1;
+    let mut list: Vec<(String, Pick)> = Func::ALL
         .iter()
         .copied()
-        .filter(|&f| *cat == 0 || formula_help::category(f) == formula_help::CATEGORIES[*cat - 1])
+        .filter(|&f| *cat == 0 || formula_help::CATEGORIES.get(*cat - 1).is_some_and(|c| formula_help::category(f) == *c))
         .filter(|&f| {
             q.is_empty() || formula_help::display_name(f).to_lowercase().contains(&q) || f.name().to_lowercase().contains(&q) || formula_help::help(f, sep).1.to_lowercase().contains(&q)
         })
+        .map(|f| (formula_help::display_name(f).to_string(), Pick::Func(f)))
         .collect();
-    list.sort_by_key(|f| formula_help::display_name(*f));
-    if selected.is_none_or(|s| !list.contains(&s)) {
-        *selected = list.first().copied();
+    if *cat == 0 || *cat == user_cat {
+        list.extend(udfs.iter().filter(|(n, _)| q.is_empty() || n.to_lowercase().contains(&q)).map(|(n, _)| (n.clone(), Pick::Macro(n.clone()))));
+    }
+    list.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    if selected.as_ref().is_none_or(|s| !list.iter().any(|(_, p)| p == s)) {
+        *selected = list.first().map(|(_, p)| p.clone());
     }
     ui.add_space(4.0);
     ui.horizontal_top(|ui| {
@@ -1142,8 +1161,10 @@ fn functions_ui(ui: &mut egui::Ui, query: &mut String, cat: &mut usize, selected
             ui.set_width(170.0);
             // One under the other (the row around would lay them side by side).
             ui.vertical(|ui| {
-                for f in &list {
-                    ui.selectable_value(selected, Some(*f), formula_help::display_name(*f));
+                for (name, p) in &list {
+                    if ui.selectable_label(selected.as_ref() == Some(p), name).clicked() {
+                        *selected = Some(p.clone());
+                    }
                 }
             });
         });
@@ -1151,13 +1172,24 @@ fn functions_ui(ui: &mut egui::Ui, query: &mut String, cat: &mut usize, selected
         // dialog a little every frame.
         ui.add_sized([6.0, 240.0], egui::Separator::default().vertical());
         ui.vertical(|ui| {
-            if let Some(f) = selected {
-                let (args, desc) = formula_help::help(*f, sep);
-                ui.label(RichText::new(format!("{}({args})", formula_help::display_name(*f))).monospace().strong());
-                ui.add_space(6.0);
-                ui.label(desc);
-                ui.add_space(6.0);
-                ui.label(RichText::new(tr_dyn(formula_help::category(*f))).weak());
+            match selected {
+                Some(Pick::Func(f)) => {
+                    let (args, desc) = formula_help::help(*f, sep);
+                    ui.label(RichText::new(format!("{}({args})", formula_help::display_name(*f))).monospace().strong());
+                    ui.add_space(6.0);
+                    ui.label(desc);
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(tr_dyn(formula_help::category(*f))).weak());
+                }
+                Some(Pick::Macro(name)) => {
+                    let params = udfs.iter().find(|(n, _)| n == name).map(|(_, p)| p.join(&format!("{sep} "))).unwrap_or_default();
+                    ui.label(RichText::new(format!("{name}({params})")).monospace().strong());
+                    ui.add_space(6.0);
+                    ui.label(tr("fx.user_defined"));
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(tr("fncat.user")).weak());
+                }
+                None => {}
             }
         });
     });

@@ -257,6 +257,7 @@ mod tests {
                 CustomProp { name: "Entrega".into(), value: PropValue::Date("2026-10-01T00:00:00Z".into()) },
             ],
             read_only_recommended: false,
+            vars: Vec::new(),
         }
     }
 

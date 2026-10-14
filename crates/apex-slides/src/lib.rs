@@ -55,6 +55,7 @@ pub fn bound(deck: &mut Deck) {
 pub mod anim;
 pub mod build;
 pub mod color;
+pub mod combine;
 pub mod edit;
 pub mod fill;
 pub mod geom;

@@ -28,6 +28,13 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$root/dist"
 # shellcheck disable=SC2086
 lipo -create $bins -output "$app/Contents/MacOS/apexdesk"
 sed "s/@VERSION@/$version/g" "$here/Info.plist" > "$app/Contents/Info.plist"
+# On GitHub's runners the two builds leave too little room for the disk
+# image: their intermediate files go once the program is made.
+if [ "${CI:-}" = true ]; then
+    for a in $archs; do
+        rm -rf "$root/target/$a-apple-darwin/release/deps" "$root/target/$a-apple-darwin/release/build" "$root/target/$a-apple-darwin/release/incremental"
+    done
+fi
 
 # The icon, from the 256-pixel PNG.
 set_dir=$stage/apexdesk.iconset

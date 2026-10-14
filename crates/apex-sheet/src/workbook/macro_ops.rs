@@ -18,6 +18,18 @@ impl Workbook {
         Some(inv)
     }
 
+    /// Runs `f` (an edit that makes its own undo steps) and gives the
+    /// inverses of what it did, in the order done; the undo history stays
+    /// as it was.
+    pub fn steps_of<T>(&mut self, f: impl FnOnce(&mut Workbook) -> T) -> (T, Vec<Op>) {
+        let undo = std::mem::take(&mut self.undo);
+        let redo = std::mem::take(&mut self.redo);
+        let t = f(self);
+        let steps = std::mem::replace(&mut self.undo, undo).into_iter().map(|(op, _)| op).collect();
+        self.redo = redo;
+        (t, steps)
+    }
+
     /// Records the inverses [`Self::apply_op`] returned, in the order the
     /// ops were applied, as one undo step named `label`.
     pub fn push_undo(&mut self, mut inverses: Vec<Op>, label: &'static str) {

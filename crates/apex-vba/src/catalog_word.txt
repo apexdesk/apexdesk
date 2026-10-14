@@ -1,0 +1,1105 @@
+# What the macro editor knows of Word's object model: the Object Browser
+# (F2), completion, parameter info, case and F1 help in a Word macro.
+# Only what the interpreter runs. The language's own classes (Keywords,
+# VBA, Constants, Collection, Dictionary, FileSystemObject, Debug...) come
+# from catalog.txt. Same format as catalog.txt:
+#   class Name | help
+#   p Property: Type | help        (read and write)
+#   r Property: Type | help        (read only)
+#   m Method(Params): Type | help  (the type it returns, if any)
+#   f Function(Params): Type | help
+#   c Constant = value | help
+# Positions are characters of the text, a paragraph mark counting as one.
+# A line is a paragraph: there is no page layout while a macro runs.
+
+class Global | What a Word macro reaches without an object.
+r ActiveDocument: Document | The document the macro runs in.
+r Application: Application | Word itself.
+m Documents([Index]): Documents | The open documents (just this one).
+r Selection: Selection | The selection of the document.
+r ThisDocument: Document | The document the macro runs in.
+r Word: Application | Word itself.
+f CentimetersToPoints(Centimeters): Single | Centimeters as points.
+f InchesToPoints(Inches): Single | Inches as points.
+f LinesToPoints(Lines): Single | Lines as points.
+f MillimetersToPoints(Millimeters): Single | Millimeters as points.
+f PicasToPoints(Picas): Single | Picas as points.
+f PointsToCentimeters(Points): Single | Points as centimeters.
+f PointsToInches(Points): Single | Points as inches.
+f PointsToLines(Points): Single | Points as lines.
+f PointsToMillimeters(Points): Single | Points as millimeters.
+f PointsToPicas(Points): Single | Points as picas.
+
+class Application | Word itself.
+r ActiveDocument: Document | The document the macro runs in.
+r Application: Application | Word itself.
+m DoEvents() | Lets the program respond.
+p DisplayAlerts: Variant | Whether to ask before risky actions.
+m Documents([Index]): Documents | The open documents (just this one).
+m FileDialog(FileDialogType): FileDialog | A file dialog to set up and Show.
+p Interactive: Boolean | Accepted.
+r Name: String | "Microsoft Word", as macros expect.
+r OperatingSystem: String | The system.
+r Parent: Application | Word itself.
+r PathSeparator: String | "\" or "/".
+m Run(Macro, [Args]...): Variant | Runs a macro by name.
+p ScreenUpdating: Boolean | Accepted.
+r Selection: Selection | The selection of the document.
+p StatusBar: Variant | Text in the status bar.
+r ThisDocument: Document | The document the macro runs in.
+r UserName: String | The user's name.
+r Version: String | The version number Word would give.
+p Visible: Boolean | Accepted.
+m Wait(Time): Boolean | Waits until a time.
+f CentimetersToPoints(Centimeters): Single | Centimeters as points.
+f InchesToPoints(Inches): Single | Inches as points.
+f LinesToPoints(Lines): Single | Lines as points.
+f MillimetersToPoints(Millimeters): Single | Millimeters as points.
+f PicasToPoints(Picas): Single | Picas as points.
+f PointsToCentimeters(Points): Single | Points as centimeters.
+f PointsToInches(Points): Single | Points as inches.
+f PointsToLines(Points): Single | Points as lines.
+f PointsToMillimeters(Points): Single | Points as millimeters.
+f PointsToPicas(Points): Single | Points as picas.
+
+class Documents | The macro's document and those it opened or added (their macros don't run).
+m Add([Template]): Document | A new document, empty or a copy of a template's content.
+r Application: Application | The application.
+r Count: Long | How many documents: the macro's own and those it opened.
+m Item(Index): Document | A document by number (1: the macro's own) or name.
+m Open(FileName, [ConfirmConversions], [ReadOnly]): Document | Opens a document (where macros may read); the active one from now on.
+r Parent: Application | The application.
+
+class Document | A Word document.
+r Shapes: Shapes | The shapes of the document (text boxes).
+r TablesOfContents: TablesOfContents | The tables of contents.
+r Variables: Variables | Named texts kept in the document (.docx).
+e Close() | The document closes.
+e New() | A document is made from the template.
+e Open() | The document opens.
+m AcceptAllRevisions() | Accepts every tracked change.
+m Activate() | Makes it the active document (ActiveDocument, Selection).
+r Application: Application | The application.
+r BuiltInDocumentProperties: DocumentProperties | Title, Author, Subject and the like.
+r Bookmarks: Bookmarks | The bookmarks.
+r Characters: Characters | The characters of the document.
+m Close([SaveChanges]) | Closes the document; the macro's own one ends the macro (wdDoNotSaveChanges, wdSaveChanges).
+r Comments: Comments | The comments.
+m ComputeStatistics(Statistic): Long | Counts words, characters or paragraphs.
+r Content: Range | All the text.
+r ContentControls: ContentControls | The content controls.
+r CustomDocumentProperties: DocumentProperties | The document's own named properties.
+m DeleteAllComments() | Deletes every comment.
+r Fields: Fields | The fields.
+r FullName: String | The path and name of the file.
+m GoTo([What], [Which], [Count], [Name]): Range | A range at a bookmark, section, table, comment or heading.
+r Hyperlinks: Hyperlinks | The hyperlinks.
+r InlineShapes: InlineShapes | The pictures in the text.
+r MailMerge: MailMerge | The mail merge: its data source and Execute.
+r Name: String | The file name (the default property).
+r PageSetup: PageSetup | The page size and margins.
+r Paragraphs: Paragraphs | The paragraphs.
+r Parent: Application | The application.
+r Path: String | The folder of the file.
+m PrintOut() | Asks to print the document.
+m PrintPreview() | Asks to print the document.
+m Protect(Type, [NoReset], [Password]) | Restricts editing (wdAllowOnlyReading...), with an optional password.
+r ProtectionType: Long | The kind of protection (wdNoProtection when none).
+m Range([Start], [End]): Range | A range of the text; no arguments: all of it.
+r ReadOnly: Boolean | Opened read-only (Documents.Open ReadOnly:=True).
+m Redo([Times]): Boolean | Redoes edits the macro undid.
+m Repaginate() | Accepted: does nothing.
+m RejectAllRevisions() | Rejects every tracked change.
+m Save() | Saves the document (the macro's own when the macro ends).
+p Saved: Boolean | Whether it has no unsaved changes (only saving clears it).
+m SaveAs(FileName, [FileFormat]) | Saves with another name or format (wdFormatXMLDocument, wdFormatPDF...).
+m SaveAs2(FileName, [FileFormat]) | Saves with another name or format.
+r Sections: Sections | The sections.
+m Select() | Selects all the text.
+m SelectContentControlsByTag(Tag): ContentControls | The content controls with that tag.
+m SelectContentControlsByTitle(Title): ContentControls | The content controls with that title.
+r Sentences: Sentences | The sentences.
+r Styles: Styles | The styles.
+r Tables: Tables | The tables.
+p TrackRevisions: Boolean | Whether edits are tracked as changes.
+r Revisions: Revisions | The tracked changes.
+r Type: Long | The kind of document (0).
+m Undo([Times]): Boolean | Undoes edits the macro made.
+m UndoClear() | Forgets what can be undone.
+m Unprotect([Password]) | Lifts the protection.
+m UpdateStyles() | Accepted: does nothing.
+r Words: Words | The words.
+
+class Selection | What is selected: the caret or a part of the text.
+r Application: Application | The application.
+p Bold: Long | Bold (True, False, or wdUndefined for mixed text).
+p Case: Long | Letter case of the text (wdLowerCase, wdUpperCase...); set it to change the text.
+m Characters([Index]): Characters | The characters of the range, or one of them.
+m Collapse([Direction]) | Makes the range empty at its start (wdCollapseStart) or end (wdCollapseEnd).
+m ComputeStatistics(Statistic): Long | Counts words, characters or paragraphs (wdStatisticWords...).
+m ContentControls([Index]): ContentControls | The content controls in the range.
+m Copy() | Copies the text and its formatting for Paste.
+m Cut() | Copies the text and deletes it.
+m Delete([Unit], [Count]): Long | Deletes the range, or Count units from its start.
+r Document: Document | The document.
+p End: Long | Where the range ends (a character position).
+m EndKey([Unit], [Extend]): Long | Moves the selection to the end of the line, paragraph or story (wdStory).
+m EndOf([Unit], [Extend]): Long | Moves the end to the end of the unit (Extend wdExtend keeps the start).
+m EscapeKey() | Accepted: does nothing.
+m Expand([Unit]): Long | Widens the range to whole units; gives how many characters it grew.
+r Fields: Fields | The fields in the range.
+r Find: Find | The Find settings for this range; Execute searches it.
+r Font: Font | The font of the text.
+p FormattedText: Range | The text with its formatting; set it to a range's FormattedText to copy.
+m GoTo([What], [Which], [Count], [Name]): Range | A range at a bookmark, section, table, comment or heading.
+p HighlightColorIndex: Long | Highlight color (a WdColorIndex).
+m HomeKey([Unit], [Extend]): Long | Moves the selection to the start of the line, paragraph or story (wdStory).
+m Hyperlinks([Index]): Hyperlinks | The hyperlinks in the range.
+m Information(Type): Variant | Facts such as wdWithInTable and the row and column numbers.
+m InlineShapes([Index]): InlineShapes | The pictures in the range.
+m InRange(Range): Boolean | Whether this range lies inside the other.
+m InsertAfter(Text) | Adds text at the end of the range, which grows to include it.
+m InsertBefore(Text) | Adds text at the start of the range, which grows to include it.
+m InsertBreak([Type]) | Inserts a page, column, line or section break (wdPageBreak...).
+m InsertColumns() | Inserts a column to the left of the selection's column.
+m InsertColumnsRight() | Inserts a column to the right of the selection's column.
+m InsertParagraph() | Replaces the range with a paragraph mark.
+m InsertParagraphAfter() | Adds a paragraph mark after the range.
+m InsertParagraphBefore() | Adds a paragraph mark before the range.
+m InsertRows([NumRows]) | Inserts rows below the selection's row.
+m InsertRowsAbove([NumRows]) | Inserts rows above the selection's row.
+m InsertRowsBelow([NumRows]) | Inserts rows below the selection's row.
+m InsertSymbol(CharacterNumber) | Replaces the range with one character, by its code.
+m InStory(Range): Boolean | Whether the range is in the same story as the other (always True).
+r IsEndOfRowMark: Boolean | Whether the range is the end-of-row mark of a table.
+m IsEqual(Range): Boolean | Whether both ranges cover the same text.
+p Italic: Long | Italic (True, False, or wdUndefined for mixed text).
+r ListFormat: ListFormat | The bullets or numbering of the paragraphs.
+m Move([Unit], [Count]): Long | Collapses the range and moves it by Count units; gives how many it moved.
+m MoveDown([Unit], [Count], [Extend]): Long | Moves the selection down (a line is a paragraph).
+m MoveEnd([Unit], [Count]): Long | Moves the end by Count units.
+m MoveEndUntil(Cset, [Count]): Long | Moves the end until it meets one of the characters.
+m MoveEndWhile(Cset, [Count]): Long | Moves the end while the characters are in Cset.
+m MoveLeft([Unit], [Count], [Extend]): Long | Moves the selection left (characters by default).
+m MoveRight([Unit], [Count], [Extend]): Long | Moves the selection right (characters by default).
+m MoveStart([Unit], [Count]): Long | Moves the start by Count units.
+m MoveStartUntil(Cset, [Count]): Long | Moves the start until it meets one of the characters.
+m MoveStartWhile(Cset, [Count]): Long | Moves the start while the characters are in Cset.
+m MoveUntil(Cset, [Count]): Long | Collapses and moves until it meets one of the characters.
+m MoveUp([Unit], [Count], [Extend]): Long | Moves the selection up (a line is a paragraph).
+m MoveWhile(Cset, [Count]): Long | Collapses and moves while the characters are in Cset.
+m Next([Unit], [Count]): Range | The next unit after the range, or Nothing.
+r ParagraphFormat: ParagraphFormat | The paragraph formatting.
+m Paragraphs([Index]): Paragraphs | The paragraphs of the range, or one of them.
+r Parent: Document | The document.
+m Paste() | Pastes what Copy or Cut kept, in place of the range.
+m PasteAndFormat([Type]) | Pastes what Copy or Cut kept, with its formatting.
+m Previous([Unit], [Count]): Range | The unit before the range, or Nothing.
+r Range: Range | A range with the same start and end as the selection.
+r Revisions: Revisions | The tracked changes in the range.
+m Sections([Index]): Section | A section the range touches (needs an Index).
+m Select() | Selects the range.
+m SelectCell() | Selects the cell the selection starts in.
+m SelectRow() | Selects the row the selection starts in.
+m Sentences([Index]): Sentences | The sentences of the range, or one of them.
+m SetRange(Start, End) | Sets the start and the end.
+p Start: Long | Where the range starts (a character position).
+r StartIsActive: Boolean | Whether the active end is the start.
+m StartOf([Unit], [Extend]): Long | Moves the start to the start of the unit (Extend wdExtend keeps the end).
+r StoryLength: Long | The length of the text of the document.
+r StoryType: Long | The kind of text (wdMainTextStory).
+p Style: Variant | The paragraph or character style (a name, a wdStyle constant or a Style).
+m Tables([Index]): Tables | The tables in the range.
+p Text: String | The text of the range (the default property).
+r Type: Long | 1 for an insertion point, 2 for a selection.
+m TypeBackspace() | Deletes the selection, or the character before the insertion point.
+m TypeParagraph() | Types a paragraph mark, replacing the selection.
+m TypeText(Text) | Types text, replacing the selection.
+p Underline: Long | Underline (wdUnderlineNone, wdUnderlineSingle...; True and False work).
+m WholeStory() | Selects all the text.
+m Words([Index]): Words | The words of the range, or one of them.
+r Duplicate: Range | A range with the same start and end as the selection.
+
+class Range | A part of the text, from a start to an end position; it follows edits.
+r TabStops: TabStops | The tab stops of its paragraphs.
+m Characters([Index]): Characters | The characters of the range, or one of them.
+m Collapse([Direction]) | Makes the range empty at its start (wdCollapseStart) or end (wdCollapseEnd).
+m ComputeStatistics(Statistic): Long | Counts words, characters or paragraphs (wdStatisticWords...).
+m ContentControls([Index]): ContentControls | The content controls in the range.
+m Copy() | Copies the text and its formatting for Paste.
+m Cut() | Copies the text and deletes it.
+m Delete([Unit], [Count]): Long | Deletes the range, or Count units from its start.
+m EndOf([Unit], [Extend]): Long | Moves the end to the end of the unit (Extend wdExtend keeps the start).
+m Expand([Unit]): Long | Widens the range to whole units; gives how many characters it grew.
+m GoTo([What], [Which], [Count], [Name]): Range | A range at a bookmark, section, table, comment or heading.
+m Hyperlinks([Index]): Hyperlinks | The hyperlinks in the range.
+m Information(Type): Variant | Facts such as wdWithInTable and the row and column numbers.
+m InlineShapes([Index]): InlineShapes | The pictures in the range.
+m InRange(Range): Boolean | Whether this range lies inside the other.
+m InsertAfter(Text) | Adds text at the end of the range, which grows to include it.
+m InsertBefore(Text) | Adds text at the start of the range, which grows to include it.
+m InsertBreak([Type]) | Inserts a page, column, line or section break (wdPageBreak...).
+m InsertParagraph() | Replaces the range with a paragraph mark.
+m InsertParagraphAfter() | Adds a paragraph mark after the range.
+m InsertParagraphBefore() | Adds a paragraph mark before the range.
+m InsertSymbol(CharacterNumber) | Replaces the range with one character, by its code.
+m InStory(Range): Boolean | Whether the range is in the same story as the other (always True).
+m IsEqual(Range): Boolean | Whether both ranges cover the same text.
+m Move([Unit], [Count]): Long | Collapses the range and moves it by Count units; gives how many it moved.
+m MoveEnd([Unit], [Count]): Long | Moves the end by Count units.
+m MoveEndUntil(Cset, [Count]): Long | Moves the end until it meets one of the characters.
+m MoveEndWhile(Cset, [Count]): Long | Moves the end while the characters are in Cset.
+m MoveStart([Unit], [Count]): Long | Moves the start by Count units.
+m MoveStartUntil(Cset, [Count]): Long | Moves the start until it meets one of the characters.
+m MoveStartWhile(Cset, [Count]): Long | Moves the start while the characters are in Cset.
+m MoveUntil(Cset, [Count]): Long | Collapses and moves until it meets one of the characters.
+m MoveWhile(Cset, [Count]): Long | Collapses and moves while the characters are in Cset.
+m Next([Unit], [Count]): Range | The next unit after the range, or Nothing.
+m Paragraphs([Index]): Paragraphs | The paragraphs of the range, or one of them.
+m Paste() | Pastes what Copy or Cut kept, in place of the range.
+m PasteAndFormat([Type]) | Pastes what Copy or Cut kept, with its formatting.
+m Previous([Unit], [Count]): Range | The unit before the range, or Nothing.
+m Sections([Index]): Section | A section the range touches (needs an Index).
+m Select() | Selects the range.
+m Sentences([Index]): Sentences | The sentences of the range, or one of them.
+m SetRange(Start, End) | Sets the start and the end.
+m StartOf([Unit], [Extend]): Long | Moves the start to the start of the unit (Extend wdExtend keeps the end).
+m Tables([Index]): Tables | The tables in the range.
+m Words([Index]): Words | The words of the range, or one of them.
+p Bold: Long | Bold (True, False, or wdUndefined for mixed text).
+p Case: Long | Letter case of the text (wdLowerCase, wdUpperCase...); set it to change the text.
+p End: Long | Where the range ends (a character position).
+p FormattedText: Range | The text with its formatting; set it to a range's FormattedText to copy.
+p HighlightColorIndex: Long | Highlight color (a WdColorIndex).
+p Italic: Long | Italic (True, False, or wdUndefined for mixed text).
+p Start: Long | Where the range starts (a character position).
+p Style: Variant | The paragraph or character style (a name, a wdStyle constant or a Style).
+p Text: String | The text of the range (the default property).
+p Underline: Long | Underline (wdUnderlineNone, wdUnderlineSingle...; True and False work).
+r Application: Application | The application.
+r Document: Document | The document.
+r Duplicate: Range | A copy of this range that moves on its own.
+r Fields: Fields | The fields in the range.
+r Find: Find | The Find settings for this range; Execute searches it.
+r Font: Font | The font of the text.
+r IsEndOfRowMark: Boolean | Whether the range is the end-of-row mark of a table.
+r ListFormat: ListFormat | The bullets or numbering of the paragraphs.
+r ParagraphFormat: ParagraphFormat | The paragraph formatting.
+r Parent: Document | The document.
+r Revisions: Revisions | The tracked changes in the range.
+r StoryLength: Long | The length of the text of the document.
+r StoryType: Long | The kind of text (wdMainTextStory).
+
+class Paragraphs | The paragraphs of a part of the text; format them all at once.
+m Add([Range]): Paragraph | Adds a paragraph (at the end by default).
+r Application: Application | The application.
+r Count: Long | How many paragraphs.
+r First: Paragraph | The first paragraph.
+m Item(Index): Paragraph | A paragraph by number.
+r Last: Paragraph | The last paragraph.
+r Parent: Document | The document.
+p Alignment: Long | Alignment of them all (wdAlignParagraphLeft...).
+p FirstLineIndent: Single | First-line indent in points.
+p KeepTogether: Long | Keep the lines on one page.
+p KeepWithNext: Long | Keep with the next paragraph.
+p LeftIndent: Single | Left indent in points.
+p LineSpacing: Single | Line spacing in points.
+p LineSpacingRule: Long | wdLineSpaceSingle, wdLineSpaceMultiple...
+r OutlineLevel: Long | 1 to 9 for headings, 10 for body text.
+p PageBreakBefore: Long | Start a page before.
+p RightIndent: Single | Right indent in points.
+p SpaceAfter: Single | Space after in points.
+p SpaceBefore: Single | Space before in points.
+p Style: Variant | The paragraph style.
+p WidowControl: Long | Avoid a single line at a page edge.
+
+class Paragraph | One paragraph.
+r TabStops: TabStops | The tab stops of the paragraph.
+r Application: Application | The application.
+r Font: Font | The font of the text.
+r Format: ParagraphFormat | The paragraph formatting.
+r IsStyleSeparator: Boolean | Always False.
+r ListFormat: ListFormat | The bullet or number.
+m Next([Count]): Paragraph | The paragraph after, or Nothing.
+r Parent: Document | The document.
+r ParagraphFormat: ParagraphFormat | The paragraph formatting.
+m Previous([Count]): Paragraph | The paragraph before, or Nothing.
+r Range: Range | The text of the paragraph, with its mark.
+p Style: Variant | The paragraph style.
+p Alignment: Long | Alignment (wdAlignParagraphLeft...).
+p FirstLineIndent: Single | First-line indent in points.
+p KeepTogether: Long | Keep the lines on one page.
+p KeepWithNext: Long | Keep with the next paragraph.
+p LeftIndent: Single | Left indent in points.
+p LineSpacing: Single | Line spacing in points.
+p LineSpacingRule: Long | wdLineSpaceSingle, wdLineSpaceMultiple...
+r OutlineLevel: Long | 1 to 9 for headings, 10 for body text.
+p PageBreakBefore: Long | Start a page before.
+p RightIndent: Single | Right indent in points.
+p SpaceAfter: Single | Space after in points.
+p SpaceBefore: Single | Space before in points.
+p WidowControl: Long | Avoid a single line at a page edge.
+
+class Characters | The characters of a part of the text.
+r Application: Application | The application.
+r Count: Long | How many characters.
+r First: Range | The first character.
+m Item(Index): Range | A character by number.
+r Last: Range | The last character.
+r Parent: Document | The document.
+
+class Words | The words of a part of the text.
+r Application: Application | The application.
+r Count: Long | How many words.
+r First: Range | The first word.
+m Item(Index): Range | A word by number.
+r Last: Range | The last word.
+r Parent: Document | The document.
+
+class Sentences | The sentences of a part of the text.
+r Application: Application | The application.
+r Count: Long | How many sentences.
+r First: Range | The first sentence.
+m Item(Index): Range | A sentence by number.
+r Last: Range | The last sentence.
+r Parent: Document | The document.
+
+class Font | The character formatting of a text. (Find.Font and Replacement.Font have only Bold, Italic, Underline, Strikethrough, Name, Size and Color.)
+p AllCaps: Long | All capitals.
+p Bold: Long | Bold (True, False, wdUndefined for mixed text, wdToggle to flip).
+p Color: Long | Text color (RGB; wdColorAutomatic).
+p ColorIndex: Long | Text color from the palette (a WdColorIndex).
+p DoubleStrikethrough: Long | Struck through twice.
+p Hidden: Long | Hidden text.
+p Italic: Long | Italic.
+p Name: String | The font name.
+p Position: Single | Raised (or lowered, if negative) in points.
+m Reset() | Removes the manual character formatting.
+p Size: Single | Size in points.
+p SmallCaps: Long | Small capitals.
+p Spacing: Single | Space between characters in points.
+p Strikethrough: Long | Struck through.
+p Subscript: Long | Subscript.
+p Superscript: Long | Superscript.
+p TextColor: Long | Text color (RGB).
+p Underline: Long | Underline (wdUnderlineNone, wdUnderlineSingle, wdUnderlineDouble...).
+r Application: Application | The application.
+r Parent: Range | The text it belongs to.
+
+class ParagraphFormat | The paragraph formatting of a text.
+r TabStops: TabStops | The tab stops of the paragraphs.
+p Alignment: Long | Alignment (wdAlignParagraphLeft, wdAlignParagraphCenter...).
+p FirstLineIndent: Single | First-line indent in points (negative: hanging).
+p KeepTogether: Long | Keep the lines on one page.
+p KeepWithNext: Long | Keep with the next paragraph.
+p LeftIndent: Single | Left indent in points.
+p LineSpacing: Single | Line spacing in points.
+p LineSpacingRule: Long | wdLineSpaceSingle, wdLineSpaceDouble, wdLineSpaceMultiple...
+r OutlineLevel: Long | 1 to 9 for headings, 10 for body text.
+p PageBreakBefore: Long | Start a page before.
+p RightIndent: Single | Right indent in points.
+p SpaceAfter: Single | Space after in points.
+p SpaceBefore: Single | Space before in points.
+p Style: Variant | The paragraph style.
+p WidowControl: Long | Avoid a single line at a page edge.
+r Application: Application | The application.
+
+class ListFormat | The bullets or numbering of the paragraphs of a text.
+m ApplyBulletDefault() | Makes them a bulleted list.
+m ApplyNumberDefault() | Makes them a numbered list.
+r Application: Application | The application.
+m ListIndent() | Moves them one level in.
+p ListLevelNumber: Long | The level, 1 to 9.
+m ListOutdent() | Moves them one level out.
+r ListString: String | The bullet or number as text.
+r ListType: Long | wdListNoNumbering, wdListBullet or a numbered kind.
+r ListValue: Long | The number in the list.
+m RemoveNumbers() | Takes the bullets or numbers away.
+
+class Find | Searches (and replaces in) a Range or the Selection.
+m ClearFormatting() | Clears the formatting being searched for.
+m Execute([FindText], [MatchCase], [MatchWholeWord], [MatchWildcards], [MatchSoundsLike], [MatchAllWordForms], [Forward], [Wrap], [Format], [ReplaceWith], [Replace]): Boolean | Searches; with Replace (wdReplaceOne, wdReplaceAll) it replaces. True if found.
+r Application: Application | The application.
+r Font: Font | The font being searched for (needs Format True).
+p Forward: Boolean | Search forward.
+r Found: Boolean | Whether the last search found something.
+p Format: Boolean | Whether formatting is part of the search.
+p Highlight: Long | Search for highlighted text (True, False, wdUndefined).
+p IgnorePunct: Boolean | Accepted as False only.
+p IgnoreSpace: Boolean | Accepted as False only.
+p MatchAllWordForms: Boolean | Accepted as False only.
+p MatchCase: Boolean | Match upper and lower case.
+p MatchSoundsLike: Boolean | Accepted as False only.
+p MatchWholeWord: Boolean | Match whole words only.
+p MatchWildcards: Boolean | Use wildcards.
+r Parent: Object | The Range or Selection it searches.
+r Replacement: Replacement | What the matches are replaced with.
+p Style: Variant | The paragraph style being searched for.
+p Text: String | The text being searched for.
+p Wrap: Long | What to do at the end (wdFindStop, wdFindContinue, wdFindAsk).
+
+class Replacement | What Find puts in place of what it finds.
+m ClearFormatting() | Clears the replacement formatting.
+r Application: Application | The application.
+r Font: Font | The replacement font (needs Format True).
+p Highlight: Long | Highlight the replacement (True, False, wdUndefined).
+p Style: Variant | The paragraph style to apply.
+p Text: String | The replacement text.
+
+class Tables | The tables of a part of the text.
+m Add(Range, NumRows, NumColumns): Table | Adds a table in place of the range.
+r Application: Application | The application.
+r Count: Long | How many tables.
+m Item(Index): Table | A table by number.
+r NestingLevel: Long | 1.
+r Parent: Document | The document.
+
+class Table | A table.
+r Borders: Borders | Its borders (Enable, InsideLineStyle, OutsideLineStyle).
+p Style: Variant | Its table style, by name.
+r Application: Application | The application.
+m Cell(Row, Column): Cell | A cell by its row and column.
+m Columns([Index]): Columns | The columns, or one.
+m Delete() | Deletes the table.
+r NestingLevel: Long | How deep the table is nested.
+r Parent: Document | The document.
+r Range: Range | The text of the table.
+m Rows([Index]): Rows | The rows, or one.
+m Select() | Selects the table.
+r Uniform: Boolean | Whether it has no merged cells.
+
+class Rows | The rows of a table.
+m Add([BeforeRow]): Row | Adds a row (at the end by default).
+r Application: Application | The application.
+r Count: Long | How many rows.
+r First: Row | The first row.
+m Item(Index): Row | A row by number.
+r Last: Row | The last row.
+r Parent: Table | The table.
+
+class Columns | The columns of a table.
+m Add([BeforeColumn]): Column | Adds a column (at the end by default).
+r Application: Application | The application.
+r Count: Long | How many columns.
+r First: Column | The first column.
+m Item(Index): Column | A column by number.
+r Last: Column | The last column.
+r Parent: Table | The table.
+
+class Row | A row of a table.
+r Application: Application | The application.
+m Cells([Index]): Cells | The cells of the row, or one.
+m Delete() | Deletes the row.
+r Index: Long | The row number.
+r IsFirst: Boolean | Whether it is the first row.
+r IsLast: Boolean | Whether it is the last row.
+r Parent: Table | The table.
+r Range: Range | The text of the row.
+m Select() | Selects the row.
+
+class Column | A column of a table.
+r Application: Application | The application.
+m Cells([Index]): Cells | The cells of the column, or one.
+m Delete() | Deletes the column.
+r Index: Long | The column number.
+r IsFirst: Boolean | Whether it is the first column.
+r IsLast: Boolean | Whether it is the last column.
+r Parent: Table | The table.
+
+class Cells | The cells of a table, a row or a column.
+r Application: Application | The application.
+r Count: Long | How many cells.
+m Item(Index): Cell | A cell by number.
+
+class Cell | A cell of a table.
+r Application: Application | The application.
+r ColumnIndex: Long | The column number.
+m Next(): Cell | The next cell, or Nothing.
+r Parent: Table | The table.
+m Previous(): Cell | The previous cell, or Nothing.
+r Range: Range | The text of the cell.
+r RowIndex: Long | The row number.
+m Select() | Selects the cell.
+m Tables([Index]): Tables | The tables nested in the cell.
+
+class Bookmarks | The bookmarks of the document.
+m Add(Name, [Range]): Bookmark | Adds a bookmark on the range (the selection by default).
+r Application: Application | The application.
+r Count: Long | How many bookmarks.
+m Exists(Name): Boolean | Whether a bookmark has that name.
+m Item(Index): Bookmark | A bookmark by name or number.
+r Parent: Document | The document.
+r ShowHidden: Boolean | Always False.
+
+class Bookmark | A named place in the text.
+r Application: Application | The application.
+m Delete() | Deletes the bookmark.
+r Empty: Boolean | Whether it marks a point and no text.
+r End: Long | Where it ends.
+r Name: String | Its name (the default property).
+r Parent: Document | The document.
+r Range: Range | The text it marks.
+m Select() | Selects the text it marks.
+r Start: Long | Where it starts.
+
+class Comments | The comments of the document.
+m Add(Range, [Text]): Comment | Adds a comment on the range.
+r Application: Application | The application.
+r Count: Long | How many comments.
+m Item(Index): Comment | A comment by number.
+r Parent: Document | The document.
+
+class Comment | A comment.
+r Application: Application | The application.
+p Author: String | Who wrote it.
+r Date: String | When it was written.
+m Delete() | Deletes the comment.
+p Done: Boolean | Whether it is resolved.
+r Index: Long | Its number.
+p Initial: String | The author's initials.
+r Parent: Document | The document.
+r Range: Range | The text of the comment (Text, InsertAfter, InsertBefore and Delete work).
+r Scope: Range | The text it is about.
+
+class Hyperlinks | The hyperlinks of a part of the text.
+m Add(Anchor, [Address], [SubAddress], [ScreenTip], [TextToDisplay]): Hyperlink | Makes a link (web, mail or bookmark) of the anchor.
+r Application: Application | The application.
+r Count: Long | How many hyperlinks.
+m Item(Index): Hyperlink | A hyperlink by number.
+r Parent: Document | The document.
+
+class Hyperlink | A link in the text.
+p Address: String | Where it goes, without the part after #.
+r Application: Application | The application.
+m Delete() | Takes the link away; the text stays.
+r Name: String | The whole target (the default property).
+r Parent: Document | The document.
+r Range: Range | The text of the link.
+p ScreenTip: String | The tip shown on hover.
+p SubAddress: String | The part after # (a bookmark).
+p TextToDisplay: String | The text of the link.
+
+class InlineShapes | The pictures in a part of the text.
+r Application: Application | The application.
+r Count: Long | How many pictures.
+m Item(Index): InlineShape | A picture by number.
+
+class InlineShape | A picture in the text.
+r Application: Application | The application.
+m Delete() | Deletes the picture.
+p Height: Single | Height in points.
+r Range: Range | The picture's place in the text.
+m Select() | Selects the picture.
+r Type: Long | wdInlineShapePicture.
+p Width: Single | Width in points.
+
+class Styles | The styles of the document.
+m Add(Name, [Type]): Style | Adds a paragraph or character style.
+r Application: Application | The application.
+r Count: Long | How many styles.
+m Item(Index): Style | A style by name, wdStyle constant or number.
+r Parent: Document | The document.
+
+class Style | A style.
+r Font: Font | The font of the style (Name, Size, Bold, Italic, Underline, Color).
+r Application: Application | The application.
+r BuiltIn: Boolean | Whether Word defines it.
+r InUse: Boolean | Whether it is in use.
+r Name: String | Its name (the default property).
+r NameLocal: String | Its name.
+r Parent: Document | The document.
+r Type: Long | wdStyleTypeParagraph or wdStyleTypeCharacter.
+
+class Sections | The sections of the document.
+m Add([Range], [Start]): Section | Adds a section break (wdSectionNewPage, wdSectionContinuous...).
+r Application: Application | The application.
+r Count: Long | How many sections.
+r First: Section | The first section.
+m Item(Index): Section | A section by number.
+r Last: Section | The last section.
+r PageSetup: PageSetup | The page setup.
+r Parent: Document | The document.
+
+class Section | A section of the document.
+r Application: Application | The application.
+m Footers([Index]): HeadersFooters | The footers, or one (wdHeaderFooterPrimary...).
+m Headers([Index]): HeadersFooters | The headers, or one (wdHeaderFooterPrimary...).
+r Index: Long | The section number.
+r PageSetup: PageSetup | The page setup.
+r Parent: Document | The document.
+r Range: Range | The text of the section.
+
+class HeadersFooters | The headers or the footers of a section: primary, first page, even pages.
+r Application: Application | The application.
+r Count: Long | 3.
+m Item(Index): HeaderFooter | wdHeaderFooterPrimary, wdHeaderFooterFirstPage or wdHeaderFooterEvenPages.
+
+class HeaderFooter | One header or footer.
+r PageNumbers: PageNumbers | Its page numbers.
+r Application: Application | The application.
+r Exists: Boolean | Whether it has its own text.
+r Index: Long | wdHeaderFooterPrimary, wdHeaderFooterFirstPage or wdHeaderFooterEvenPages.
+r IsHeader: Boolean | Header or footer.
+p LinkToPrevious: Boolean | Whether it takes the previous section's.
+r Range: Range | Its text (Text, InsertAfter, InsertBefore and Delete work).
+
+class PageSetup | The page size, orientation and margins.
+r Application: Application | The application.
+p BottomMargin: Single | Bottom margin in points.
+p DifferentFirstPageHeaderFooter: Long | Whether the first page has its own header and footer.
+p FooterDistance: Single | Footer distance from the edge in points.
+p Gutter: Single | Gutter in points.
+p HeaderDistance: Single | Header distance from the edge in points.
+p LeftMargin: Single | Left margin in points.
+p OddAndEvenPagesHeaderFooter: Long | Whether odd and even pages differ.
+p Orientation: Long | wdOrientPortrait or wdOrientLandscape.
+p PageHeight: Single | Page height in points.
+p PageWidth: Single | Page width in points.
+p RightMargin: Single | Right margin in points.
+p TopMargin: Single | Top margin in points.
+
+class DocumentProperties | The built-in or custom properties of the document.
+m Add(Name, LinkToContent, Type, Value): DocumentProperty | Adds a custom property (type 1 number, 2 Boolean, 3 date, 4 text).
+r Application: Application | The application.
+r Count: Long | How many properties.
+m Item(Index): DocumentProperty | A property by name (or number, for the built-in ones: wdPropertyTitle...).
+r Parent: Document | The document.
+
+class DocumentProperty | A property of the document.
+r Application: Application | The application.
+m Delete() | Deletes a custom property.
+r Name: String | Its name.
+r Type: Long | 1 number, 2 Boolean, 3 date, 4 text.
+p Value: Variant | Its value (the default property).
+
+class Revisions | The tracked changes of a part of the text.
+m AcceptAll() | Accepts them all.
+r Application: Application | The application.
+r Count: Long | How many changes.
+m RejectAll() | Rejects them all.
+
+class Fields | The fields of a part of the text.
+m Add(Range, [Type], [Text], [PreserveFormatting]): Field | Adds a field (wdFieldPage, wdFieldDate...).
+r Application: Application | The application.
+r Count: Long | How many fields.
+m Update(): Long | Fields are worked out when shown or printed; gives 0.
+
+class ContentControls | The content controls of a part of the text.
+m Add([Type], [Range]): ContentControl | Adds one (wdContentControlText, wdContentControlCheckBox, wdContentControlDate...).
+r Application: Application | The application.
+r Count: Long | How many content controls.
+m Item(Index): ContentControl | A content control by number or id.
+r Parent: Document | The document.
+
+class ContentControl | A form field in the text: text, list, date or check box.
+r Application: Application | The application.
+p Checked: Boolean | A check box: whether it is ticked.
+p DateDisplayFormat: String | A date control: the format shown.
+m Delete([DeleteContents]) | Deletes the control (and its text with DeleteContents).
+m DropdownListEntries([Index]): ContentControlListEntries | A list control: the entries, or one.
+r ID: String | Its id.
+p LockContentControl: Boolean | Whether the control can't be deleted.
+p LockContents: Boolean | Whether the contents can't be edited.
+r Parent: Document | The document.
+r Range: Range | The text of the control.
+m Select() | Selects the control.
+m SetPlaceholderText([BuildingBlock], [Range], [Text]) | Sets the text shown while it is empty (only Text is used).
+r ShowingPlaceholderText: Boolean | Whether it shows its placeholder.
+p Tag: String | Its tag.
+r Temporary: Boolean | Always False.
+p Title: String | Its title.
+r Type: Long | wdContentControlText, wdContentControlDropdownList...
+
+class ContentControlListEntries | The entries of a list control.
+m Add(Text, [Value], [Index]): ContentControlListEntry | Adds an entry (at the end by default).
+r Application: Application | The application.
+m Clear() | Removes all the entries.
+r Count: Long | How many entries.
+m Item(Index): ContentControlListEntry | An entry by number.
+r Parent: ContentControl | The control.
+
+class ContentControlListEntry | An entry of a list control.
+r Application: Application | The application.
+m Delete() | Removes the entry.
+r Index: Long | Its number.
+m MoveDown() | Moves it one place down.
+m MoveUp() | Moves it one place up.
+r Parent: ContentControl | The control.
+m Select() | Shows it as the control's choice.
+p Text: String | The text shown (the default property).
+p Value: String | The value kept.
+
+class MailMerge | A document's mail merge: «Name» fields filled from a spreadsheet or CSV file.
+r Application: Application | The application.
+r DataSource: MailMergeDataSource | The file the records come from.
+p Destination: Long | Where the merge goes: only wdSendToNewDocument.
+m Execute() | Makes a new document with a copy of this one per record; it becomes the active document.
+r Fields: MailMergeFields | The merge fields of the document.
+p MainDocumentType: Long | wdFormLetters, or wdNotAMergeDocument (which drops the data source).
+m OpenDataSource(Name) | Uses a spreadsheet or CSV file in the document's folder as the data source; its first row names the fields.
+r Parent: Document | The document.
+r State: Long | wdNormalDocument, wdMainDocumentOnly or wdMainAndDataSource.
+
+class MailMergeDataSource | The records of a mail merge.
+p ActiveRecord: Long | The record shown (1 is the first; wdNextRecord, wdPreviousRecord, wdFirstRecord, wdLastRecord).
+r Application: Application | The application.
+m Close() | Stops using the file.
+m DataFields([Index]): MailMergeDataFields | The active record's values.
+m FieldNames([Index]): MailMergeFieldNames | The names of the fields.
+m FindRecord(FindText, [Field]): Boolean | Makes the next record with that text the active one.
+p FirstRecord: Long | The first record merged.
+p LastRecord: Long | The last record merged (wdDefaultLastRecord: to the end).
+r Name: String | The file.
+r Parent: MailMerge | The mail merge.
+r RecordCount: Long | How many records there are.
+
+class MailMergeFieldNames | The names of a data source's fields.
+r Application: Application | The application.
+r Count: Long | How many there are.
+m Item(Index): MailMergeFieldName | One, by number or name (the default member).
+r Parent: MailMergeDataSource | The data source.
+
+class MailMergeFieldName | The name of a field of the data source.
+r Application: Application | The application.
+r Index: Long | Its number.
+r Name: String | The name (the default property).
+r Parent: MailMergeDataSource | The data source.
+
+class MailMergeDataFields | The active record's values.
+r Application: Application | The application.
+r Count: Long | How many there are.
+m Item(Index): MailMergeDataField | One, by number or field name (the default member).
+r Parent: MailMergeDataSource | The data source.
+
+class MailMergeDataField | A value of the active record.
+r Application: Application | The application.
+r Index: Long | Its number.
+r Name: String | The field's name.
+r Parent: MailMergeDataSource | The data source.
+r Value: String | The value (the default property).
+
+class MailMergeFields | The «Name» merge fields of a document.
+m Add(Range, Name): Range | Puts the field «Name» in place of the range.
+r Application: Application | The application.
+r Count: Long | How many different fields the document uses.
+r Parent: MailMerge | The mail merge.
+
+class Field | A field added by Fields.Add.
+m Delete() | Deletes it.
+r Result: Range | Its place in the text.
+m Update(): Boolean | Fields are worked out when shown or printed.
+
+class PageNumbers | The page numbers of a header or footer.
+m Add([PageNumberAlignment], [FirstPage]) | Adds a page number (wdAlignPageNumberRight, Center, Left).
+r Count: Long | How many.
+
+class TabStops | The tab stops of a paragraph.
+m Add(Position, [Alignment], [Leader]): TabStop | Adds one at a position in points (wdAlignTabLeft...).
+m ClearAll() | Removes them all.
+r Count: Long | How many.
+m Item(Index): TabStop | One of them.
+
+class TabStop | A tab stop.
+r Alignment: Long | wdAlignTabLeft, Center, Right or Decimal.
+m Clear() | Removes it.
+r Leader: Long | wdTabLeaderSpaces, Dots, Dashes or Lines.
+r Position: Single | Its place in points.
+
+class Variables | Named texts of the document (saved in .docx files).
+m Add(Name, [Value]): Variable | Adds one; its value is text.
+r Count: Long | How many.
+m Item(Index): Variable | By name or number.
+
+class Variable | A document variable.
+m Delete() | Removes it.
+r Name: String | Its name.
+p Value: String | Its text (the default property).
+
+class Shapes | The shapes of the document.
+m AddTextbox(Orientation, Left, Top, Width, Height, [Anchor]): Shape | Adds a text box on the page.
+r Count: Long | How many.
+m Item(Index): Shape | By number or name.
+
+class Shape | A shape of the document.
+p AlternativeText: String | Its description.
+m Delete() | Deletes it.
+p Height: Single | Height in points.
+p Left: Single | Distance from the page's left edge.
+p Name: String | Its name.
+r TextFrame: TextFrame | Its text.
+p Top: Single | Distance from the page's top edge.
+r Type: Long | msoTextBox (17), msoAutoShape (1) or msoPicture (13).
+p Width: Single | Width in points.
+
+class TextFrame | The text of a shape.
+r HasText: Boolean | Whether it holds text.
+r TextRange: Range | Its text (Text works).
+
+class TablesOfContents | The tables of contents of the document.
+m Add(Range, [UseHeadingStyles], [UpperHeadingLevel], [LowerHeadingLevel], [UseFields], [TableID], [RightAlignPageNumbers], [IncludePageNumbers], [AddedStyles], [UseHyperlinks]): TableOfContents | Adds one built from the headings.
+r Count: Long | How many.
+m Item(Index): TableOfContents | One of them.
+
+class TableOfContents | A table of contents.
+r Range: Range | Its text.
+m Update() | Builds it again from the headings.
+m UpdatePageNumbers() | Builds it again from the headings.
+
+class Borders | The borders of a table.
+p Enable: Boolean | Whether the table has lines all around and inside.
+p InsideLineStyle: Long | wdLineStyleNone or wdLineStyleSingle.
+p OutsideLineStyle: Long | wdLineStyleNone or wdLineStyleSingle.
+
+class WordConstants | Constants of Word.
+c wdFieldPage = 33 | WdFieldType: field type.
+c wdFieldNumPages = 26 | WdFieldType: field type.
+c wdFieldDate = 31 | WdFieldType: field type.
+c wdFieldTime = 32 | WdFieldType: field type.
+c wdFieldEmpty = -1 | WdFieldType: field type.
+c wdAlignPageNumberLeft = 0 | WdPageNumberAlignment: page number alignment.
+c wdAlignPageNumberCenter = 1 | WdPageNumberAlignment: page number alignment.
+c wdAlignPageNumberRight = 2 | WdPageNumberAlignment: page number alignment.
+c wdAlignTabLeft = 0 | WdTabAlignment: tab stop alignment.
+c wdAlignTabCenter = 1 | WdTabAlignment: tab stop alignment.
+c wdAlignTabRight = 2 | WdTabAlignment: tab stop alignment.
+c wdAlignTabDecimal = 3 | WdTabAlignment: tab stop alignment.
+c wdTabLeaderSpaces = 0 | WdTabLeader: what fills the space of a tab.
+c wdTabLeaderDots = 1 | WdTabLeader: what fills the space of a tab.
+c wdTabLeaderDashes = 2 | WdTabLeader: what fills the space of a tab.
+c wdTabLeaderLines = 3 | WdTabLeader: what fills the space of a tab.
+c wdLineStyleNone = 0 | WdLineStyle: border line.
+c wdLineStyleSingle = 1 | WdLineStyle: border line.
+c wdCharacter = 1 | WdUnits: unit of text.
+c wdWord = 2 | WdUnits: unit of text.
+c wdSentence = 3 | WdUnits: unit of text.
+c wdParagraph = 4 | WdUnits: unit of text.
+c wdLine = 5 | WdUnits: unit of text.
+c wdStory = 6 | WdUnits: unit of text.
+c wdScreen = 7 | WdUnits: unit of text.
+c wdSection = 8 | WdUnits: unit of text.
+c wdColumn = 9 | WdUnits: unit of text.
+c wdRow = 10 | WdUnits: unit of text.
+c wdWindow = 11 | WdUnits: unit of text.
+c wdCell = 12 | WdUnits: unit of text.
+c wdCharacterFormatting = 13 | WdUnits: unit of text.
+c wdParagraphFormatting = 14 | WdUnits: unit of text.
+c wdTable = 15 | WdUnits: unit of text.
+c wdMove = 0 | WdMovementType: Selection move: Move or Extend.
+c wdExtend = 1 | WdMovementType: Selection move: Move or Extend.
+c wdCollapseStart = 1 | WdCollapseDirection: Collapse direction.
+c wdCollapseEnd = 0 | WdCollapseDirection: Collapse direction.
+c wdFindStop = 0 | WdFindWrap: Find: what to do at the end.
+c wdFindContinue = 1 | WdFindWrap: Find: what to do at the end.
+c wdFindAsk = 2 | WdFindWrap: Find: what to do at the end.
+c wdReplaceNone = 0 | WdReplace: Find: how many to replace.
+c wdReplaceOne = 1 | WdReplace: Find: how many to replace.
+c wdReplaceAll = 2 | WdReplace: Find: how many to replace.
+c wdAlignParagraphLeft = 0 | WdParagraphAlignment: paragraph alignment.
+c wdAlignParagraphCenter = 1 | WdParagraphAlignment: paragraph alignment.
+c wdAlignParagraphRight = 2 | WdParagraphAlignment: paragraph alignment.
+c wdAlignParagraphJustify = 3 | WdParagraphAlignment: paragraph alignment.
+c wdLineSpaceSingle = 0 | WdLineSpacing: line spacing rule.
+c wdLineSpace1pt5 = 1 | WdLineSpacing: line spacing rule.
+c wdLineSpaceDouble = 2 | WdLineSpacing: line spacing rule.
+c wdLineSpaceAtLeast = 3 | WdLineSpacing: line spacing rule.
+c wdLineSpaceExactly = 4 | WdLineSpacing: line spacing rule.
+c wdLineSpaceMultiple = 5 | WdLineSpacing: line spacing rule.
+c wdUnderlineNone = 0 | WdUnderline: underline style.
+c wdUnderlineSingle = 1 | WdUnderline: underline style.
+c wdUnderlineWords = 2 | WdUnderline: underline style.
+c wdUnderlineDouble = 3 | WdUnderline: underline style.
+c wdUnderlineDotted = 4 | WdUnderline: underline style.
+c wdUnderlineThick = 6 | WdUnderline: underline style.
+c wdUnderlineDash = 7 | WdUnderline: underline style.
+c wdUnderlineDotDash = 9 | WdUnderline: underline style.
+c wdUnderlineWavy = 11 | WdUnderline: underline style.
+c wdColorAutomatic = -16777216 | WdColor: color (RGB value).
+c wdColorBlack = 0 | WdColor: color (RGB value).
+c wdColorWhite = 16777215 | WdColor: color (RGB value).
+c wdColorRed = 255 | WdColor: color (RGB value).
+c wdColorGreen = 32768 | WdColor: color (RGB value).
+c wdColorBrightGreen = 65280 | WdColor: color (RGB value).
+c wdColorBlue = 16711680 | WdColor: color (RGB value).
+c wdColorDarkBlue = 8388608 | WdColor: color (RGB value).
+c wdColorLightBlue = 16737843 | WdColor: color (RGB value).
+c wdColorYellow = 65535 | WdColor: color (RGB value).
+c wdColorOrange = 26367 | WdColor: color (RGB value).
+c wdColorDarkRed = 128 | WdColor: color (RGB value).
+c wdColorViolet = 8388736 | WdColor: color (RGB value).
+c wdColorPink = 16711935 | WdColor: color (RGB value).
+c wdColorTeal = 8421376 | WdColor: color (RGB value).
+c wdColorTurquoise = 16776960 | WdColor: color (RGB value).
+c wdColorGray25 = 12632256 | WdColor: color (RGB value).
+c wdColorGray50 = 8421504 | WdColor: color (RGB value).
+c wdAuto = 0 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdNoHighlight = 0 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdBlack = 1 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdBlue = 2 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdTurquoise = 3 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdBrightGreen = 4 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdPink = 5 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdRed = 6 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdYellow = 7 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdWhite = 8 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdDarkBlue = 9 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdTeal = 10 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdGreen = 11 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdViolet = 12 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdDarkRed = 13 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdDarkYellow = 14 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdGray50 = 15 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdGray25 = 16 | WdColorIndex: color index (Font.ColorIndex, HighlightColorIndex).
+c wdSectionBreakNextPage = 2 | WdBreakType: InsertBreak type.
+c wdSectionBreakContinuous = 3 | WdBreakType: InsertBreak type.
+c wdSectionBreakEvenPage = 4 | WdBreakType: InsertBreak type.
+c wdSectionBreakOddPage = 5 | WdBreakType: InsertBreak type.
+c wdLineBreak = 6 | WdBreakType: InsertBreak type.
+c wdPageBreak = 7 | WdBreakType: InsertBreak type.
+c wdColumnBreak = 8 | WdBreakType: InsertBreak type.
+c wdTextWrappingBreak = 11 | WdBreakType: InsertBreak type.
+c wdSectionContinuous = 0 | WdSectionStart: where a section starts.
+c wdSectionNewColumn = 1 | WdSectionStart: where a section starts.
+c wdSectionNewPage = 2 | WdSectionStart: where a section starts.
+c wdSectionEvenPage = 3 | WdSectionStart: where a section starts.
+c wdSectionOddPage = 4 | WdSectionStart: where a section starts.
+c wdStyleNormal = -1 | WdBuiltinStyle: built-in style.
+c wdStyleHeading1 = -2 | WdBuiltinStyle: built-in style.
+c wdStyleHeading2 = -3 | WdBuiltinStyle: built-in style.
+c wdStyleHeading3 = -4 | WdBuiltinStyle: built-in style.
+c wdStyleHeading4 = -5 | WdBuiltinStyle: built-in style.
+c wdStyleHeading5 = -6 | WdBuiltinStyle: built-in style.
+c wdStyleHeading6 = -7 | WdBuiltinStyle: built-in style.
+c wdStyleHeading7 = -8 | WdBuiltinStyle: built-in style.
+c wdStyleHeading8 = -9 | WdBuiltinStyle: built-in style.
+c wdStyleHeading9 = -10 | WdBuiltinStyle: built-in style.
+c wdStyleTitle = -63 | WdBuiltinStyle: built-in style.
+c wdStyleQuote = -181 | WdBuiltinStyle: built-in style.
+c wdStyleListBullet = -49 | WdBuiltinStyle: built-in style.
+c wdStyleListNumber = -50 | WdBuiltinStyle: built-in style.
+c wdStyleTypeParagraph = 1 | WdStyleType: style type.
+c wdStyleTypeCharacter = 2 | WdStyleType: style type.
+c wdStyleTypeTable = 3 | WdStyleType: style type.
+c wdStyleTypeList = 4 | WdStyleType: style type.
+c wdGoToBookmark = -1 | WdGoToItem: GoTo target.
+c wdGoToSection = 0 | WdGoToItem: GoTo target.
+c wdGoToPage = 1 | WdGoToItem: GoTo target.
+c wdGoToTable = 2 | WdGoToItem: GoTo target.
+c wdGoToLine = 3 | WdGoToItem: GoTo target.
+c wdGoToComment = 6 | WdGoToItem: GoTo target.
+c wdGoToField = 7 | WdGoToItem: GoTo target.
+c wdGoToGraphic = 8 | WdGoToItem: GoTo target.
+c wdGoToHeading = 11 | WdGoToItem: GoTo target.
+c wdGoToFirst = 1 | WdGoToDirection: GoTo direction.
+c wdGoToLast = -1 | WdGoToDirection: GoTo direction.
+c wdGoToNext = 2 | WdGoToDirection: GoTo direction.
+c wdGoToPrevious = 3 | WdGoToDirection: GoTo direction.
+c wdGoToAbsolute = 1 | WdGoToDirection: GoTo direction.
+c wdGoToRelative = 2 | WdGoToDirection: GoTo direction.
+c wdActiveEndAdjustedPageNumber = 1 | WdInformation: Information type.
+c wdActiveEndSectionNumber = 2 | WdInformation: Information type.
+c wdActiveEndPageNumber = 3 | WdInformation: Information type.
+c wdNumberOfPagesInDocument = 4 | WdInformation: Information type.
+c wdFirstCharacterColumnNumber = 9 | WdInformation: Information type.
+c wdFirstCharacterLineNumber = 10 | WdInformation: Information type.
+c wdWithInTable = 12 | WdInformation: Information type.
+c wdStartOfRangeRowNumber = 13 | WdInformation: Information type.
+c wdEndOfRangeRowNumber = 14 | WdInformation: Information type.
+c wdMaximumNumberOfRows = 15 | WdInformation: Information type.
+c wdStartOfRangeColumnNumber = 16 | WdInformation: Information type.
+c wdEndOfRangeColumnNumber = 17 | WdInformation: Information type.
+c wdMaximumNumberOfColumns = 18 | WdInformation: Information type.
+c wdStatisticWords = 0 | WdStatistic: ComputeStatistics statistic.
+c wdStatisticLines = 1 | WdStatistic: ComputeStatistics statistic.
+c wdStatisticPages = 2 | WdStatistic: ComputeStatistics statistic.
+c wdStatisticCharacters = 3 | WdStatistic: ComputeStatistics statistic.
+c wdStatisticParagraphs = 4 | WdStatistic: ComputeStatistics statistic.
+c wdStatisticCharactersWithSpaces = 5 | WdStatistic: ComputeStatistics statistic.
+c wdLowerCase = 0 | WdCharacterCase: Case value.
+c wdUpperCase = 1 | WdCharacterCase: Case value.
+c wdTitleWord = 2 | WdCharacterCase: Case value.
+c wdTitleSentence = 4 | WdCharacterCase: Case value.
+c wdToggleCase = 5 | WdCharacterCase: Case value.
+c wdFormatDocument = 0 | WdSaveFormat: SaveAs file format.
+c wdFormatTemplate = 1 | WdSaveFormat: SaveAs file format.
+c wdFormatText = 2 | WdSaveFormat: SaveAs file format.
+c wdFormatTextLineBreaks = 3 | WdSaveFormat: SaveAs file format.
+c wdFormatDOSText = 4 | WdSaveFormat: SaveAs file format.
+c wdFormatDOSTextLineBreaks = 5 | WdSaveFormat: SaveAs file format.
+c wdFormatRTF = 6 | WdSaveFormat: SaveAs file format.
+c wdFormatUnicodeText = 7 | WdSaveFormat: SaveAs file format.
+c wdFormatHTML = 8 | WdSaveFormat: SaveAs file format.
+c wdFormatFilteredHTML = 10 | WdSaveFormat: SaveAs file format.
+c wdFormatXMLDocument = 12 | WdSaveFormat: SaveAs file format.
+c wdFormatXMLDocumentMacroEnabled = 13 | WdSaveFormat: SaveAs file format.
+c wdFormatXMLTemplate = 14 | WdSaveFormat: SaveAs file format.
+c wdFormatXMLTemplateMacroEnabled = 15 | WdSaveFormat: SaveAs file format.
+c wdFormatDocumentDefault = 16 | WdSaveFormat: SaveAs file format.
+c wdFormatPDF = 17 | WdSaveFormat: SaveAs file format.
+c wdFormatOpenDocumentText = 23 | WdSaveFormat: SaveAs file format.
+c wdDoNotSaveChanges = 0 | WdSaveOptions: Close: what to do with changes.
+c wdSaveChanges = -1 | WdSaveOptions: Close: what to do with changes.
+c wdPromptToSaveChanges = -2 | WdSaveOptions: Close: what to do with changes.
+c wdOrientPortrait = 0 | WdOrientation: page orientation.
+c wdOrientLandscape = 1 | WdOrientation: page orientation.
+c wdContentControlRichText = 0 | WdContentControlType: content control type.
+c wdContentControlText = 1 | WdContentControlType: content control type.
+c wdContentControlPicture = 2 | WdContentControlType: content control type.
+c wdContentControlComboBox = 3 | WdContentControlType: content control type.
+c wdContentControlDropdownList = 4 | WdContentControlType: content control type.
+c wdContentControlBuildingBlockGallery = 5 | WdContentControlType: content control type.
+c wdContentControlDate = 6 | WdContentControlType: content control type.
+c wdContentControlGroup = 7 | WdContentControlType: content control type.
+c wdContentControlCheckBox = 8 | WdContentControlType: content control type.
+c wdNotAMergeDocument = -1 | WdMailMergeMainDocType: what a mail merge makes.
+c wdFormLetters = 0 | WdMailMergeMainDocType: what a mail merge makes.
+c wdSendToNewDocument = 0 | WdMailMergeDestination: where a mail merge goes.
+c wdSendToPrinter = 1 | WdMailMergeDestination: where a mail merge goes.
+c wdSendToEmail = 2 | WdMailMergeDestination: where a mail merge goes.
+c wdSendToFax = 3 | WdMailMergeDestination: where a mail merge goes.
+c wdNormalDocument = 0 | WdMailMergeState: what a document has of a mail merge.
+c wdMainDocumentOnly = 1 | WdMailMergeState: what a document has of a mail merge.
+c wdMainAndDataSource = 2 | WdMailMergeState: what a document has of a mail merge.
+c wdNextRecord = -2 | WdMailMergeActiveRecord: a record of the data source.
+c wdPreviousRecord = -3 | WdMailMergeActiveRecord: a record of the data source.
+c wdFirstRecord = -4 | WdMailMergeActiveRecord: a record of the data source.
+c wdLastRecord = -5 | WdMailMergeActiveRecord: a record of the data source.
+c wdDefaultFirstRecord = 1 | WdMailMergeDefaultRecord: the records merged.
+c wdDefaultLastRecord = -16 | WdMailMergeDefaultRecord: the records merged.
+c wdContentControlRepeatingSection = 9 | WdContentControlType: content control type.
+c wdNoProtection = -1 | WdProtectionType: protection type.
+c wdAllowOnlyRevisions = 0 | WdProtectionType: protection type.
+c wdAllowOnlyComments = 1 | WdProtectionType: protection type.
+c wdAllowOnlyFormFields = 2 | WdProtectionType: protection type.
+c wdAllowOnlyReading = 3 | WdProtectionType: protection type.
+c wdHeaderFooterPrimary = 1 | WdHeaderFooterIndex: header or footer kind.
+c wdHeaderFooterFirstPage = 2 | WdHeaderFooterIndex: header or footer kind.
+c wdHeaderFooterEvenPages = 3 | WdHeaderFooterIndex: header or footer kind.
+c wdUndefined = 9999999 | WdUndefined: mixed value / toggle.
+c wdToggle = 9999998 | WdUndefined: mixed value / toggle.
+c wdAlertsNone = 0 | WdAlertLevel: alert level.
+c wdAlertsMessageBox = -2 | WdAlertLevel: alert level.
+c wdAlertsAll = -1 | WdAlertLevel: alert level.
+c wdMainTextStory = 1 | WdStoryType: story.
+c wdListNoNumbering = 0 | WdListType: list type.
+c wdListSimpleNumbering = 1 | WdListType: list type.
+c wdListBullet = 2 | WdListType: list type.
+c wdListOutlineNumbering = 4 | WdListType: list type.
+c wdWord8TableBehavior = 0 | WdDefaultTableBehavior: table behavior.
+c wdWord9TableBehavior = 1 | WdDefaultTableBehavior: table behavior.
+c wdAutoFitFixed = 0 | WdAutoFitBehavior: table autofit.
+c wdAutoFitContent = 1 | WdAutoFitBehavior: table autofit.
+c wdAutoFitWindow = 2 | WdAutoFitBehavior: table autofit.
+c wdInlineShapePicture = 3 | WdInlineShapeType: InlineShape type.
+c wdPropertyTitle = 1 | WdBuiltInProperty: built-in document property.
+c wdPropertySubject = 2 | WdBuiltInProperty: built-in document property.
+c wdPropertyAuthor = 3 | WdBuiltInProperty: built-in document property.
+c wdPropertyKeywords = 4 | WdBuiltInProperty: built-in document property.
+c wdPropertyComments = 5 | WdBuiltInProperty: built-in document property.
+c wdPropertyTimeCreated = 11 | WdBuiltInProperty: built-in document property.
+c wdPropertyWords = 15 | WdBuiltInProperty: built-in document property.
+c wdPropertyCharacters = 16 | WdBuiltInProperty: built-in document property.
+c wdPropertyCategory = 18 | WdBuiltInProperty: built-in document property.
+c wdPropertyManager = 20 | WdBuiltInProperty: built-in document property.
+c wdPropertyCompany = 21 | WdBuiltInProperty: built-in document property.
+c wdPropertyParas = 24 | WdBuiltInProperty: built-in document property.
+c wdPropertyCharsWSpaces = 30 | WdBuiltInProperty: built-in document property.

@@ -778,7 +778,7 @@ mod tests {
         assert!(v.cursor_plan().is_some());
         let ctx = egui::Context::default();
         crate::fonts::install(&ctx);
-        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: true, file_name: "plan".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: true, file_name: "plan".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         for _ in 0..3 {
             let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0))), ..Default::default() };
             let mut out = ctx.run_ui(input, |ui| {
@@ -805,7 +805,7 @@ mod tests {
         v.select(CellRef::new(2, 1), false);
         let ctx = egui::Context::default();
         crate::fonts::install(&ctx);
-        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: true, file_name: "plan".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: true, file_name: "plan".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0))), ..Default::default() };
         let mut out = ctx.run_ui(input, |ui| {
             for style in [toolstrip::Style::Toolstrip, toolstrip::Style::Menu] {

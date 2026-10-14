@@ -10,6 +10,7 @@
 //! older ones are shown, but don't let macros run under a "signed only"
 //! policy.
 
+use crate::asn1;
 use crate::cms::{self, SignedData};
 use crate::crypto::Hash;
 use crate::trust::{self, Trust};
@@ -35,6 +36,67 @@ impl VbaSigner {
     pub fn is_trusted(&self) -> bool {
         self.intact && self.code_matches && self.v3 && self.code_signing && self.trust.is_trusted()
     }
+
+    /// [`is_trusted`](Self::is_trusted), or made by one of `publishers`
+    /// (certificates' SHA-256 or SHA-1 in hex, with or without colons) the
+    /// user or the organization trusts even without a chain to a root;
+    /// with `only_listed`, only by those (an organization's own).
+    pub fn is_trusted_with(&self, publishers: &[String], only_listed: bool) -> bool {
+        let sound = self.intact && self.code_matches && self.v3 && self.code_signing;
+        let listed = publishers.iter().any(|p| is_publisher(&self.cert, p)) && self.cert.valid_at(crate::time::now()) && !matches!(self.trust, Trust::Expired | Trust::Revoked(_) | Trust::WrongUse);
+        sound && (listed || (!only_listed && self.trust.is_trusted()))
+    }
+
+    /// Signed for this code as it is now by a code-signing certificate,
+    /// whoever that is: what the user may choose to trust.
+    pub fn is_sound(&self) -> bool {
+        self.intact && self.code_matches && self.v3 && self.code_signing && !matches!(self.trust, Trust::Expired | Trust::Revoked(_) | Trust::WrongUse) && self.cert.valid_at(crate::time::now())
+    }
+}
+
+/// Whether `cert` is the one named by `id`: its SHA-256 or SHA-1 in hex
+/// (what follows a space, a name to show, doesn't count).
+pub fn is_publisher(cert: &Cert, id: &str) -> bool {
+    let norm = |s: &str| s.chars().filter(|c| *c != ':').collect::<String>().to_ascii_uppercase();
+    let id = norm(id.split_whitespace().next().unwrap_or(""));
+    !id.is_empty() && (id == norm(&cert.fingerprint()) || id == cert.sha1())
+}
+
+/// Authenticode's SpcIndirectDataContent, whose V2 carries the V3 hash.
+const SPC_INDIRECT_DATA: &str = "1.3.6.1.4.1.311.2.1.4";
+const SPC_INDIRECT_DATA_V2: &str = "1.3.6.1.4.1.311.2.1.31";
+const SPC_SP_OPUS_INFO: &str = "1.3.6.1.4.1.311.2.1.12";
+const SHA256: &str = "2.16.840.1.101.3.4.2.1";
+
+/// A V3 signature (MS-OSHARED 2.3.2.4.3.1) of the vbaProject.bin
+/// `project` by `signer`: the PKCS #7 SignedData to put in the project's
+/// vbaProjectSignatureV3.bin part. An error for a project whose V3 hash
+/// can't be told for sure (write it with
+/// [`apex_io::vba::VbaProject::write_for_signing`]).
+pub fn sign(signer: &dyn crate::signer::Signer, project: &[u8]) -> Result<Vec<u8>, crate::Error> {
+    let hash = apex_io::vba::v3_source_hash(project).ok_or_else(|| crate::Error::new("this macro project can't be signed"))?;
+    crate::cms::sign_embedded(signer, SPC_INDIRECT_DATA, &signed_content_v3(&hash), &[asn1::seq(&[&asn1::oid(SPC_SP_OPUS_INFO), &asn1::set_of(&[&asn1::seq(&[])])])])
+}
+
+/// SpcIndirectDataContentV2 for the SHA-256 V3 hash `hash`: a
+/// SigFormatDescriptorV1 and a SigDataV1Serialized, both raw structures
+/// with little-endian fields.
+fn signed_content_v3(hash: &[u8]) -> Vec<u8> {
+    let le = |v: &mut Vec<u8>, n: u32| v.extend_from_slice(&n.to_le_bytes());
+    let mut format = Vec::new();
+    for n in [12, 1, 1] {
+        le(&mut format, n);
+    }
+    let alg_id = format!("{SHA256}\0");
+    let mut data = Vec::new();
+    let alg_offset = 24;
+    let hash_offset = alg_offset + alg_id.len() as u32;
+    for n in [alg_id.len() as u32, 0, hash.len() as u32, alg_offset, hash_offset, hash_offset] {
+        le(&mut data, n);
+    }
+    data.extend_from_slice(alg_id.as_bytes());
+    data.extend_from_slice(hash);
+    asn1::seq(&[&asn1::seq(&[&asn1::oid(SPC_INDIRECT_DATA_V2), &asn1::octets(&format)]), &asn1::seq(&[&asn1::alg(SHA256, true), &asn1::octets(&data)])])
 }
 
 /// The signer of a DigitalSignature stream (or OOXML signature part) of
@@ -85,6 +147,43 @@ mod tests {
         assert!(!trust::fit_for_code_signing(&c));
         c.eku = vec!["2.5.29.37.0".into()];
         assert!(!trust::fit_for_code_signing(&c));
+    }
+
+    #[test]
+    fn publishers_by_fingerprint() {
+        let c = Cert::from_der(include_bytes!("../tests/data/ca.der")).unwrap();
+        assert!(is_publisher(&c, &c.fingerprint()));
+        assert!(is_publisher(&c, &c.fingerprint().replace(':', "").to_lowercase()));
+        assert!(is_publisher(&c, &c.sha1()));
+        assert!(!is_publisher(&c, ""));
+        assert!(!is_publisher(&c, &c.sha1()[..20]));
+        assert!(is_publisher(&c, &format!("{} ACME Ltd", c.fingerprint())));
+        // A name made of hex letters doesn't make up the rest of the hash.
+        assert!(!is_publisher(&c, &format!("{} {}", &c.sha1()[..20], &c.sha1()[20..])));
+    }
+
+    #[test]
+    fn trusted_publishers() {
+        let mut cert = Cert::from_der(include_bytes!("../tests/data/ca.der")).unwrap();
+        cert.not_before = 0;
+        cert.not_after = i64::MAX;
+        let fp = cert.fingerprint();
+        let mut s = VbaSigner { cert, trust: Trust::SelfSigned, intact: true, code_signing: true, code_matches: true, v3: true };
+        let none: [String; 0] = [];
+        assert!(!s.is_trusted_with(&none, false) && s.is_sound());
+        assert!(s.is_trusted_with(&[fp.clone()], false) && s.is_trusted_with(&[fp.clone()], true));
+        // Only the organization's: a trusted chain alone isn't enough.
+        s.trust = Trust::Trusted("Root".into());
+        assert!(s.is_trusted_with(&none, false) && !s.is_trusted_with(&none, true));
+        // A listed publisher never vouches for changed code or a revoked certificate.
+        s.code_matches = false;
+        assert!(!s.is_trusted_with(&[fp.clone()], false) && !s.is_sound());
+        s.code_matches = true;
+        s.trust = Trust::Revoked(5);
+        assert!(!s.is_trusted_with(&[fp.clone()], false) && !s.is_sound());
+        s.trust = Trust::SelfSigned;
+        s.cert.not_after = 1;
+        assert!(!s.is_trusted_with(&[fp], false) && !s.is_sound());
     }
 
     #[test]

@@ -136,6 +136,8 @@ pub struct SheetImage {
     pub lock_aspect: bool,
     /// An embedded object or a diagram shown by this picture.
     pub object: Option<Arc<apex_doc::Embedded>>,
+    /// The macro a click runs (`Macro1`, `Module1.Macro1`); empty for none.
+    pub macro_name: String,
 }
 
 impl std::fmt::Debug for SheetImage {
@@ -152,6 +154,7 @@ impl std::fmt::Debug for SheetImage {
             .field("rotation", &self.rotation)
             .field("crop", &self.crop)
             .field("object", &self.object.as_ref().map(|o| o.id))
+            .field("macro_name", &self.macro_name)
             .finish()
     }
 }
@@ -174,6 +177,7 @@ impl SheetImage {
             crop: [0.0; 4],
             lock_aspect: true,
             object: None,
+            macro_name: String::new(),
         }
     }
 

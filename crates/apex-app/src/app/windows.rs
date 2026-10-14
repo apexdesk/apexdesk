@@ -309,7 +309,7 @@ mod tests {
     }
 
     fn frame(ctx: &egui::Context, app: &mut App) {
-        let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "w".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = Shell { cmd: None, show_formula_bar: true, file_name: "w".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0))), ..Default::default() };
         let mut out = ctx.run_ui(input, |ui| {
             assert!(app.side_by_side_ui(ui, &mut shell, &mut Vec::new()));

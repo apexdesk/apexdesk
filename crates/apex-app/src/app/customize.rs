@@ -25,7 +25,13 @@ pub(super) struct CustomizeDlg {
     pub capturing: bool,
     new_keys: Option<String>,
     note: String,
+    /// The active workbook's macros, for the toolbar.
+    macros: Vec<String>,
+    macro_pick: usize,
 }
+
+/// The tab of a toolbar button that runs a macro (its key: the macro).
+pub(super) const MACRO: &str = "macro";
 
 /// A shortcut from its text ("Ctrl+Shift+K").
 pub(crate) fn parse_keys(s: &str) -> Option<KeyboardShortcut> {
@@ -96,6 +102,10 @@ impl CustomizeDlg {
 impl App {
     pub(super) fn open_customize(&mut self, page: usize) {
         let Some(doc) = self.view_is_doc() else { return };
+        let macros = match self.tabs.get(self.active).map(|t| t.id) {
+            Some(id) if !doc => self.macro_names(id),
+            _ => Vec::new(),
+        };
         self.want_commands = true;
         self.customize = Some(CustomizeDlg {
             page,
@@ -108,6 +118,8 @@ impl App {
             capturing: false,
             new_keys: None,
             note: String::new(),
+            macros,
+            macro_pick: 0,
         });
     }
 
@@ -211,9 +223,10 @@ impl App {
                 Some((_, k)) => format!("{} ({k})", c.label),
                 None => c.label.clone(),
             };
-            if resp.on_hover_text(tip).clicked()
-                && let Some(ch) = self.chosen(c)
-            {
+            let clicked = resp.on_hover_text(tip).clicked();
+            if clicked && c.tab == MACRO {
+                self.run_active_macro(c.key.clone());
+            } else if clicked && let Some(ch) = self.chosen(c) {
                 self.choose(ui.ctx(), ch);
             }
         }
@@ -321,6 +334,24 @@ fn qat_page(ui: &mut egui::Ui, d: &mut CustomizeDlg, cmds: &[palette::Command]) 
                 && i < d.qat.len()
             {
                 d.qat.remove(i);
+            }
+            // A macro of the active workbook (it runs in the workbook
+            // active when clicked).
+            if !d.macros.is_empty() {
+                ui.add_space(24.0);
+                ui.label(RichText::new(tr("macros.title")).strong());
+                d.macro_pick = d.macro_pick.min(d.macros.len() - 1);
+                egui::ComboBox::from_id_salt("qat_macro").width(150.0).selected_text(d.macros[d.macro_pick].as_str()).show_ui(ui, |ui| {
+                    for (i, n) in d.macros.iter().enumerate() {
+                        ui.selectable_value(&mut d.macro_pick, i, n);
+                    }
+                });
+                let name = d.macros[d.macro_pick].clone();
+                let can = !d.qat.iter().any(|q| q.tab == MACRO && q.key == name);
+                if ui.add_enabled(can, egui::Button::new(format!("{} »", tr("customize.add")))).clicked() {
+                    d.qat.push(Command { doc: false, tab: MACRO.to_string(), key: name.clone(), label: name, icon: format!("{:?}", Icon::SpeakPlay), menu: false });
+                    d.qat_sel = Some(d.qat.len() - 1);
+                }
             }
         });
         ui.vertical(|ui| {

@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">信頼された証明書で署名されたマクロのみ</string>
       <string id="TrustedLocations">信頼できる場所</string>
       <string id="TrustedLocations_Help">開いたときにマクロが有効になるファイルのフォルダー。ユーザーが追加したものを置き換えます。</string>
+      <string id="TrustedPublishers">信頼できるマクロ発行元</string>
+      <string id="TrustedPublishers_Help">「署名済みマクロのみ」で署名済みマクロを実行できる証明書 (SHA-256 または SHA-1 の16進フィンガープリント)。設定すると、これらが署名したマクロのみ実行され、ユーザーは追加できません。</string>
+      <string id="DisableMacroEditor">マクロ エディターを無効にする</string>
+      <string id="DisableMacroEditor_Help">1: マクロ エディター (Alt+F11) を開けません。マクロはマクロ セキュリティ ポリシーに従って引き続き実行されます。</string>
       <string id="TemplatesFolder">共有テンプレート フォルダー</string>
       <string id="TemplatesFolder_Help">[テンプレートから新規作成] にユーザーのテンプレートと並んで表示されるテンプレート (docx、dotx、odt、xlsx、xltx、ods など) のフォルダー。</string>
       <string id="BuildingBlocksFolder">共有の文書パーツ フォルダー</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">信頼できる場所</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">信頼できるマクロ発行元</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>共有テンプレート フォルダー</label></textBox>

@@ -250,7 +250,10 @@ impl SheetView {
                 self.review.alt = Some(AltDlg { target: i.target.clone(), text });
             }
             Target::Chart { .. } | Target::Shape { .. } => self.review.alt = Some(AltDlg { target: i.target.clone(), text: String::new() }),
-            Target::Sheet(s) => self.renaming = Some((s, self.wb.sheets[s].name.clone())),
+            Target::Sheet(s) => {
+                self.renaming = Some((s, self.wb.sheets[s].name.clone()));
+                self.rename_focus = true;
+            }
             Target::Cells { sheet, range } if i.category == Category::Contrast => {
                 let fill = self.wb.cell(sheet, range.start).map_or(0xFFFFFF, |c| self.wb.styles.get(c.style).fill.unwrap_or(0xFFFFFF));
                 let color = access::readable_on(fill);

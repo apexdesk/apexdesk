@@ -12,14 +12,37 @@ use apex_sheet::{Cell, CellRef, CellStyle, ErrorKind, MAX_COLS, MAX_ROWS, Op, Ra
 
 use crate::ast::Arg;
 use crate::error::{Error, R};
-use crate::interp::Interp;
-use crate::object::{By, Obj, RangeRef};
+use crate::interp::{Interp, Owner};
+use crate::object::{By, Obj, Part, RangeRef};
 use crate::value::{Array, VType, Value, number_text};
 
+mod areas;
+pub(crate) mod books;
+mod borders;
+mod cells_ops;
+mod cf;
+mod drawing;
+mod chars;
+mod datatools;
+mod dialogs;
+mod page;
+mod tables;
+mod parts;
+mod pivots;
+mod sort;
+mod styles;
+mod window;
+
 /// Arguments by position or by name (`After:=ws`).
+#[derive(Default)]
 pub struct Args(Vec<(Option<String>, Value)>);
 
 impl Args {
+    /// One argument given by position.
+    pub fn one(v: Value) -> Args {
+        Args(vec![(None, v)])
+    }
+
     pub fn get(&self, pos: usize, name: &str) -> Option<Value> {
         let v = match self.0.iter().find(|(n, _)| n.as_deref() == Some(name)) {
             Some((_, v)) => v.clone(),
@@ -94,8 +117,32 @@ fn obj(o: Obj) -> Value {
     Value::Object(o)
 }
 
+/// What Range.Find looked for, for FindNext and FindPrevious.
+#[derive(Clone, Debug)]
+pub(crate) struct FindWith {
+    what: String,
+    whole: bool,
+    case: bool,
+    by_cols: bool,
+    /// LookIn:=xlFormulas: a formula's text, not its value.
+    formulas: bool,
+}
+
 fn range_obj(sheet: usize, range: Range) -> Value {
     obj(Obj::Range(RangeRef::new(sheet, range)))
+}
+
+/// The macro OnKey and OnTime name: `Proc`, `Module.Proc` or
+/// `'Book.xlsm'!Proc` (a book's name, not a path: this workbook's); `""`
+/// stays empty. None when it is something else.
+fn macro_ref(s: &str) -> Option<String> {
+    let (book, name) = s.rsplit_once('!').unwrap_or(("", s));
+    if book.contains(['\\', '/', ':']) {
+        return None;
+    }
+    let name = name.trim();
+    let ok = name.split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_alphanumeric() || c == '_')) && name.split('.').count() <= 2;
+    (name.is_empty() || ok).then(|| name.to_string())
 }
 
 /// A sheet name that Excel accepts.
@@ -109,23 +156,42 @@ impl Interp<'_> {
         Ok(Args(args.iter().zip(vals).map(|(a, v)| (a.name.clone(), v)).collect()))
     }
 
-    fn arg_i64(&mut self, a: &Args, pos: usize, name: &str) -> R<Option<i64>> {
+    pub(crate) fn arg_i64(&mut self, a: &Args, pos: usize, name: &str) -> R<Option<i64>> {
         match a.get(pos, name) {
             Some(v) => Ok(Some(self.scalar(v)?.to_i64()?)),
             None => Ok(None),
         }
     }
 
-    fn arg_str(&mut self, a: &Args, pos: usize, name: &str) -> R<Option<String>> {
+    pub(crate) fn arg_str(&mut self, a: &Args, pos: usize, name: &str) -> R<Option<String>> {
         match a.get(pos, name) {
             Some(v) => Ok(Some(self.scalar(v)?.to_str()?)),
             None => Ok(None),
         }
     }
 
+    /// PrintOut and PrintPreview: the print dialog once the macro ends
+    /// (once a run: a loop doesn't open it again and again).
+    pub(crate) fn print_request(&mut self, sheet: Option<usize>) -> R<Value> {
+        if !self.requests.iter().any(|r| matches!(r, crate::Request::Print { .. })) {
+            self.queue_request(crate::Request::Print { sheet })?;
+        }
+        Ok(Value::Empty)
+    }
+
+    /// A request for after the macro, up to a thousand (a loop of OnTime
+    /// calls stops with an error).
+    pub(crate) fn queue_request(&mut self, r: crate::Request) -> R<()> {
+        if self.requests.len() >= 1000 {
+            return Err(Error::new(7, "Out of memory"));
+        }
+        self.requests.push(r);
+        Ok(())
+    }
+
     /// Applies a change, kept for the macro's undo step.
     pub fn apply(&mut self, op: Op) -> R<()> {
-        match self.wb.apply_op(op) {
+        match self.wb_mut()?.apply_op(op) {
             Some(inv) => {
                 self.undo.push(inv);
                 Ok(())
@@ -197,6 +263,16 @@ impl Interp<'_> {
     /// `Range(a)` or `Range(a, b)` on `sheet`.
     fn range_call(&mut self, sheet: usize, a: &Args) -> R<Value> {
         let first = a.get(0, "cell1").ok_or_else(|| Error::new(449, "Argument not optional"))?;
+        if a.get(1, "cell2").is_none() {
+            if matches!(first, Value::Object(Obj::Multi(_))) {
+                return Ok(first);
+            }
+            if let Value::Str(t) = &first
+                && t.contains(',')
+            {
+                return self.areas_ref(&t.to_string(), sheet);
+            }
+        }
         let r1 = self.range_arg(first, sheet)?;
         match a.get(1, "cell2") {
             Some(second) => {
@@ -208,6 +284,34 @@ impl Interp<'_> {
             }
             None => Ok(obj(Obj::Range(r1))),
         }
+    }
+
+    /// `"A1:B2,D4"`: its areas, of one sheet.
+    fn areas_ref(&mut self, text: &str, sheet: usize) -> R<Value> {
+        let mut parts = Vec::new();
+        let (mut quoted, mut from) = (false, 0);
+        for (i, ch) in text.char_indices() {
+            match ch {
+                '\'' => quoted = !quoted,
+                ',' if !quoted => {
+                    parts.push(&text[from..i]);
+                    from = i + 1;
+                }
+                _ => {}
+            }
+        }
+        parts.push(&text[from..]);
+        let mut ranges = Vec::with_capacity(parts.len());
+        let mut on = None;
+        for p in parts {
+            let r = self.parse_ref(p, sheet)?;
+            if on.is_some_and(|s| s != r.sheet) {
+                return Err(Error::app(format!("Method 'Range' failed: {text}")));
+            }
+            on = Some(r.sheet);
+            ranges.push(r.range);
+        }
+        areas::areas(on.unwrap_or(sheet), ranges)
     }
 
     /// A column given as a number or letters.
@@ -276,10 +380,18 @@ impl Interp<'_> {
 
     /// Names of Excel's object model usable without a qualifier.
     pub fn global(&mut self, n: &str, args: &[Arg]) -> Option<R<Value>> {
+        // A document's macro: Word's names, and Err.
+        if self.word.is_some() && n != "err" {
+            return self.word_global(n, args);
+        }
+        if let Some(r) = self.global_elsewhere(n, args) {
+            return Some(r);
+        }
         let sheet = self.home_sheet();
         let r = match n {
             "application" | "excel" => Ok(obj(Obj::Application)),
             "activeworkbook" | "thisworkbook" => Ok(obj(Obj::Workbook)),
+            "names" => self.workbook_member("names", args),
             "worksheets" | "sheets" => {
                 if args.is_empty() {
                     Ok(obj(Obj::Sheets))
@@ -289,13 +401,15 @@ impl Interp<'_> {
             }
             "workbooks" => {
                 if args.is_empty() {
-                    Err(Error::unsupported("the Workbooks collection"))
+                    Ok(obj(Obj::Workbooks))
                 } else {
-                    Ok(obj(Obj::Workbook))
+                    return Some(self.member(obj(Obj::Workbooks), "item", args));
                 }
             }
             "activesheet" => Ok(obj(Obj::Sheet(self.active))),
-            "activechart" | "charts" | "activewindow" | "windows" | "commandbars" | "shapes" => Err(Error::unsupported(n)),
+            "activewindow" => Ok(obj(Obj::Window)),
+            "activechart" => Ok(self.active_chart()),
+            "charts" | "windows" | "commandbars" | "shapes" => Err(Error::unsupported(n)),
             "activecell" => Ok(range_obj(self.active, Range::single(self.selection.start))),
             "selection" => Ok(range_obj(self.active, self.selection)),
             "worksheetfunction" => Ok(obj(Obj::WorksheetFunction)),
@@ -336,23 +450,48 @@ impl Interp<'_> {
     pub fn member(&mut self, target: Value, name: &str, args: &[Arg]) -> R<Value> {
         let o = match target {
             Value::Object(o) => o,
+            Value::Record(r) => return self.record_member(&r, name, args),
             Value::Nothing => return Err(Error::not_set()),
             _ => return Err(Error::object_required()),
         };
-        if matches!(o, Obj::Module(_) | Obj::Sheet(_) | Obj::Workbook)
+        let has_code = matches!(o, Obj::Module(_) | Obj::Sheet(_) | Obj::Workbook) || matches!(&o, Obj::Word(w) if matches!(**w, crate::word::WObj::Doc));
+        if has_code
             && let Some(r) = self.code_member(&o, name, args)
         {
             return r;
         }
+        if self.word.is_some() {
+            match o {
+                Obj::Word(w) => return self.word_member(*w, name, args),
+                Obj::Workbook => return self.word_member(crate::word::WObj::Doc, name, args),
+                Obj::Application => return self.word_app(name, args),
+                Obj::Sheet(_) | Obj::Sheets | Obj::Range(_) | Obj::Workbooks => return Err(Error::no_member(name)),
+                _ => {}
+            }
+        }
         match o {
+            Obj::Word(_) => Err(Error::no_member(name)),
             Obj::Module(_) => Err(Error::no_member(name)),
+            Obj::In(b, o) => self.member_in(b, *o, name, args),
+            Obj::Workbooks => self.workbooks_member(name, args),
             Obj::Range(r) => self.range_member(r, name, args),
+            Obj::Multi(items) => self.multi_member(items, name, args),
+            Obj::Instance(i) => self.instance_member(i, name, args),
+            Obj::Control(i, k) => self.control_member(i, k, name, args),
+            Obj::Controls(i, k, pages) => self.controls_member(i, k, pages, name, args),
+            Obj::ControlFont(i, k) => self.control_font_get(&i, k, name),
+            Obj::Part(p) => self.part_member(*p, name, args),
             Obj::Sheet(s) => self.sheet_member(s, name, args),
             Obj::Sheets => self.sheets_member(name, args),
             Obj::Workbook => self.workbook_member(name, args),
             Obj::Application => self.app_member(name, args),
             Obj::Font(r) => self.font_get(r, name),
             Obj::Interior(r) => self.interior_get(r, name),
+            Obj::Border(r, i) => {
+                let a = self.args(args)?;
+                self.border_get(r, i, name, &a)
+            }
+            Obj::Window => self.window_get(name),
             Obj::WorksheetFunction => {
                 let a = self.arg_raw(args)?;
                 self.worksheet_function(name, a, true)
@@ -460,17 +599,40 @@ impl Interp<'_> {
     pub fn set_member(&mut self, target: Value, name: &str, args: &[Arg], v: Value) -> R<()> {
         let o = match target {
             Value::Object(o) => o,
+            // A copy: the record's variable is what changes.
+            Value::Record(_) => return Err(Error::new(0, format!("Can't assign to {name}: the user-defined type isn't held by a variable"))),
             Value::Nothing => return Err(Error::not_set()),
             _ => return Err(Error::object_required()),
         };
-        if matches!(o, Obj::Module(_) | Obj::Sheet(_) | Obj::Workbook)
+        let has_code = matches!(o, Obj::Module(_) | Obj::Sheet(_) | Obj::Workbook) || matches!(&o, Obj::Word(w) if matches!(**w, crate::word::WObj::Doc));
+        if has_code
             && let Some(r) = self.set_code_member(&o, name, args, v.clone())
         {
             return r;
         }
+        if self.word.is_some() {
+            match o {
+                Obj::Word(w) => return self.word_set(*w, name, args, v),
+                Obj::Workbook => return self.word_set(crate::word::WObj::Doc, name, args, v),
+                Obj::Application if !matches!(name, "screenupdating" | "displayalerts" | "statusbar" | "visible" | "interactive") => return Err(Error::no_member(name)),
+                Obj::Sheet(_) | Obj::Sheets | Obj::Range(_) | Obj::Workbooks => return Err(Error::no_member(name)),
+                _ => {}
+            }
+        }
+        if let Obj::Word(_) = o {
+            return Err(Error::no_member(name));
+        }
         let scalar = |it: &mut Self, v: Value| it.scalar(v);
+        if let Obj::In(b, o) = o {
+            return self.set_member_in(b, *o, name, args, v);
+        }
         match (&o, name) {
             (Obj::Range(r), _) if args.is_empty() && self.range_set(*r, name, v.clone())? => Ok(()),
+            (Obj::Multi(items), _) => self.multi_set(items, name, args, v),
+            (Obj::Instance(i), _) => self.instance_set(i.clone(), name, args, v),
+            (Obj::Control(i, k), _) => self.control_set(i.clone(), *k, name, args, v),
+            (Obj::ControlFont(i, k), _) if args.is_empty() => self.control_font_set(i, *k, name, v),
+            (Obj::Part(p), _) if args.is_empty() => self.part_set((**p).clone(), name, v),
             (Obj::Font(r), _) => {
                 let v = scalar(self, v)?;
                 self.font_set(*r, name, v)
@@ -478,6 +640,19 @@ impl Interp<'_> {
             (Obj::Interior(r), _) => {
                 let v = scalar(self, v)?;
                 self.interior_set(*r, name, v)
+            }
+            (Obj::Border(r, i), _) => {
+                let v = scalar(self, v)?;
+                self.border_set(*r, *i, name, v)
+            }
+            (Obj::Window, _) => {
+                let v = scalar(self, v)?;
+                self.window_set(name, v)
+            }
+            (Obj::Sheet(s), "autofiltermode") => {
+                let s = self.check_sheet(*s)?;
+                let on = scalar(self, v)?.to_bool()?;
+                self.set_auto_filter_mode(s, on)
             }
             (Obj::Sheet(s), "name") => {
                 let s = self.check_sheet(*s)?;
@@ -501,7 +676,8 @@ impl Interp<'_> {
                 self.apply(Op::SheetProps { index: s, hidden, tab_color })
             }
             (Obj::Workbook, "saved") => {
-                self.wb.modified = !scalar(self, v)?.to_bool()?;
+                let saved = scalar(self, v)?.to_bool()?;
+                self.wb_mut()?.modified = !saved;
                 Ok(())
             }
             (Obj::Application, _) => {
@@ -519,7 +695,12 @@ impl Interp<'_> {
                         let s = self.app.status_bar.clone();
                         self.ui.status(s.as_deref());
                     }
-                    "cutcopymode" | "displaystatusbar" | "asktoupdatelinks" | "visible" | "interactive" | "displayformulabar" | "cursor" | "enablecancelkey" | "iteration" => {}
+                    "cutcopymode" => {
+                        if !v.to_bool()? {
+                            self.clip = None;
+                        }
+                    }
+                    "displaystatusbar" | "asktoupdatelinks" | "visible" | "interactive" | "displayformulabar" | "cursor" | "enablecancelkey" | "iteration" => {}
                     _ => return Err(Error::no_member(name)),
                 }
                 Ok(())
@@ -562,9 +743,17 @@ impl Interp<'_> {
     pub fn default_value(&mut self, o: Obj) -> R<Value> {
         match o {
             Obj::Range(r) => Ok(self.range_value(r, false)),
+            Obj::Multi(items) => self.default_value(items[0].clone()),
             Obj::Err => Ok(Value::Long(self.err.number)),
             Obj::Application => Ok(Value::str("ApexDesk")),
-            Obj::Sheet(_) | Obj::Workbook | Obj::Font(_) | Obj::Interior(_) | Obj::Sheets | Obj::WorksheetFunction | Obj::Collection(_) | Obj::Dictionary(_) | Obj::Module(_) => Err(Error::no_member(&format!("default property of {}", o.type_name()))),
+            Obj::Part(p) if matches!(*p, Part::Name(..) | Part::Style(_) | Part::PivotTable(_) | Part::FsoFile(_) | Part::FsoFolder(_)) => self.part_member(*p, "_default", &[]),
+            // `.IconSet = ActiveWorkbook.IconSets(xl3Flags)`, without Set.
+            Obj::Part(p) if let Part::IconSet(n) = *p => Ok(Value::Long(n as i32)),
+            Obj::Control(i, k) => self.control_member(i, k, "value", &[]),
+            Obj::In(b, o) => self.default_in(b, *o),
+            Obj::Word(w) => self.word_default(*w),
+            Obj::Controls(..) | Obj::ControlFont(..) | Obj::Workbooks => Err(Error::no_member(&format!("default property of {}", o.type_name()))),
+            Obj::Part(_) | Obj::Sheet(_) | Obj::Workbook | Obj::Font(_) | Obj::Interior(_) | Obj::Border(..) | Obj::Window | Obj::Sheets | Obj::WorksheetFunction | Obj::Collection(_) | Obj::Dictionary(_) | Obj::Module(_) | Obj::Instance(_) => Err(Error::no_member(&format!("default property of {}", o.type_name()))),
         }
     }
 
@@ -577,6 +766,15 @@ impl Interp<'_> {
                 };
                 self.set_range_value(r, v)
             }
+            Value::Object(Obj::Multi(items)) => {
+                for o in items.iter() {
+                    self.set_default(Value::Object(o.clone()), v.clone())?;
+                }
+                Ok(())
+            }
+            Value::Object(Obj::Control(i, k)) => self.control_set(i, k, "value", &[], v),
+            Value::Object(Obj::In(b, o)) => self.set_default_in(b, *o, v),
+            Value::Object(Obj::Word(w)) => self.word_set_default(*w, v),
             Value::Object(o) => Err(Error::no_member(&format!("default property of {}", o.type_name()))),
             Value::Nothing => Err(Error::not_set()),
             _ => Err(Error::object_required()),
@@ -585,7 +783,7 @@ impl Interp<'_> {
 
     // --- cells ---------------------------------------------------------------------
 
-    fn from_cell_value(&self, v: &apex_sheet::Value, date: bool) -> Value {
+    pub(crate) fn from_cell_value(&self, v: &apex_sheet::Value, date: bool) -> Value {
         match v {
             apex_sheet::Value::Empty => Value::Empty,
             apex_sheet::Value::Number(n) if date => Value::Date(*n),
@@ -602,6 +800,43 @@ impl Interp<'_> {
             }
             apex_sheet::Value::Lambda(_) => Value::Error(2015),
         }
+    }
+
+    /// What a function called from a cell gives it: a Range its values,
+    /// an array its elements (one or two dimensions).
+    pub(crate) fn to_cell_value(&mut self, v: Value) -> R<apex_sheet::Value> {
+        use apex_sheet::Value as V;
+        let v = match v {
+            Value::Object(Obj::Range(r)) => self.range_value(r, false),
+            v @ Value::Object(_) => self.scalar(v)?,
+            v => v,
+        };
+        fn one(v: &Value) -> V {
+            match v {
+                Value::Empty | Value::Missing => V::Number(0.0),
+                Value::Bool(b) => V::Bool(*b),
+                Value::Int(n) => V::Number(*n as f64),
+                Value::Long(n) => V::Number(*n as f64),
+                Value::Double(n) | Value::Date(n) if n.is_finite() => V::Number(*n),
+                Value::Str(s) => V::Text(Arc::from(s.as_ref())),
+                Value::Error(n) => V::Error(error_kind(*n)),
+                _ => V::Error(ErrorKind::Value),
+            }
+        }
+        Ok(match &v {
+            Value::Array(a) => {
+                let (rows, cols) = match a.bounds.as_slice() {
+                    [(lo, hi)] => (1, (hi - lo + 1).max(0) as usize),
+                    [(r0, r1), (c0, c1)] => ((r1 - r0 + 1).max(0) as usize, (c1 - c0 + 1).max(0) as usize),
+                    _ => return Ok(V::Error(ErrorKind::Value)),
+                };
+                if rows == 0 || cols == 0 || a.data.len() != rows * cols {
+                    return Ok(V::Error(ErrorKind::Value));
+                }
+                V::Array(Arc::new(apex_sheet::value::Matrix { rows, cols, data: a.data.iter().map(one).collect() }))
+            }
+            v => one(v),
+        })
     }
 
     /// A cell's value for VBA (a date format gives a Date; Value2 doesn't).
@@ -664,7 +899,7 @@ impl Interp<'_> {
                 }
             }
             Value::Error(n) => (Content::Value(apex_sheet::Value::Error(error_kind(*n))), None),
-            Value::Array(_) | Value::Object(_) => return Err(Error::type_mismatch()),
+            Value::Array(_) | Value::Object(_) | Value::Record(_) => return Err(Error::type_mismatch()),
         })
     }
 
@@ -676,7 +911,9 @@ impl Interp<'_> {
             if self.wb.styles.get(x.style).num_fmt.as_ref() == "General" {
                 let mut s = self.wb.styles.get(x.style).clone();
                 s.num_fmt = Arc::from(f);
-                x.style = self.wb.styles.intern(s);
+                if let Ok(wb) = self.wb_mut() {
+                    x.style = wb.styles.intern(s);
+                }
             }
         }
         cell
@@ -791,6 +1028,12 @@ impl Interp<'_> {
 
     /// Changes the style of every cell of `r` (whole rows/columns: of the used part).
     fn restyle(&mut self, r: RangeRef, f: impl Fn(&mut CellStyle)) -> R<()> {
+        self.restyle_by(r, |_| 0, |_, s| f(s))
+    }
+
+    /// Like [`Self::restyle`], each cell changed by what `key` says of
+    /// its place.
+    fn restyle_by(&mut self, r: RangeRef, key: impl Fn(CellRef) -> u8, f: impl Fn(u8, &mut CellStyle)) -> R<()> {
         self.check_sheet(r.sheet)?;
         let rg = if r.range.cell_count() > 1_000_000 {
             match self.wb.clamp_to_used(r.sheet, &r.range) {
@@ -801,20 +1044,21 @@ impl Interp<'_> {
             r.range
         };
         Self::check_size(&rg)?;
-        let mut cache: std::collections::HashMap<u32, u32> = Default::default();
+        let mut cache: std::collections::HashMap<(u32, u8), u32> = Default::default();
         let mut cells = Vec::new();
         for row in rg.start.row..=rg.end.row {
             for col in rg.start.col..=rg.end.col {
                 let c = CellRef::new(row, col);
+                let k = key(c);
                 let old = self.wb.cell(r.sheet, c).cloned();
                 let os = old.as_ref().map_or(0, |x| x.style);
-                let ns = match cache.get(&os) {
+                let ns = match cache.get(&(os, k)) {
                     Some(&s) => s,
                     None => {
                         let mut s = self.wb.styles.get(os).clone();
-                        f(&mut s);
-                        let id = self.wb.styles.intern(s);
-                        cache.insert(os, id);
+                        f(k, &mut s);
+                        let id = self.wb_mut()?.styles.intern(s);
+                        cache.insert((os, k), id);
                         id
                     }
                 };
@@ -871,6 +1115,7 @@ impl Interp<'_> {
                 }
             }
             "text" => Value::str(self.wb.display(r.sheet, rg.start).0),
+            "name" => return self.range_get_name(r),
             "numberformat" | "numberformatlocal" => Value::str(self.style_of(r).num_fmt.to_string()),
             "address" | "addresslocal" => {
                 let row_abs = match a.get(0, "rowabsolute") {
@@ -885,7 +1130,19 @@ impl Interp<'_> {
                     Some(v) => self.scalar(v)?.to_bool()?,
                     None => false,
                 };
-                let addr = Self::address(&rg, row_abs, col_abs);
+                let addr = if self.arg_i64(&a, 2, "referencestyle")? == Some(-4150) {
+                    let base = match a.get(4, "relativeto") {
+                        Some(v) => self.range_arg(v, r.sheet)?.range.start,
+                        None => CellRef::new(0, 0),
+                    };
+                    let one = |c: CellRef| {
+                        let part = |abs: bool, n: u32, b: u32| if abs { format!("{}", n + 1) } else if n == b { String::new() } else { format!("[{}]", i64::from(n) - i64::from(b)) };
+                        format!("R{}C{}", part(row_abs, c.row, base.row), part(col_abs, c.col, base.col))
+                    };
+                    if rg.is_single() { one(rg.start) } else { format!("{}:{}", one(rg.start), one(rg.end)) }
+                } else {
+                    Self::address(&rg, row_abs, col_abs)
+                };
                 Value::str(if ext { format!("'{}'!{addr}", self.wb.sheets[r.sheet].name) } else { addr })
             }
             "row" => Value::Long(rg.start.row as i32 + 1),
@@ -946,13 +1203,16 @@ impl Interp<'_> {
             "application" => obj(Obj::Application),
             "font" => obj(Obj::Font(r)),
             "interior" => obj(Obj::Interior(r)),
-            "horizontalalignment" => Value::Long(match self.style_of(r).halign {
-                HAlign::General => 1,
-                HAlign::Left => -4131,
-                HAlign::Center => -4108,
-                HAlign::Right => -4152,
-                HAlign::Justify => -4130,
+            "style" => self.range_style(r),
+            "indentlevel" => Value::Long(self.style_of(r).indent as i32),
+            "orientation" => Value::Long(match self.style_of(r).rotation {
+                0 => -4128,
+                apex_sheet::sheet::ROTATION_STACKED => -4166,
+                d => d as i32,
             }),
+            "locked" => Value::Bool(!self.style_of(r).unlocked),
+            "formulahidden" => Value::Bool(self.style_of(r).formula_hidden),
+            "horizontalalignment" => Value::Long(halign_code(self.style_of(r).halign)),
             "verticalalignment" => Value::Long(match self.style_of(r).valign {
                 VAlign::Top => -4160,
                 VAlign::Center => -4108,
@@ -984,12 +1244,35 @@ impl Interp<'_> {
             "find" => {
                 let what = a.get(0, "what").ok_or_else(|| Error::new(449, "Argument not optional"))?;
                 let what = self.scalar(what)?.to_str()?;
+                let after = match a.get(1, "after") {
+                    Some(v) => Some(self.range_arg(v, r.sheet)?.range.start),
+                    None => None,
+                };
+                let formulas = self.arg_i64(&a, 2, "lookin")?.is_none_or(|x| x == -4123);
                 let whole = self.arg_i64(&a, 3, "lookat")?.is_some_and(|x| x == 1);
+                let by_cols = self.arg_i64(&a, 4, "searchorder")?.is_some_and(|x| x == 2);
+                let back = self.arg_i64(&a, 5, "searchdirection")?.is_some_and(|x| x == 2);
                 let case = match a.get(6, "matchcase") {
                     Some(v) => self.scalar(v)?.to_bool()?,
                     None => false,
                 };
-                match self.find(r.sheet, rg, &what, whole, case) {
+                let f = FindWith { what, whole, case, by_cols, formulas };
+                let hit = self.find(r.sheet, rg, &f, after, back);
+                self.find_with = Some(f);
+                match hit {
+                    Some(c) => range_obj(r.sheet, Range::single(c)),
+                    None => Value::Nothing,
+                }
+            }
+            "findnext" | "findprevious" => {
+                let Some(f) = self.find_with.clone() else {
+                    return Ok(Value::Nothing);
+                };
+                let after = match a.get(0, "after") {
+                    Some(v) => Some(self.range_arg(v, r.sheet)?.range.start),
+                    None => None,
+                };
+                match self.find(r.sheet, rg, &f, after, name == "findprevious") {
                     Some(c) => range_obj(r.sheet, Range::single(c)),
                     None => Value::Nothing,
                 }
@@ -1011,6 +1294,7 @@ impl Interp<'_> {
                 });
                 if !cells.is_empty() {
                     self.apply(Op::SetCells { sheet: r.sheet, cells })?;
+                    self.changed_by_code(RangeRef::new(r.sheet, rg))?;
                 }
                 Value::Empty
             }
@@ -1022,6 +1306,9 @@ impl Interp<'_> {
                 });
                 if !cells.is_empty() {
                     self.apply(Op::SetCells { sheet: r.sheet, cells })?;
+                    if name == "clear" {
+                        self.changed_by_code(RangeRef::new(r.sheet, rg))?;
+                    }
                 }
                 Value::Empty
             }
@@ -1041,12 +1328,49 @@ impl Interp<'_> {
                 }
                 Value::Empty
             }
-            "copy" => {
-                let Some(dest) = a.get(0, "destination") else { return Err(Error::unsupported("Copy without a Destination")) };
+            "copy" | "cut" => {
+                let cut = name == "cut";
+                let Some(dest) = a.get(0, "destination") else {
+                    // Put aside for PasteSpecial or Worksheet.Paste.
+                    Self::check_size(&rg)?;
+                    self.clip = Some((r, cut));
+                    self.clip_in = self.current_book;
+                    return Ok(Value::Bool(true));
+                };
+                if matches!(dest, Value::Object(Obj::In(..))) {
+                    if cut {
+                        return Err(Error::unsupported("Cut to another workbook (Copy, then ClearContents)"));
+                    }
+                    self.copy_across(self.current_book, r, dest)?;
+                    return Ok(Value::Bool(true));
+                }
                 let dest = self.range_arg(dest, r.sheet)?;
                 self.copy_cells(r, dest.sheet, dest.range.start)?;
-                Value::Empty
+                if cut {
+                    self.clear_moved(r, dest.sheet, dest.range.start)?;
+                }
+                Value::Bool(true)
             }
+            "specialcells" => return self.special_cells(r, &a),
+            "areas" => {
+                return match a.get(0, "index") {
+                    Some(i) if self.scalar(i.clone())?.to_i64()? == 1 => Ok(obj(Obj::Range(r))),
+                    Some(_) => Err(Error::subscript()),
+                    None => {
+                        let mut c = crate::object::Collection::default();
+                        c.items = vec![(None, obj(Obj::Range(r)))];
+                        Ok(obj(Obj::Collection(Rc::new(std::cell::RefCell::new(c)))))
+                    }
+                };
+            }
+            "filldown" | "fillup" | "fillright" | "fillleft" => return self.fill(r, name),
+            "autofill" => return self.auto_fill(r, &a),
+            "removeduplicates" => return self.remove_duplicates(r, &a),
+            "replace" => return self.replace(r, &a),
+            "addcomment" => return self.add_comment(r, &a),
+            "clearcomments" => return self.clear_comments(r),
+            "notetext" => return self.note_text(r, &a),
+            "pastespecial" => return self.paste_special(r, &a),
             "merge" | "unmerge" => {
                 let mut merges: Vec<Range> = self.wb.sheets[r.sheet].merges.iter().filter(|m| m.intersect(&rg).is_none()).copied().collect();
                 if name == "merge" && !rg.is_single() {
@@ -1056,9 +1380,58 @@ impl Interp<'_> {
                 Value::Empty
             }
             "autofit" | "calculate" | "show" => Value::Empty,
-            "sort" | "specialcells" | "pastespecial" | "autofilter" | "removeduplicates" | "texttocolumns" | "copypicture" | "printout" | "areas" | "cut" | "borders" | "characters" | "addcomment" | "comment" | "hyperlinks" | "validation" | "formatconditions" | "listobject" | "pivottable" => return Err(Error::unsupported(&format!("Range.{name}"))),
+            "borders" => return self.borders_call(r, &a),
+            "sort" => return self.range_sort(r, &a),
+            "borderaround" => return self.border_around(r, &a),
+            "autofilter" => return self.auto_filter(r, &a),
+            "comment" => match self.wb.cell(r.sheet, rg.start).and_then(|x| x.note()) {
+                Some(_) => obj(Obj::Part(Box::new(Part::Comment(r.sheet, rg.start)))),
+                None => Value::Nothing,
+            },
+            "hyperlinks" => return self.part_get(Part::Hyperlinks(r), &a),
+            "validation" => obj(Obj::Part(Box::new(Part::Validation(r)))),
+            "formula2" | "formula2local" | "formula2r1c1" => return self.range_member(r, &name.replace('2', ""), args),
+            "formatconditions" => return self.part_get(Part::FormatConditions(r), &a),
+            "pagebreak" => return self.page_break(r, None),
+            "listobject" => match self.wb.table_at(r.sheet, rg.start) {
+                Some((ts, ti)) => obj(Obj::Part(Box::new(Part::ListObject(self.wb.sheets[ts].tables[ti].id)))),
+                None => Value::Nothing,
+            },
+            "texttocolumns" => return self.text_to_columns(r, &a),
+            "advancedfilter" => return self.advanced_filter(r, &a),
+            "characters" => return self.characters(r, &a),
+            "printout" | "printpreview" => return self.print_request(Some(r.sheet)),
+            "pivottable" => return self.range_pivot(r),
+            "copypicture" => return Err(Error::unsupported(&format!("Range.{name}"))),
             _ => return Err(Error::no_member(name)),
         })
+    }
+
+    /// The code changed cells of this workbook: Worksheet_Change of the
+    /// sheet and Workbook_SheetChange run before the next statement, as in
+    /// Excel, unless EnableEvents is off. What a Change handler writes
+    /// doesn't run them again: Excel would loop until out of stack space
+    /// when the handler forgets to turn events off.
+    pub(crate) fn changed_by_code(&mut self, r: RangeRef) -> R<()> {
+        if !self.app.enable_events || self.in_change {
+            return Ok(());
+        }
+        let target = Value::Object(Obj::Range(RangeRef::new(r.sheet, r.range)));
+        for (owner, event, args) in [(Owner::Sheet(r.sheet), "worksheet_change", vec![target.clone()]), (Owner::Workbook, "workbook_sheetchange", vec![Value::Object(Obj::Sheet(r.sheet)), target])] {
+            // The owners of the modules are this workbook's: none while
+            // the code works on another one it opened.
+            let found = self.owners.iter().enumerate().filter(|(_, o)| **o == owner).find_map(|(mi, _)| {
+                let m = &self.project.modules[mi];
+                m.procs.iter().find(|p| p.name.eq_ignore_ascii_case(event) && p.kind == crate::ast::ProcKind::Sub).map(|p| (mi, p.clone()))
+            });
+            if let Some((mi, proc)) = found {
+                self.in_change = true;
+                let res = self.call_event(mi, proc, args);
+                self.in_change = false;
+                res?;
+            }
+        }
+        Ok(())
     }
 
     /// Sets a property of a range; false when it is not one it knows.
@@ -1069,20 +1442,29 @@ impl Interp<'_> {
             v => v,
         };
         match name {
-            "value" | "value2" | "_default" => self.set_range_value(r, v)?,
-            "formula" | "formulalocal" | "formular1c1" | "formular1c1local" => self.set_formula(r, name, v)?,
+            "value" | "value2" | "_default" => {
+                self.set_range_value(r, v)?;
+                self.changed_by_code(r)?;
+            }
+            "formula" | "formulalocal" | "formular1c1" | "formular1c1local" => {
+                self.set_formula(r, name, v)?;
+                self.changed_by_code(r)?;
+            }
+            "formula2" | "formula2local" | "formula2r1c1" => {
+                self.set_formula(r, &name.replace('2', ""), v)?;
+                self.changed_by_code(r)?;
+            }
+            "pagebreak" => {
+                self.page_break(r, Some(v))?;
+            }
+            "name" => self.range_set_name(r, v)?,
             "numberformat" | "numberformatlocal" => {
                 let code: Arc<str> = Arc::from(v.to_str()?);
                 self.restyle(r, |s| s.num_fmt = code.clone())?;
             }
+            "style" => self.set_range_style(r, v)?,
             "horizontalalignment" => {
-                let h = match v.to_i64()? {
-                    -4131 => HAlign::Left,
-                    -4108 | 7 => HAlign::Center,
-                    -4152 => HAlign::Right,
-                    -4130 => HAlign::Justify,
-                    _ => HAlign::General,
-                };
+                let h = halign_of(v.to_i64()?);
                 self.restyle(r, |s| s.halign = h)?;
             }
             "verticalalignment" => {
@@ -1096,6 +1478,32 @@ impl Interp<'_> {
             "wraptext" => {
                 let w = v.to_bool()?;
                 self.restyle(r, |s| s.wrap = w)?;
+            }
+            "indentlevel" => {
+                let n = v.to_i64()?;
+                if !(0..=15).contains(&n) {
+                    return Err(Error::app("Unable to set the IndentLevel property"));
+                }
+                self.restyle(r, |s| s.indent = n as u8)?;
+            }
+            "orientation" => {
+                let d = match v.to_i64()? {
+                    -4128 => 0,
+                    -4166 => apex_sheet::sheet::ROTATION_STACKED,
+                    -4171 => 90,
+                    -4170 => -90,
+                    d @ -90..=90 => d as i16,
+                    _ => return Err(Error::app("Unable to set the Orientation property")),
+                };
+                self.restyle(r, |s| s.rotation = d)?;
+            }
+            "locked" => {
+                let b = v.to_bool()?;
+                self.restyle(r, |s| s.unlocked = !b)?;
+            }
+            "formulahidden" => {
+                let b = v.to_bool()?;
+                self.restyle(r, |s| s.formula_hidden = b)?;
             }
             "columnwidth" => {
                 let w = v.to_f64()?;
@@ -1167,20 +1575,32 @@ impl Interp<'_> {
         r
     }
 
-    fn find(&self, sheet: usize, rg: Range, what: &str, whole: bool, case: bool) -> Option<CellRef> {
-        let norm = |s: &str| if case { s.to_string() } else { s.to_lowercase() };
-        let what = norm(what);
+    /// The cell of `rg` after `after` (its first cell when not given)
+    /// that matches `f`, going around to the start; before it when `back`.
+    fn find(&self, sheet: usize, rg: Range, f: &FindWith, after: Option<CellRef>, back: bool) -> Option<CellRef> {
+        let norm = |s: &str| -> Vec<char> { if f.case { s.chars().collect() } else { s.to_lowercase().chars().collect() } };
+        let what = norm(&f.what);
+        let pat: Vec<char> = if f.whole { what } else { [&['*'][..], &what, &['*'][..]].concat() };
+        let key = |c: &CellRef| if f.by_cols { (c.col, c.row) } else { (c.row, c.col) };
         let mut hits = Vec::new();
         self.wb.sheets[sheet].for_each_in(&rg, |c, cell| {
-            if cell.value().is_empty() {
+            if cell.value().is_empty() && !matches!(cell.content, Content::Formula { .. }) {
                 return;
             }
-            let text = norm(&self.wb.display(sheet, c).0);
-            if if whole { text == what } else { text.contains(&what) } {
+            let text = match (&cell.content, f.formulas) {
+                (Content::Formula { .. }, true) => self.formula_text(sheet, c, "formula").to_str().unwrap_or_default(),
+                _ => self.wb.display(sheet, c).0,
+            };
+            if apex_sheet::functions::wildcard(&pat, &norm(&text)) {
                 hits.push(c);
             }
         });
-        hits.into_iter().min_by_key(|c| (c.row, c.col))
+        let from = key(&after.unwrap_or(rg.start));
+        if back {
+            hits.iter().filter(|c| key(c) < from).max_by_key(|c| key(c)).or_else(|| hits.iter().max_by_key(|c| key(c))).copied()
+        } else {
+            hits.iter().filter(|c| key(c) > from).min_by_key(|c| key(c)).or_else(|| hits.iter().min_by_key(|c| key(c))).copied()
+        }
     }
 
     /// Copies the cells of `src` to `to` (formulas move their references).
@@ -1211,116 +1631,23 @@ impl Interp<'_> {
     // --- Font and Interior ------------------------------------------------------------
 
     fn font_get(&mut self, r: RangeRef, name: &str) -> R<Value> {
-        let s = self.style_of(r);
-        Ok(match name {
-            "bold" => Value::Bool(s.bold),
-            "italic" => Value::Bool(s.italic),
-            "underline" => Value::Long(if s.underline { 2 } else { -4142 }),
-            "strikethrough" => Value::Bool(s.strike),
-            "size" => Value::Double(if s.font_size == 0 { 11.0 } else { s.font_size as f64 / 10.0 }),
-            "name" => Value::str(s.font.as_deref().unwrap_or("Calibri")),
-            "color" => Value::Long(swap_rb(s.color.unwrap_or(0)) as i32),
-            "colorindex" => Value::Long(match s.color {
-                None => -4105,
-                Some(c) => PALETTE.iter().position(|&p| p == c).map_or(-4105, |i| i as i32 + 1),
-            }),
-            _ => return Err(Error::no_member(name)),
-        })
+        font_value(&self.style_of(r), name)
     }
 
     fn font_set(&mut self, r: RangeRef, name: &str, v: Value) -> R<()> {
-        match name {
-            "bold" => {
-                let b = v.to_bool()?;
-                self.restyle(r, |s| s.bold = b)
-            }
-            "italic" => {
-                let b = v.to_bool()?;
-                self.restyle(r, |s| s.italic = b)
-            }
-            "underline" => {
-                let b = match v {
-                    Value::Bool(b) => b,
-                    v => !matches!(v.to_i64()?, -4142 | 0),
-                };
-                self.restyle(r, |s| s.underline = b)
-            }
-            "strikethrough" => {
-                let b = v.to_bool()?;
-                self.restyle(r, |s| s.strike = b)
-            }
-            "size" => {
-                let pt = v.to_f64()?;
-                if !(1.0..=409.0).contains(&pt) {
-                    return Err(Error::app("Unable to set the Size property of the Font class"));
-                }
-                self.restyle(r, |s| s.font_size = (pt * 10.0).round() as u16)
-            }
-            "name" => {
-                let f: Arc<str> = Arc::from(v.to_str()?);
-                self.restyle(r, |s| {
-                    s.font = Some(f.clone());
-                    s.theme.font = 0;
-                })
-            }
-            "color" => {
-                let c = swap_rb(v.to_i64()? as u32 & 0xFF_FFFF);
-                self.restyle(r, |s| {
-                    s.color = Some(c);
-                    s.theme.color = None;
-                })
-            }
-            "colorindex" => {
-                let i = v.to_i64()?;
-                let c = match i {
-                    -4105 | -4142 | 0 => None,
-                    1..=56 => Some(PALETTE[i as usize - 1]),
-                    _ => return Err(Error::app("Unable to set the ColorIndex property of the Font class")),
-                };
-                self.restyle(r, |s| {
-                    s.color = c;
-                    s.theme.color = None;
-                })
-            }
-            _ => Err(Error::no_member(name)),
-        }
+        let f = font_edit(name, v)?;
+        self.restyle(r, f)
     }
 
     fn interior_get(&mut self, r: RangeRef, name: &str) -> R<Value> {
-        let s = self.style_of(r);
-        Ok(match name {
-            "color" => Value::Long(swap_rb(s.fill.unwrap_or(0xFFFFFF)) as i32),
-            "colorindex" => Value::Long(match s.fill {
-                None => -4142,
-                Some(c) => PALETTE.iter().position(|&p| p == c).map_or(-4142, |i| i as i32 + 1),
-            }),
-            "pattern" => Value::Long(if s.fill.is_some() { 1 } else { -4142 }),
-            _ => return Err(Error::no_member(name)),
-        })
+        interior_value(&self.style_of(r), name)
     }
 
     fn interior_set(&mut self, r: RangeRef, name: &str, v: Value) -> R<()> {
-        let fill = match name {
-            "color" => Some(swap_rb(v.to_i64()? as u32 & 0xFF_FFFF)),
-            "colorindex" => match v.to_i64()? {
-                -4142 | -4105 | 0 => None,
-                i @ 1..=56 => Some(PALETTE[i as usize - 1]),
-                _ => return Err(Error::app("Unable to set the ColorIndex property of the Interior class")),
-            },
-            "pattern" => {
-                if v.to_i64()? == -4142 {
-                    None
-                } else {
-                    return Ok(());
-                }
-            }
-            "patterncolor" | "patterncolorindex" | "tintandshade" | "themecolor" => return Ok(()),
-            _ => return Err(Error::no_member(name)),
-        };
-        self.restyle(r, |s| {
-            s.fill = fill;
-            s.theme.fill = None;
-        })
+        match interior_edit(name, v)? {
+            Some(f) => self.restyle(r, f),
+            None => Ok(()),
+        }
     }
 
     // --- Worksheet, Sheets, Workbook, Application -----------------------------------
@@ -1353,6 +1680,7 @@ impl Interp<'_> {
                 range_obj(s, range)
             }
             "activate" | "select" => {
+                self.activate_book();
                 if self.active != s {
                     self.active = s;
                     self.selection = Range::single(CellRef::new(0, 0));
@@ -1401,7 +1729,25 @@ impl Interp<'_> {
                 }
                 Value::Empty
             }
-            "copy" | "move" | "paste" | "pastespecial" | "shapes" | "chartobjects" | "listobjects" | "pivottables" | "printout" | "hyperlinks" | "comments" | "sort" | "autofilter" | "querytables" | "oleobjects" | "buttons" | "checkboxes" | "dropdowns" | "optionbuttons" | "listboxes" | "drawingobjects" => return Err(Error::unsupported(&format!("Worksheet.{name}"))),
+            "copy" | "move" => return self.sheet_copy_move(s, name == "copy", &a),
+            "names" => return self.part_get(Part::Names(Some(s)), &a),
+            "pagesetup" => obj(Obj::Part(Box::new(Part::PageSetup(s)))),
+            "printout" | "printpreview" => return self.print_request(Some(s)),
+            "pivottables" => return self.part_get(Part::PivotTables(s), &a),
+            "hpagebreaks" | "vpagebreaks" => return self.part_get(Part::PageBreaks(s, name == "hpagebreaks"), &a),
+            "resetallpagebreaks" => return self.reset_breaks(s),
+            "listobjects" => return self.part_get(Part::ListObjects(s), &a),
+            "tab" => obj(Obj::Part(Box::new(Part::Tab(s)))),
+            "hyperlinks" => return self.part_get(Part::Hyperlinks(whole), &a),
+            "comments" => return self.part_get(Part::Comments(s), &a),
+            "autofiltermode" => Value::Bool(self.wb.sheets[s].filter.is_some()),
+            "filtermode" => Value::Bool(self.wb.sheets[s].filter.as_ref().is_some_and(|f| !f.cols.is_empty()) || self.filtered.iter().any(|(fs, _)| *fs == s)),
+            "showalldata" => return self.show_all_data(s),
+            "shapes" => return self.part_get(Part::Shapes(s), &a),
+            "chartobjects" => return self.part_get(Part::ChartObjects(s), &a),
+            "paste" => return self.sheet_paste(s, &a),
+            "sort" => obj(Obj::Part(Box::new(Part::SheetSort(s)))),
+            "pastespecial" | "autofilter" | "querytables" | "oleobjects" | "buttons" | "checkboxes" | "dropdowns" | "optionbuttons" | "listboxes" | "drawingobjects" => return Err(Error::unsupported(&format!("Worksheet.{name}"))),
             _ => return Err(Error::no_member(name)),
         })
     }
@@ -1485,16 +1831,62 @@ impl Interp<'_> {
             "readonly" => Value::Bool(self.wb.read_only),
             "application" | "parent" => obj(Obj::Application),
             "item" | "_default" => obj(Obj::Workbook),
-            "activate" => Value::Empty,
-            "close" | "saveas" | "savecopyas" | "names" | "protect" | "unprotect" | "printout" => return Err(Error::unsupported(&format!("Workbook.{name}"))),
+            "activate" => {
+                self.activate_book();
+                Value::Empty
+            }
+            "names" => {
+                let a = self.args(args)?;
+                return self.part_get(Part::Names(None), &a);
+            }
+            "iconsets" => {
+                let a = self.args(args)?;
+                return self.icon_sets(&a);
+            }
+            "styles" => {
+                let a = self.args(args)?;
+                return self.part_get(Part::Styles, &a);
+            }
+            "saveas" | "savecopyas" => {
+                let a = self.args(args)?;
+                let file = self.arg_str(&a, 0, "filename")?.ok_or_else(|| Error::new(449, "Argument not optional"))?;
+                let format = if name == "saveas" { self.arg_i64(&a, 1, "fileformat")? } else { None };
+                if name == "saveas" && self.arg_str(&a, 2, "password")?.is_some_and(|p| !p.is_empty()) {
+                    return Err(Error::unsupported("SaveAs with a Password (set it in File > Protect)"));
+                }
+                self.save_book(&file, format, name == "saveas")?;
+                Value::Empty
+            }
+            "close" => {
+                let a = self.args(args)?;
+                self.wb_mut()?;
+                let save = match a.get(0, "savechanges") {
+                    Some(v) => Some(self.scalar(v)?.to_bool()?),
+                    None => None,
+                };
+                let file = self.arg_str(&a, 1, "filename")?;
+                let save = match (save, file) {
+                    (Some(true), Some(f)) if !f.is_empty() => {
+                        self.save_book(&f, None, true)?;
+                        Some(false)
+                    }
+                    (s, _) => s,
+                };
+                self.queue_request(crate::Request::Close { save })?;
+                // Closing the workbook ends its macro.
+                return Err(Error::new(crate::interp::END, "End").fatal());
+            }
+            "printout" | "printpreview" => return self.print_request(None),
+            "refreshall" => return self.refresh_all(),
+            "protect" | "unprotect" => return Err(Error::unsupported(&format!("Workbook.{name}"))),
             _ => return Err(Error::no_member(name)),
         })
     }
 
-    fn app_member(&mut self, name: &str, args: &[Arg]) -> R<Value> {
+    pub(crate) fn app_member(&mut self, name: &str, args: &[Arg]) -> R<Value> {
         let sheet = self.home_sheet();
         match name {
-            "activesheet" | "activecell" | "selection" | "activeworkbook" | "thisworkbook" | "worksheets" | "sheets" | "worksheetfunction" => {
+            "activesheet" | "activecell" | "selection" | "activeworkbook" | "thisworkbook" | "worksheets" | "sheets" | "worksheetfunction" | "activewindow" | "names" | "activechart" | "workbooks" => {
                 return self.global(name, args).unwrap_or_else(|| Err(Error::no_member(name)));
             }
             "range" | "cells" | "rows" | "columns" => return self.sheet_member(sheet, name, args),
@@ -1502,6 +1894,11 @@ impl Interp<'_> {
         }
         let a = self.args(args)?;
         Ok(match name {
+            "inchestopoints" | "centimeterstopoints" => {
+                let v = a.get(0, if name == "inchestopoints" { "inches" } else { "centimeters" }).ok_or_else(Error::invalid_call)?;
+                let x = self.scalar(v)?.to_f64()?;
+                Value::Double(if name == "inchestopoints" { x * 72.0 } else { x * 72.0 / 2.54 })
+            }
             "screenupdating" => Value::Bool(self.app.screen_updating),
             "displayalerts" => Value::Bool(self.app.display_alerts),
             "enableevents" => Value::Bool(self.app.enable_events),
@@ -1510,7 +1907,11 @@ impl Interp<'_> {
                 Some(s) => Value::str(s.clone()),
                 None => Value::Bool(false),
             },
-            "cutcopymode" => Value::Bool(false),
+            "cutcopymode" => match self.clip {
+                Some((_, false)) => Value::Long(1),
+                Some((_, true)) => Value::Long(2),
+                None => Value::Bool(false),
+            },
             "visible" | "interactive" => Value::Bool(true),
             "goto" => {
                 let r = match a.get(0, "reference") {
@@ -1532,55 +1933,52 @@ impl Interp<'_> {
             "pathseparator" => Value::str(std::path::MAIN_SEPARATOR.to_string()),
             "application" | "parent" => obj(Obj::Application),
             "calculate" | "calculatefull" => {
-                self.wb.recalc_all();
+                // Not from a function in a cell (which is being calculated).
+                if let Ok(wb) = self.wb_mut() {
+                    wb.recalc_all();
+                }
                 Value::Empty
             }
             "wait" | "volatile" | "doevents" => Value::Empty,
             "intersect" | "union" => {
-                let mut ranges = Vec::new();
+                let mut lists: Vec<Vec<RangeRef>> = Vec::new();
                 for i in 0..a.len() {
                     match a.get(i, "") {
-                        Some(Value::Object(Obj::Range(r))) => ranges.push(r),
                         Some(Value::Nothing) => return Err(Error::not_set()),
-                        Some(_) => return Err(Error::type_mismatch()),
+                        Some(v) => lists.push(areas::ranges_of(&v).ok_or_else(Error::type_mismatch)?),
                         None => {}
                     }
                 }
-                let Some(first) = ranges.first().copied() else { return Err(Error::invalid_call()) };
-                if ranges.iter().any(|r| r.sheet != first.sheet) {
+                let Some(first) = lists.first().and_then(|l| l.first()).copied() else { return Err(Error::invalid_call()) };
+                if lists.iter().flatten().any(|r| r.sheet != first.sheet) {
                     return Err(Error::app(format!("Method '{name}' of object '_Application' failed")));
                 }
                 if name == "intersect" {
-                    let mut acc = Some(first.range);
-                    for r in &ranges[1..] {
-                        acc = acc.and_then(|x| x.intersect(&r.range));
+                    let mut acc: Vec<Range> = lists[0].iter().map(|r| r.range).collect();
+                    for l in &lists[1..] {
+                        if acc.len().saturating_mul(l.len()) > 1_000_000 {
+                            return Err(Error::app("Too many areas"));
+                        }
+                        acc = acc.iter().flat_map(|x| l.iter().filter_map(move |r| x.intersect(&r.range))).collect();
                     }
-                    match acc {
-                        Some(x) => range_obj(first.sheet, x),
-                        None => Value::Nothing,
-                    }
+                    areas::areas(first.sheet, acc)?
                 } else {
-                    // Only unions that are one rectangle.
-                    let mut b = first.range;
-                    for r in &ranges[1..] {
-                        b = Range::new(CellRef::new(b.start.row.min(r.range.start.row), b.start.col.min(r.range.start.col)), CellRef::new(b.end.row.max(r.range.end.row), b.end.col.max(r.range.end.col)));
-                    }
-                    let covered: u64 = {
+                    let ranges: Vec<Range> = lists.iter().flatten().map(|r| r.range).collect();
+                    // One rectangle when they make one.
+                    let b = ranges.iter().skip(1).fold(ranges[0], |b, r| Range::new(CellRef::new(b.start.row.min(r.start.row), b.start.col.min(r.start.col)), CellRef::new(b.end.row.max(r.end.row), b.end.col.max(r.end.col))));
+                    let size = b.rows() as u64 * b.cols() as u64;
+                    let covered = size <= 4_000_000 && {
                         let mut n = 0u64;
-                        for row in b.start.row..=b.end.row.min(b.start.row + 2000) {
-                            for col in b.start.col..=b.end.col.min(b.start.col + 2000) {
-                                if ranges.iter().any(|r| r.range.contains(CellRef::new(row, col))) {
+                        for row in b.start.row..=b.end.row {
+                            for col in b.start.col..=b.end.col {
+                                if ranges.iter().any(|r| r.contains(CellRef::new(row, col))) {
                                     n += 1;
                                 }
                             }
                         }
-                        n
+                        n == size
                     };
-                    let size = (b.rows().min(2001) as u64) * (b.cols().min(2001) as u64);
-                    if covered != size {
-                        return Err(Error::unsupported("ranges of several areas"));
-                    }
-                    range_obj(first.sheet, b)
+                    if covered { range_obj(first.sheet, b) } else { areas::areas(first.sheet, ranges)? }
                 }
             }
             "run" => {
@@ -1590,7 +1988,17 @@ impl Interp<'_> {
                 for v in rest {
                     values.push(self.scalar(v)?);
                 }
-                return self.run_named(macro_name.rsplit('!').next().unwrap_or(&macro_name).trim_matches('\''), values);
+                // Another workbook's (a path) isn't opened: this one's,
+                // or the personal macro workbook's or an add-in's.
+                let cannot = || Error::app(format!("Cannot run the macro '{macro_name}'"));
+                let name = macro_ref(&macro_name).filter(|n| !n.is_empty()).ok_or_else(cannot)?;
+                if let Some((book, _)) = macro_name.rsplit_once('!') {
+                    if !self.file_name.is_empty() && !crate::same_book(&self.file_name, book) {
+                        let lib = self.libraries.iter().find(|l| l.is(book)).cloned().ok_or_else(cannot)?;
+                        return self.run_library(&lib, &name, values);
+                    }
+                }
+                return self.run_named(&name, values);
             }
             "evaluate" => {
                 let t = self.arg_str(&a, 0, "name")?.ok_or_else(Error::invalid_call)?;
@@ -1601,6 +2009,27 @@ impl Interp<'_> {
                 let title = self.arg_str(&a, 1, "title")?.unwrap_or_default();
                 let default = self.arg_str(&a, 2, "default")?.unwrap_or_default();
                 let ty = self.arg_i64(&a, 7, "type")?.unwrap_or(2);
+                if ty & 8 != 0 {
+                    // A reference: the selection to start with; a wrong one
+                    // is asked again, as in Excel.
+                    let mut default = default;
+                    if default.is_empty() {
+                        default = self.selection.to_a1();
+                    }
+                    for _ in 0..20 {
+                        match self.paused(|ui| ui.input_box(&prompt, &title, &default)) {
+                            None => return Ok(Value::Bool(false)),
+                            Some(t) => match self.parse_ref(t.trim().trim_start_matches('='), sheet) {
+                                Ok(r) => return Ok(obj(Obj::Range(r))),
+                                Err(_) => {
+                                    self.paused(|ui| ui.msg_box("The reference you typed isn't valid.", 48, "ApexDesk"));
+                                    default = t;
+                                }
+                            },
+                        }
+                    }
+                    return Ok(Value::Bool(false));
+                }
                 let r = self.paused(|ui| ui.input_box(&prompt, &title, &default));
                 match r {
                     None => Value::Bool(false),
@@ -1608,11 +2037,45 @@ impl Interp<'_> {
                         Some(n) => Value::Double(n),
                         None => return Err(Error::type_mismatch()),
                     },
-                    Some(t) if ty == 8 => obj(Obj::Range(self.parse_ref(&t, sheet)?)),
                     Some(t) => Value::str(t),
                 }
             }
-            "ontime" | "onkey" | "quit" | "getopenfilename" | "getsaveasfilename" | "filedialog" | "workbooks" | "vbe" | "sendkeys" | "dialogs" | "commandbars" | "addins" | "caller" | "activechart" | "charts" | "activewindow" | "windows" => return Err(Error::unsupported(&format!("Application.{name}"))),
+            "onkey" => {
+                let key = self.arg_str(&a, 0, "key")?.ok_or_else(Error::invalid_call)?;
+                let key = crate::Key::parse(&key).ok_or_else(|| Error::app("Method 'OnKey' of object '_Application' failed"))?;
+                let procedure = match self.arg_str(&a, 1, "procedure")? {
+                    Some(p) => Some(macro_ref(&p).ok_or_else(|| Error::app("Method 'OnKey' of object '_Application' failed"))?),
+                    None => None,
+                };
+                self.queue_request(crate::Request::OnKey { key, procedure })?;
+                Value::Empty
+            }
+            "ontime" => {
+                let at = match a.get(0, "earliesttime") {
+                    Some(v) => self.scalar(v)?.to_f64()?,
+                    None => return Err(Error::invalid_call()),
+                };
+                let procedure = self.arg_str(&a, 1, "procedure")?.ok_or_else(Error::invalid_call)?;
+                let procedure = macro_ref(&procedure).filter(|p| !p.is_empty()).ok_or_else(|| Error::app("Method 'OnTime' of object '_Application' failed"))?;
+                let latest = match a.get(2, "latesttime") {
+                    Some(v) => Some(self.scalar(v)?.to_f64()?),
+                    None => None,
+                };
+                let schedule = match a.get(3, "schedule") {
+                    Some(v) => self.scalar(v)?.to_bool()?,
+                    None => true,
+                };
+                if !at.is_finite() || latest.is_some_and(|l| !l.is_finite()) {
+                    return Err(Error::app("Method 'OnTime' of object '_Application' failed"));
+                }
+                self.queue_request(crate::Request::OnTime { at, procedure, latest, schedule })?;
+                Value::Empty
+            }
+            "caller" if self.caller.is_some() => self.caller.map(|r| obj(Obj::Range(r))).unwrap_or_default(),
+            "getopenfilename" => return self.get_open_filename(&a),
+            "getsaveasfilename" => return self.get_save_as_filename(&a),
+            "filedialog" => return self.file_dialog(&a),
+            "quit" | "vbe" | "sendkeys" | "dialogs" | "commandbars" | "addins" | "caller" | "activechart" | "charts" | "windows" => return Err(Error::unsupported(&format!("Application.{name}"))),
             _ => {
                 // Application.Sum(...) and the like: a worksheet function
                 // whose errors come back as values.
@@ -1688,5 +2151,143 @@ impl Interp<'_> {
             apex_sheet::Value::Error(_) if raise => Err(fail()),
             v => Ok(self.from_cell_value(&v, false)),
         }
+    }
+}
+
+/// A Font property of a format.
+pub(super) fn font_value(s: &CellStyle, name: &str) -> R<Value> {
+    Ok(match name {
+        "bold" => Value::Bool(s.bold),
+        "italic" => Value::Bool(s.italic),
+        "underline" => Value::Long(if s.underline { 2 } else { -4142 }),
+        "strikethrough" => Value::Bool(s.strike),
+        "size" => Value::Double(if s.font_size == 0 { 11.0 } else { s.font_size as f64 / 10.0 }),
+        "name" => Value::str(s.font.as_deref().unwrap_or("Calibri")),
+        "color" => Value::Long(swap_rb(s.color.unwrap_or(0)) as i32),
+        "colorindex" => Value::Long(match s.color {
+            None => -4105,
+            Some(c) => PALETTE.iter().position(|&p| p == c).map_or(-4105, |i| i as i32 + 1),
+        }),
+        _ => return Err(Error::no_member(name)),
+    })
+}
+
+/// What setting a Font property does to a format.
+pub(super) fn font_edit(name: &str, v: Value) -> R<Box<dyn Fn(&mut CellStyle)>> {
+    Ok(match name {
+        "bold" => {
+            let b = v.to_bool()?;
+            Box::new(move |s| s.bold = b)
+        }
+        "italic" => {
+            let b = v.to_bool()?;
+            Box::new(move |s| s.italic = b)
+        }
+        "underline" => {
+            let b = match v {
+                Value::Bool(b) => b,
+                v => !matches!(v.to_i64()?, -4142 | 0),
+            };
+            Box::new(move |s| s.underline = b)
+        }
+        "strikethrough" => {
+            let b = v.to_bool()?;
+            Box::new(move |s| s.strike = b)
+        }
+        "size" => {
+            let pt = v.to_f64()?;
+            if !(1.0..=409.0).contains(&pt) {
+                return Err(Error::app("Unable to set the Size property of the Font class"));
+            }
+            let size = (pt * 10.0).round() as u16;
+            Box::new(move |s| s.font_size = size)
+        }
+        "name" => {
+            let f: Arc<str> = Arc::from(v.to_str()?);
+            Box::new(move |s| {
+                s.font = Some(f.clone());
+                s.theme.font = 0;
+            })
+        }
+        "color" => {
+            let c = swap_rb(v.to_i64()? as u32 & 0xFF_FFFF);
+            Box::new(move |s| {
+                s.color = Some(c);
+                s.theme.color = None;
+            })
+        }
+        "colorindex" => {
+            let i = v.to_i64()?;
+            let c = match i {
+                -4105 | -4142 | 0 => None,
+                1..=56 => Some(PALETTE[i as usize - 1]),
+                _ => return Err(Error::app("Unable to set the ColorIndex property of the Font class")),
+            };
+            Box::new(move |s| {
+                s.color = c;
+                s.theme.color = None;
+            })
+        }
+        _ => return Err(Error::no_member(name)),
+    })
+}
+
+/// An Interior property of a format.
+pub(super) fn interior_value(s: &CellStyle, name: &str) -> R<Value> {
+    Ok(match name {
+        "color" => Value::Long(swap_rb(s.fill.unwrap_or(0xFFFFFF)) as i32),
+        "colorindex" => Value::Long(match s.fill {
+            None => -4142,
+            Some(c) => PALETTE.iter().position(|&p| p == c).map_or(-4142, |i| i as i32 + 1),
+        }),
+        "pattern" => Value::Long(if s.fill.is_some() { 1 } else { -4142 }),
+        _ => return Err(Error::no_member(name)),
+    })
+}
+
+/// What setting an Interior property does to a format (None: nothing).
+pub(super) fn interior_edit(name: &str, v: Value) -> R<Option<Box<dyn Fn(&mut CellStyle)>>> {
+    let fill = match name {
+        "color" => Some(swap_rb(v.to_i64()? as u32 & 0xFF_FFFF)),
+        "colorindex" => match v.to_i64()? {
+            -4142 | -4105 | 0 => None,
+            i @ 1..=56 => Some(PALETTE[i as usize - 1]),
+            _ => return Err(Error::app("Unable to set the ColorIndex property of the Interior class")),
+        },
+        "pattern" => {
+            if v.to_i64()? == -4142 {
+                None
+            } else {
+                return Ok(None);
+            }
+        }
+        "patterncolor" | "patterncolorindex" | "tintandshade" | "themecolor" => return Ok(None),
+        _ => return Err(Error::no_member(name)),
+    };
+    Ok(Some(Box::new(move |s| {
+        s.fill = fill;
+        s.theme.fill = None;
+    })))
+}
+
+/// XlHAlign of an alignment.
+pub(super) fn halign_code(h: HAlign) -> i32 {
+    match h {
+        HAlign::General => 1,
+        HAlign::Left => -4131,
+        HAlign::Center => -4108,
+        HAlign::Right => -4152,
+        HAlign::Justify => -4130,
+    }
+}
+
+/// The alignment of an XlHAlign.
+pub(super) fn halign_of(code: i64) -> HAlign {
+    match code {
+        -4131 => HAlign::Left,
+        -4108 | 7 => HAlign::Center,
+        -4152 => HAlign::Right,
+        -4130 => HAlign::Justify,
+        _ => HAlign::General,
     }
 }

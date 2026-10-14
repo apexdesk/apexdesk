@@ -14,6 +14,10 @@
       <string id="MacroSecurity_signed">Somente macros assinadas por um certificado confiável</string>
       <string id="TrustedLocations">Locais confiáveis</string>
       <string id="TrustedLocations_Help">Pastas cujos arquivos abrem com as macros habilitadas. Substituem as adicionadas pelos usuários.</string>
+      <string id="TrustedPublishers">Editores de macros fidedignos</string>
+      <string id="TrustedPublishers_Help">Certificados (impressões digitais SHA-256 ou SHA-1, em hexadecimal) cujas macros assinadas são executadas com «Só macros assinadas». Se definido, só são executadas as assinadas por eles e os utilizadores não podem adicionar mais.</string>
+      <string id="DisableMacroEditor">Desativar o editor de macros</string>
+      <string id="DisableMacroEditor_Help">1: o editor de macros (Alt+F11) não pode ser aberto. As macros continuam a ser executadas segundo a política de segurança de macros.</string>
       <string id="TemplatesFolder">Pasta de modelos compartilhados</string>
       <string id="TemplatesFolder_Help">Uma pasta de modelos (docx, dotx, odt, xlsx, xltx, ods...) listados em Novo a partir de modelo junto aos do usuário.</string>
       <string id="BuildingBlocksFolder">Pasta compartilhada de blocos de construção</string>
@@ -103,6 +107,9 @@
       </presentation>
       <presentation id="TrustedLocations">
         <listBox refId="TrustedLocations">Locais confiáveis</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">Editores de macros fidedignos</listBox>
       </presentation>
       <presentation id="TemplatesFolder">
         <textBox refId="TemplatesFolder"><label>Pasta de modelos compartilhados</label></textBox>

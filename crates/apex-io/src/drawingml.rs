@@ -241,6 +241,9 @@ pub fn read_look(sp_pr: Option<&Node>, style: Option<&Node>, text_box: bool) -> 
     if !exact {
         s.preset = Some(Arc::from(geom));
     }
+    if let Some(c) = sp_pr.and_then(|n| n.child("custGeom")) {
+        s.custom = Some(Arc::from(crate::pptx_shape::node_string(c)));
+    }
     if let Some(av) = sp_pr.and_then(|n| n.child("prstGeom")).and_then(|g| g.child("avLst")) {
         for gd in av.children("gd") {
             let v = gd.attr("fmla").and_then(|f| f.strip_prefix("val ")).and_then(|v| v.trim().parse::<i64>().ok());
@@ -464,18 +467,22 @@ pub fn write_sp_pr(out: &mut String, s: &Shape, off: (i64, i64), ext: (i64, i64)
         out.push_str(r#" flipV="1""#);
     }
     let _ = write!(out, r#"><a:off x="{}" y="{}"/><a:ext cx="{}" cy="{}"/></a:xfrm>"#, off.0, off.1, ext.0.max(0), ext.1.max(0));
-    let preset = s.preset.as_deref().unwrap_or(s.kind.preset());
-    let _ = write!(out, r#"<a:prstGeom prst="{}">"#, esc(preset));
-    if s.adj.is_empty() {
-        out.push_str("<a:avLst/>");
+    if let Some(c) = &s.custom {
+        out.push_str(c);
     } else {
-        out.push_str("<a:avLst>");
-        for (n, v) in &s.adj {
-            let _ = write!(out, r#"<a:gd name="{}" fmla="val {v}"/>"#, esc(n));
+        let preset = s.preset.as_deref().unwrap_or(s.kind.preset());
+        let _ = write!(out, r#"<a:prstGeom prst="{}">"#, esc(preset));
+        if s.adj.is_empty() {
+            out.push_str("<a:avLst/>");
+        } else {
+            out.push_str("<a:avLst>");
+            for (n, v) in &s.adj {
+                let _ = write!(out, r#"<a:gd name="{}" fmla="val {v}"/>"#, esc(n));
+            }
+            out.push_str("</a:avLst>");
         }
-        out.push_str("</a:avLst>");
+        out.push_str("</a:prstGeom>");
     }
-    out.push_str("</a:prstGeom>");
     if !s.kind.is_line() {
         match (&s.gradient, s.fill) {
             (Some(g), Some(_)) => crate::dml_fill::write(out, "a", g),

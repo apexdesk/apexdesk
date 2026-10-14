@@ -50,13 +50,52 @@ pub(super) fn read(r: &mut Reader, t: &Tag, empty: bool, sheet: usize, cell: Opt
     }
 }
 
+/// The macro of a click (`vnd.sun.star.script:Standard.Module1.Main?
+/// language=Basic&location=document`): `Module1.Main`.
+pub(super) fn macro_of_href(href: &str) -> String {
+    let Some(path) = href.strip_prefix("vnd.sun.star.script:") else { return String::new() };
+    let path = path.split('?').next().unwrap_or_default();
+    let parts: Vec<&str> = path.split('.').collect();
+    let name = parts[parts.len().saturating_sub(2)..].join(".");
+    if name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') { name } else { String::new() }
+}
+
+/// The `office:event-listeners` running macro `name` (`Main`,
+/// `Module1.Main`) on a click; empty for none.
+pub(super) fn macro_listener(name: &str) -> String {
+    if name.is_empty() {
+        return String::new();
+    }
+    let path = if name.contains('.') { format!("Standard.{name}") } else { format!("Standard.Module1.{name}") };
+    format!(
+        r#"<office:event-listeners><script:event-listener script:language="ooo:script" script:event-name="dom:click" xlink:href="vnd.sun.star.script:{}?language=Basic&amp;location=document" xlink:type="simple"/></office:event-listeners>"#,
+        esc(&path)
+    )
+}
+
+/// Puts the event listeners of a click into the shape element `out`
+/// (after its start tag).
+fn with_listener(out: &mut String, name: &str) {
+    let l = macro_listener(name);
+    // The first `>` ends the start tag (attribute values are escaped).
+    let (Some(end), false) = (out.find('>'), l.is_empty()) else { return };
+    if out[..end].ends_with('/') {
+        let tag = out[1..].split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or_default().to_string();
+        out.replace_range(end - 1..end + 1, &format!(">{l}</{tag}>"));
+    } else {
+        out.insert_str(end + 1, &l);
+    }
+}
+
 /// Turns the shapes read into shapes of their sheets.
 pub(super) fn resolve(list: Vec<RawShape>, st: &Styles, sheets: &mut [Sheet], forms: &mut HashMap<(usize, String), FormControl>) {
-    let mut read: Vec<(usize, Option<CellRef>, bool, odf_shape::Raw, Option<FormControl>)> = list
+    #[allow(clippy::type_complexity)]
+    let mut read: Vec<(usize, Option<CellRef>, bool, odf_shape::Raw, Option<FormControl>, String)> = list
         .into_iter()
         .filter_map(|s| {
             if s.node.local() != "control" {
-                return Some((s.sheet, s.cell, s.resize, odf_shape::read(&s.node, st)?, None));
+                let mac = s.node.find("event-listener").filter(|l| l.attr("script:event-name") == Some("dom:click")).map(|l| macro_of_href(l.attr("xlink:href").unwrap_or_default())).unwrap_or_default();
+                return Some((s.sheet, s.cell, s.resize, odf_shape::read(&s.node, st)?, None, mac));
             }
             // A form control: its box here, its settings in the forms.
             let c = forms.remove(&(s.sheet, s.node.attr("draw:control")?.to_string()))?;
@@ -64,11 +103,11 @@ pub(super) fn resolve(list: Vec<RawShape>, st: &Styles, sheets: &mut [Sheet], fo
             let len = |k: &str| n.attr(k).and_then(crate::parse_length_pt).filter(|v| v.is_finite()).unwrap_or(0.0);
             let z = n.attr("draw:z-index").and_then(|v| v.parse().ok()).unwrap_or(0);
             let raw = odf_shape::Raw { shape: apex_doc::Shape::new(apex_doc::ShapeKind::Rect), x: len("svg:x"), y: len("svg:y"), w: len("svg:width"), h: len("svg:height"), z, style: None };
-            Some((s.sheet, s.cell, s.resize, raw, Some(c)))
+            Some((s.sheet, s.cell, s.resize, raw, Some(c), String::new()))
         })
         .collect();
     read.sort_by_key(|r| (r.0, r.3.z));
-    for (si, cell, resize, raw, control) in read {
+    for (si, cell, resize, raw, control, mac) in read {
         let Some(sh) = sheets.get_mut(si) else { continue };
         if sh.shapes.len() >= MAX_SHAPES {
             continue;
@@ -84,6 +123,7 @@ pub(super) fn resolve(list: Vec<RawShape>, st: &Styles, sheets: &mut [Sheet], fo
         };
         s.set_pos(sh, (ox + x) * SX, (oy + y) * SY);
         s.control = control.map(Box::new);
+        s.macro_name = mac;
         s.sanitize();
         s.id = sh.shapes.len() as u32 + 1;
         sh.shapes.push(s);
@@ -135,11 +175,32 @@ pub(super) fn frames(sh: &Sheet, si: usize, w: &mut odf_shape::Writer, z: usize,
                     super::fmt_len(place.h)
                 );
             }
-            None => w.write(&mut out, &s.shape, &place),
+            None => {
+                w.write(&mut out, &s.shape, &place);
+                with_listener(&mut out, &s.macro_name);
+            }
         }
         match cell {
             Some(c) => cells.entry((c.row, c.col)).or_default().push_str(&out),
             None => shapes.push_str(&out),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn click_macros() {
+        assert_eq!(macro_of_href("vnd.sun.star.script:Standard.Module1.Main?language=Basic&location=document"), "Module1.Main");
+        assert_eq!(macro_of_href("vnd.sun.star.script:Main?language=Basic"), "Main");
+        assert_eq!(macro_of_href("https://example.com/x"), "");
+        let mut out = String::from(r#"<draw:custom-shape draw:name="a&gt;b"/>"#);
+        with_listener(&mut out, "Go");
+        assert!(out.starts_with(r#"<draw:custom-shape draw:name="a&gt;b"><office:event-listeners>"#) && out.ends_with("</office:event-listeners></draw:custom-shape>"), "{out}");
+        let mut out = String::from("<draw:rect><text:p/></draw:rect>");
+        with_listener(&mut out, "Module2.Go");
+        assert!(out.starts_with("<draw:rect><office:event-listeners>") && out.contains("Standard.Module2.Go?") && out.ends_with("<text:p/></draw:rect>"), "{out}");
     }
 }

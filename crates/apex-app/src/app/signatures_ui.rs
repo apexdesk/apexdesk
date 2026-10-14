@@ -10,6 +10,7 @@
 mod cert_source;
 mod extend;
 mod sign_doc;
+mod sign_macros;
 
 pub(super) use cert_source::module_option;
 
@@ -94,6 +95,7 @@ pub(super) struct SigUi {
     pending: Option<sign_doc::Pending>,
     save_first: Option<sign_doc::Pending>,
     extend: Option<extend::ExtendDlg>,
+    macros: Option<sign_macros::SignMacros>,
 }
 
 /// The signatures of the file at `path` (encrypted OOXML files are read
@@ -450,6 +452,7 @@ impl App {
         self.lose_dialog(ctx);
         self.sign_dialog(ctx);
         self.extend_dialog(ctx);
+        self.sign_macros_dialog(ctx);
         self.save_first_dialog(ctx);
         self.poll_signing(ctx);
         self.sign_saved_doc();

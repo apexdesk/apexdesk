@@ -23,6 +23,8 @@ aes = "0.8"
 sha1 = "0.10"
 sha2 = "0.10"
 cfb = "0.10"
+# The class ids of storages in compound files (the version cfb uses).
+uuid = { version = "1.26", default-features = false }
 getrandom = "0.3"
 # Password-protected .xls/.doc (RC4 keys) and .odt/.ods (ODF encryption:
 # PBKDF2, the old Blowfish and LibreOffice's newer Argon2id).

@@ -58,6 +58,14 @@ impl Workbook {
         }
     }
 
+    /// Whether `expr` calls a function of the macros that is volatile.
+    pub(crate) fn uses_volatile_udf(&self, expr: &Expr) -> bool {
+        let Some(u) = &self.udf else { return false };
+        let mut v = false;
+        expr.visit_unknown_calls(&mut |n| v |= u.has(n) && u.is_volatile(n));
+        v
+    }
+
     /// Whether `expr` uses a name whose formula is volatile (NOW, RAND...).
     pub(crate) fn uses_volatile_name(&self, sheet: usize, expr: &Expr) -> bool {
         if self.names.is_empty() {

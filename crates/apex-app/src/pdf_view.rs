@@ -18,6 +18,7 @@ use crate::common::{Fit, Shell};
 use crate::i18n::{tr, trf};
 
 mod annotate;
+mod dark;
 mod comments;
 pub mod compare_ui;
 pub mod engine;
@@ -110,6 +111,8 @@ pub enum Tool {
 struct Tex {
     rev: u64,
     width: u32,
+    /// Drawn for the dark workspace.
+    dark: bool,
     handle: TextureHandle,
 }
 
@@ -142,6 +145,9 @@ pub struct PdfView {
     pub layout: Layout,
     /// Turned by the view, in quarter turns clockwise.
     pub turn: u8,
+    /// Seeing the pages in their real colors for now, with the dark
+    /// workspace on (not kept).
+    pub see_light: bool,
     /// The page at the top of the view.
     pub cur: usize,
     /// Scroll to this page (and point from its top) on the next frame.
@@ -158,7 +164,7 @@ pub struct PdfView {
     tex: HashMap<usize, Tex>,
     /// Thumbnails, drawn smaller.
     thumbs: HashMap<usize, Tex>,
-    pending: HashSet<(usize, u32, u64)>,
+    pending: HashSet<(usize, u32, u64, bool)>,
     tx: Sender<engine::Done>,
     rx: Receiver<engine::Done>,
     text: text::TextLayer,
@@ -279,6 +285,7 @@ impl PdfView {
             fit: Some(Fit::PageWidth),
             layout: Layout::Continuous,
             turn: 0,
+            see_light: false,
             cur: 0,
             goto: None,
             view_top: None,
@@ -430,6 +437,17 @@ impl PdfView {
         self.goto = Some((self.cur, top));
     }
 
+    /// Whether the pages are drawn dark now: the dark workspace is on and
+    /// the real colors are not asked for.
+    pub(crate) fn dark(&self) -> bool {
+        crate::theme::dark_canvas() && !self.see_light
+    }
+
+    /// The color of the paper under a page (what shows while it is drawn).
+    pub(crate) fn paper(&self) -> egui::Color32 {
+        if self.dark() { crate::theme::dark_color(egui::Color32::WHITE) } else { egui::Color32::WHITE }
+    }
+
     /// Takes the pages the drawing thread finished.
     fn receive(&mut self, ctx: &egui::Context) {
         // The drawing thread skips pages of outdated revisions without an
@@ -454,7 +472,7 @@ impl PdfView {
     /// Takes one page the drawing thread finished.
     fn take(&mut self, ctx: &egui::Context, d: engine::Done) {
         let thumb = d.width <= pages::THUMB_PX;
-        self.pending.remove(&(d.page, d.width, d.rev));
+        self.pending.remove(&(d.page, d.width, d.rev, d.dark));
         if d.width == 0 || d.rgba.is_empty() {
             return;
         }
@@ -463,7 +481,7 @@ impl PdfView {
         let (size, rgba) = fit_side(d.size, d.rgba, side);
         let img = egui::ColorImage::from_rgba_unmultiplied(size, &rgba);
         let handle = ctx.load_texture(format!("pdf-{}-{}-{}", self.id, d.page, thumb), img, egui::TextureOptions::LINEAR);
-        let t = Tex { rev: d.rev, width: d.width, handle };
+        let t = Tex { rev: d.rev, width: d.width, dark: d.dark, handle };
         if thumb {
             self.thumbs.insert(d.page, t);
         } else {
@@ -476,7 +494,8 @@ impl PdfView {
     fn want(&mut self, ctx: &egui::Context, i: usize, width: u32) -> bool {
         let rev = self.doc.revision;
         let have = if width <= pages::THUMB_PX { self.thumbs.get(&i) } else { self.tex.get(&i) };
-        if have.is_some_and(|t| t.rev == rev && t.width == width) || self.pending.contains(&(i, width, rev)) {
+        let dark = self.dark();
+        if have.is_some_and(|t| t.rev == rev && t.width == width && t.dark == dark) || self.pending.contains(&(i, width, rev, dark)) {
             return true;
         }
         // Not too many at once: the rest next frame.
@@ -484,9 +503,9 @@ impl PdfView {
             return true;
         }
         let bytes = self.bytes();
-        let job = engine::Job { doc: self.id, rev, bytes, password: self.password.clone(), page: i, width, annots: true, reply: self.tx.clone(), ctx: Some(ctx.clone()) };
+        let job = engine::Job { doc: self.id, rev, bytes, password: self.password.clone(), page: i, width, annots: true, dark, reply: self.tx.clone(), ctx: Some(ctx.clone()) };
         if engine::request(job) {
-            self.pending.insert((i, width, rev));
+            self.pending.insert((i, width, rev, dark));
             // Tests take it on the next frame (see `receive`).
             if cfg!(test) {
                 ctx.request_repaint();

@@ -3,6 +3,7 @@
 //! the VBA editor does: `a = b` at the start of a statement assigns and
 //! elsewhere compares, and `Foo (1) + 2` calls Foo with `(1) + 2`.
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::ast::*;
@@ -22,6 +23,10 @@ struct Parser<'a> {
     /// Operators read in the current statement (long chains make deep
     /// trees too).
     ops: usize,
+    /// The project's `Enum` names, lowercase: `As` one of them is a Long.
+    /// Its module names are here too, as `"module:" + name`: a class
+    /// named like Excel's enumerations stays a class.
+    enums: Rc<HashSet<String>>,
 }
 
 /// Deepest nesting of blocks and expressions read.
@@ -33,8 +38,53 @@ const MAX_OPS: usize = 1024;
 /// out or not).
 pub fn parse_module(name: &str, kind: ModuleKind, code: &str) -> R<Module> {
     let toks = tokenize(code, name)?;
-    let mut p = Parser { toks, i: 0, module: name, single_if: 0, depth: 0, ops: 0 };
+    let enums = Rc::new(enum_names(&toks).collect());
+    parse_tokens(name, kind, toks, enums)
+}
+
+/// A module of a project whose `Enum` names are `enums`.
+pub fn parse_tokens(name: &str, kind: ModuleKind, toks: Vec<Token>, enums: Rc<HashSet<String>>) -> R<Module> {
+    let mut p = Parser { toks, i: 0, module: name, single_if: 0, depth: 0, ops: 0, enums };
     p.module_body(name, kind)
+}
+
+/// The names declared by `[Public|Private] Enum Name` lines, lowercase.
+pub fn enum_names(toks: &[Token]) -> impl Iterator<Item = String> + '_ {
+    toks.windows(2).enumerate().filter_map(|(i, w)| {
+        let starts = i == 0
+            || matches!(&toks[i - 1].tok, Tok::Eol | Tok::Colon)
+            || matches!(&toks[i - 1].tok, Tok::Word(m) if (m.eq_ignore_ascii_case("public") || m.eq_ignore_ascii_case("private")) && (i == 1 || matches!(toks[i - 2].tok, Tok::Eol | Tok::Colon)));
+        match (&w[0].tok, &w[1].tok) {
+            (Tok::Word(e), Tok::Word(n)) if starts && e.eq_ignore_ascii_case("enum") => Some(n.to_ascii_lowercase()),
+            _ => None,
+        }
+    })
+}
+
+/// The enumerations of VBA, Excel and Office used as types
+/// (`Dim r As VbMsgBoxResult`, `As XlCalculation`): Longs.
+fn builtin_enum(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    let vb = ["vbmsgboxresult", "vbmsgboxstyle", "vbvartype", "vbcomparemethod", "vbdayofweek", "vbfirstweekofyear", "vbtristate", "vbfileattribute", "vbappwinstyle", "vbstrconv", "vbcalltype", "vbdatetimeformat", "vbquerycloseconstants"];
+    let upper = |i: usize| name.chars().nth(i).is_some_and(|c| c.is_ascii_uppercase());
+    vb.contains(&n.as_str()) || (n.starts_with("xl") && upper(2)) || (n.starts_with("mso") && upper(3)) || (n.starts_with("wd") && upper(2))
+}
+
+/// One expression (a breakpoint's condition, a watch).
+pub fn parse_expression(module: &str, text: &str) -> R<Expr> {
+    let toks = tokenize(text, module)?;
+    let mut p = Parser { toks, i: 0, module, single_if: 0, depth: 0, ops: 0, enums: Rc::default() };
+    while matches!(p.peek(), Tok::Eol) {
+        p.i += 1;
+    }
+    let e = p.expr()?;
+    while matches!(p.peek(), Tok::Eol) {
+        p.i += 1;
+    }
+    if !matches!(p.peek(), Tok::Eof) {
+        return Err(p.err("Expected: end of expression"));
+    }
+    Ok(e)
 }
 
 fn lower(s: &str) -> String {
@@ -130,23 +180,39 @@ impl Parser<'_> {
 
     /// A type name after `As` (`Long`, `Excel.Range`, `String * 10`).
     fn type_name(&mut self) -> R<(VType, String)> {
+        Ok(self.type_len()?.0)
+    }
+
+    /// A type after `As`, with the length of a `String * n`.
+    fn type_len(&mut self) -> R<((VType, String), Option<u32>)> {
         let mut name = self.word()?;
         while self.eat_sym(".") {
             name = self.word()?;
         }
+        let mut fixed = None;
         if self.eat_sym("*") {
             match self.peek() {
-                Tok::Int(_) | Tok::Word(_) => self.i += 1,
+                Tok::Int(n) => {
+                    // VBA's limit for a fixed-length string.
+                    fixed = Some(u32::try_from(*n).ok().filter(|n| (1..=65_526).contains(n)).ok_or_else(|| self.err("Invalid fixed-length string length"))?);
+                    self.i += 1;
+                }
+                Tok::Word(_) => self.i += 1,
                 _ => return Err(self.err("Expected: length")),
             }
         }
-        Ok((VType::parse(&name), name))
+        let mut ty = VType::parse(&name);
+        let low = name.to_ascii_lowercase();
+        if ty == VType::Object && (self.enums.contains(&low) || builtin_enum(&name) && !self.enums.contains(&format!("module:{low}"))) {
+            ty = VType::Long;
+        }
+        Ok(((ty, name), fixed))
     }
 
     // --- module --------------------------------------------------------------
 
     fn module_body(&mut self, name: &str, kind: ModuleKind) -> R<Module> {
-        let mut m = Module { name: name.to_string(), kind, explicit: false, compare_text: false, base: 0, vars: Vec::new(), consts: Vec::new(), procs: Vec::new(), declares: Vec::new() };
+        let mut m = Module { name: name.to_string(), kind, explicit: false, compare_text: false, base: 0, vars: Vec::new(), consts: Vec::new(), procs: Vec::new(), declares: Vec::new(), types: Vec::new(), implements: Vec::new() };
         loop {
             self.skip_eols();
             match self.peek() {
@@ -206,8 +272,18 @@ impl Parser<'_> {
                     if !(self.eat_word("sub") || self.eat_word("function")) {
                         return Err(self.err("Expected: Sub or Function"));
                     }
-                    let name = self.word()?;
-                    m.declares.push(lower(&name));
+                    let name = lower(&self.word()?);
+                    let text = |p: &mut Self, w: &str| {
+                        if !p.eat_word(w) {
+                            return None;
+                        }
+                        let Tok::Str(s) = p.peek().clone() else { return None };
+                        p.i += 1;
+                        Some(s.to_ascii_lowercase())
+                    };
+                    let lib = text(self, "lib").unwrap_or_default();
+                    let api = text(self, "alias").unwrap_or_else(|| name.clone());
+                    m.declares.push(Declare { name, lib, api });
                     self.skip_line();
                 }
                 "const" => {
@@ -244,17 +320,33 @@ impl Parser<'_> {
                     }
                 }
                 "type" => {
-                    // User-defined types are not supported: skipped.
+                    self.i += 1;
+                    let name = self.word()?;
+                    self.end_stmt()?;
+                    let mut fields = Vec::new();
                     loop {
-                        self.skip_line();
                         self.skip_eols();
-                        if matches!(self.peek(), Tok::Eof) || self.is_word("end") && self.is_word_at(1, "type") {
-                            self.skip_line();
+                        if self.is_word("end") && self.is_word_at(1, "type") {
+                            self.i += 2;
                             break;
                         }
+                        if matches!(self.peek(), Tok::Eof) {
+                            return Err(self.err("Expected: End Type"));
+                        }
+                        fields.extend(self.dim_list()?);
+                        self.end_stmt()?;
                     }
+                    if fields.is_empty() {
+                        return Err(self.err("User-defined type without elements"));
+                    }
+                    m.types.push(TypeDef { name, fields, public: public.unwrap_or(true) });
                 }
-                "implements" | "event" | "attribute" | "version" | "begin" | "deflng" | "defint" | "defstr" | "defbool" | "defdbl" | "defvar" | "defobj" | "defdate" | "defcur" | "defsng" | "defbyte" => self.skip_line(),
+                "implements" => {
+                    self.i += 1;
+                    let n = self.word()?;
+                    m.implements.push(lower(&n));
+                }
+                "event" | "attribute" | "version" | "begin" | "deflng" | "defint" | "defstr" | "defbool" | "defdbl" | "defvar" | "defobj" | "defdate" | "defcur" | "defsng" | "defbyte" => self.skip_line(),
                 "dim" => {
                     self.i += 1;
                     for v in self.dim_list()? {
@@ -302,11 +394,17 @@ impl Parser<'_> {
             }
         }
         let mut ret = VType::Variant;
+        let mut ret_name = None;
         if self.eat_word("as") {
-            ret = self.type_name()?.0;
+            let (t, n) = self.type_name()?;
+            ret = t;
+            if t == VType::Object {
+                ret_name = Some(lower(&n));
+            }
             if self.eat_sym("(") {
                 self.expect_sym(")")?;
                 ret = VType::Variant;
+                ret_name = None;
             }
         }
         self.end_stmt()?;
@@ -317,7 +415,7 @@ impl Parser<'_> {
         };
         let body = self.block(&[&["end", end]])?;
         self.i += 2;
-        Ok(Proc { name, kind, public, params, ret, body, line, is_static })
+        Ok(Proc { name, kind, public, params, ret, ret_name, body, line, is_static })
     }
 
     fn param(&mut self) -> R<Param> {
@@ -386,22 +484,36 @@ impl Parser<'_> {
     }
 
     fn dim_list(&mut self) -> R<Vec<DimVar>> {
+        self.decl_list(false)
+    }
+
+    /// Variables of a Dim, or of a ReDim (`redim`: fields of a variable too).
+    fn decl_list(&mut self, redim: bool) -> R<Vec<DimVar>> {
         let mut out = Vec::new();
         loop {
-            self.eat_word("withevents");
+            let withevents = self.eat_word("withevents");
             let name = lower(&self.word()?);
+            let mut fields = Vec::new();
+            while redim && self.eat_sym(".") {
+                fields.push(lower(&self.word()?));
+            }
             let bounds = if self.eat_sym("(") { Some(self.bounds()?) } else { None };
             let mut ty = VType::Variant;
             let mut new = None;
+            let mut ty_name = None;
+            let mut fixed = None;
             if self.eat_word("as") {
                 let is_new = self.eat_word("new");
-                let (t, n) = self.type_name()?;
+                let ((t, n), len) = self.type_len()?;
                 ty = t;
+                fixed = len.filter(|_| t == VType::String);
                 if is_new {
                     new = Some(lower(&n));
+                } else if t == VType::Object {
+                    ty_name = Some(lower(&n));
                 }
             }
-            out.push(DimVar { name, bounds, ty, new });
+            out.push(DimVar { name, bounds, ty, new, ty_name, fixed, fields, withevents });
             if !self.eat_sym(",") {
                 break;
             }
@@ -504,7 +616,7 @@ impl Parser<'_> {
             "redim" => {
                 self.i += 1;
                 let preserve = self.eat_word("preserve");
-                Ok(Stmt::ReDim { preserve, vars: self.dim_list()? })
+                Ok(Stmt::ReDim { preserve, vars: self.decl_list(true)? })
             }
             "const" => {
                 self.i += 1;
@@ -603,6 +715,38 @@ impl Parser<'_> {
                     _ => Ok(Stmt::Resume(ResumeKind::Same)),
                 }
             }
+            "raiseevent" => {
+                self.i += 1;
+                let name = lower(&self.word()?);
+                let args = if self.eat_sym("(") {
+                    let a = self.arg_list(Some(")"))?;
+                    self.expect_sym(")")?;
+                    a
+                } else {
+                    Vec::new()
+                };
+                Ok(Stmt::RaiseEvent(name, args))
+            }
+            "gosub" => {
+                self.i += 1;
+                match self.peek().clone() {
+                    Tok::Int(n) => {
+                        self.i += 1;
+                        Ok(Stmt::GoSub(n.to_string()))
+                    }
+                    _ => Ok(Stmt::GoSub(lower(&self.word()?))),
+                }
+            }
+            "return" => {
+                self.i += 1;
+                Ok(Stmt::Return)
+            }
+            "lset" | "rset" => {
+                self.i += 1;
+                let target = self.postfix()?;
+                self.expect_sym("=")?;
+                Ok(Stmt::Align { target, value: self.expr()?, right: w == "rset" })
+            }
             "goto" => {
                 self.i += 1;
                 match self.peek().clone() {
@@ -626,7 +770,7 @@ impl Parser<'_> {
             }
             "stop" if matches!(self.peek_at(1), Tok::Eol | Tok::Colon | Tok::Eof) => {
                 self.i += 1;
-                Ok(Stmt::End)
+                Ok(Stmt::Stop)
             }
             "erase" => {
                 self.i += 1;
@@ -636,38 +780,202 @@ impl Parser<'_> {
                 }
                 Ok(Stmt::Erase(list))
             }
+            "debug" if next_is(self, ".") && self.is_word_at(2, "assert") => {
+                self.i += 3;
+                Ok(Stmt::Assert(self.expr()?))
+            }
             "debug" if next_is(self, ".") && self.is_word_at(2, "print") => {
                 self.i += 3;
-                let mut parts = Vec::new();
-                let mut open = false;
-                while !self.at_end() {
-                    if self.eat_sym(";") || self.eat_sym(",") {
-                        open = true;
-                        continue;
-                    }
-                    parts.push(self.expr()?);
-                    open = false;
-                }
-                Ok(Stmt::Print(parts, open))
+                Ok(Stmt::Print(self.print_items()?))
             }
-            "open" | "kill" | "mkdir" | "rmdir" | "chdir" | "chdrive" | "filecopy" | "setattr" if !assignment_like => {
-                self.skip_stmt();
-                Ok(Stmt::Unsupported("file access".into()))
-            }
-            "close" | "print" | "write" | "input" | "get" | "put" | "line" | "seek" | "lock" | "unlock" | "width" if matches!(self.peek_at(1), Tok::Sym("#")) || w == "line" && self.is_word_at(1, "input") || w == "close" && matches!(self.peek_at(1), Tok::Eol | Tok::Eof) => {
-                self.skip_stmt();
-                Ok(Stmt::Unsupported("file access".into()))
-            }
-            "name" if matches!(self.peek_at(1), Tok::Str(_)) => {
-                self.skip_stmt();
-                Ok(Stmt::Unsupported("file access".into()))
-            }
+            "open" | "close" | "reset" | "print" | "write" | "input" | "line" | "get" | "put" | "seek" | "lock" | "unlock" | "width" | "name" if self.is_file_stmt(&w, assignment_like) => self.file_stmt(&w),
             "attribute" => {
                 self.skip_line();
                 Ok(Stmt::Label(String::new()))
             }
             _ => self.expr_stmt(),
         }
+    }
+
+    /// Whether the statement starting with `w` is a file statement.
+    fn is_file_stmt(&mut self, w: &str, assignment_like: bool) -> bool {
+        let hash = matches!(self.peek_at(1), Tok::Sym("#"));
+        match w {
+            "print" | "write" | "input" => hash,
+            "line" => self.is_word_at(1, "input"),
+            // `Name a As b`, not a call of a procedure `Name`.
+            "name" => !assignment_like && self.name_stmt_ahead(),
+            _ => !assignment_like,
+        }
+    }
+
+    /// The file statements (`Open`, `Print #`...): apart from `stmt`, whose
+    /// frame nests deep.
+    #[inline(never)]
+    fn file_stmt(&mut self, w: &str) -> R<Stmt> {
+        let f = match w {
+            "open" => return self.file_open(),
+            "close" | "reset" => {
+                self.i += 1;
+                let mut nums = Vec::new();
+                while !self.at_end() {
+                    if !self.eat_sym(",") {
+                        nums.push(self.file_num()?);
+                    }
+                }
+                FileStmt::Close(nums)
+            }
+            "print" => {
+                self.i += 1;
+                let num = self.file_num()?;
+                let mut items = Vec::new();
+                if self.eat_sym(",") {
+                    items = self.print_items()?;
+                }
+                FileStmt::Print { num, items }
+            }
+            "write" => {
+                self.i += 1;
+                let num = self.file_num()?;
+                let (mut items, mut open) = (Vec::new(), false);
+                if self.eat_sym(",") {
+                    while !self.at_end() {
+                        if self.eat_sym(",") || self.eat_sym(";") {
+                            open = true;
+                            continue;
+                        }
+                        items.push(self.expr()?);
+                        open = false;
+                    }
+                }
+                FileStmt::Write { num, items, open }
+            }
+            "input" => {
+                self.i += 1;
+                let num = self.file_num()?;
+                let mut vars = Vec::new();
+                while self.eat_sym(",") {
+                    vars.push(self.postfix()?);
+                }
+                if vars.is_empty() {
+                    return Err(self.err("Expected: ,"));
+                }
+                FileStmt::Input { num, vars }
+            }
+            "line" => {
+                self.i += 2;
+                let num = self.file_num()?;
+                self.expect_sym(",")?;
+                FileStmt::LineInput { num, var: self.postfix()? }
+            }
+            "get" | "put" => {
+                self.i += 1;
+                let num = self.file_num()?;
+                self.expect_sym(",")?;
+                let pos = if self.is_sym(",") { None } else { Some(self.expr()?) };
+                self.expect_sym(",")?;
+                FileStmt::Get { num, pos, var: self.postfix()?, put: w == "put" }
+            }
+            "seek" => {
+                self.i += 1;
+                let num = self.file_num()?;
+                self.expect_sym(",")?;
+                FileStmt::Seek { num, pos: self.expr()? }
+            }
+            "name" => {
+                self.i += 1;
+                let from = self.expr()?;
+                self.expect_word("as")?;
+                FileStmt::Name { from, to: self.expr()? }
+            }
+            // Lock, Unlock, Width #.
+            _ => {
+                self.skip_stmt();
+                FileStmt::Nothing
+            }
+        };
+        Ok(Stmt::File(f))
+    }
+
+    /// `[#]n`: a file's number.
+    fn file_num(&mut self) -> R<Expr> {
+        self.eat_sym("#");
+        self.expr()
+    }
+
+    /// `Open path For mode [Access Read|Write|Read Write] [Shared|Lock ...]
+    /// As [#]n [Len = len]`.
+    fn file_open(&mut self) -> R<Stmt> {
+        self.i += 1;
+        let path = self.expr()?;
+        self.expect_word("for")?;
+        let mode = match lower(&self.word()?).as_str() {
+            "input" => FileMode::Input,
+            "output" => FileMode::Output,
+            "append" => FileMode::Append,
+            "binary" => FileMode::Binary,
+            "random" => FileMode::Random,
+            _ => return Err(self.err("Expected: Input, Output, Append, Binary or Random")),
+        };
+        let (mut read, mut write) = (false, false);
+        if self.eat_word("access") {
+            read = self.eat_word("read");
+            write = self.eat_word("write");
+            if !read && !write {
+                return Err(self.err("Expected: Read or Write"));
+            }
+        }
+        if !self.eat_word("shared") && self.eat_word("lock") {
+            let read = self.eat_word("read");
+            if !self.eat_word("write") && !read {
+                return Err(self.err("Expected: Read or Write"));
+            }
+        }
+        self.expect_word("as")?;
+        let num = self.file_num()?;
+        let len = if self.eat_word("len") {
+            self.expect_sym("=")?;
+            Some(self.expr()?)
+        } else {
+            None
+        };
+        Ok(Stmt::File(FileStmt::Open { path, mode, read, write, num, len }))
+    }
+
+    /// `Print #n, ...`'s items.
+    fn print_items(&mut self) -> R<Vec<PrintItem>> {
+        let mut items = Vec::new();
+        while !self.at_end() {
+            if self.eat_sym(",") {
+                items.push(PrintItem::Comma);
+            } else if self.eat_sym(";") {
+                items.push(PrintItem::Semi);
+            } else if self.is_word_at(0, "spc") && matches!(self.peek_at(1), Tok::Sym("(")) {
+                self.i += 2;
+                items.push(PrintItem::Spc(self.expr()?));
+                self.expect_sym(")")?;
+            } else if self.is_word_at(0, "tab") {
+                self.i += 1;
+                if self.eat_sym("(") {
+                    items.push(PrintItem::Tab(Some(self.expr()?)));
+                    self.expect_sym(")")?;
+                } else {
+                    items.push(PrintItem::Tab(None));
+                }
+            } else {
+                items.push(PrintItem::Expr(self.expr()?));
+            }
+        }
+        Ok(items)
+    }
+
+    /// Whether the statement is `Name from As to` (not a call of `Name`).
+    fn name_stmt_ahead(&mut self) -> bool {
+        let (at, ops) = (self.i, self.ops);
+        self.i += 1;
+        let ok = self.expr().is_ok() && self.is_word_at(0, "as");
+        (self.i, self.ops) = (at, ops);
+        ok
     }
 
     fn skip_stmt(&mut self) {
@@ -1020,6 +1328,8 @@ impl Parser<'_> {
                 Expr::Paren(Box::new(e))
             }
             Tok::Sym(".") => Expr::WithMember(lower(&self.word()?)),
+            // `Input(n, #1)`, `EOF(#1)`: a file's number.
+            Tok::Sym("#") if !matches!(self.peek(), Tok::Sym("#")) => return self.primary(),
             Tok::Word(w) => match lower(&w).as_str() {
                 "true" => Expr::Lit(Value::Bool(true)),
                 "false" => Expr::Lit(Value::Bool(false)),
@@ -1102,13 +1412,13 @@ mod tests {
             s => panic!("{s:?}"),
         }
         assert!(matches!(body[9].stmt, Stmt::Label(ref l) if l == "fin"));
-        assert!(matches!(body[10].stmt, Stmt::Print(ref p, false) if p.len() == 2));
+        assert!(matches!(body[10].stmt, Stmt::Print(ref p) if p.len() == 3));
         assert_eq!(body[1].line, 3);
     }
 
     #[test]
     fn precedence() {
-        let mut p = Parser { toks: tokenize("-2 ^ 2 + 3 * 4 = 10 And Not x", "M").unwrap(), i: 0, module: "M", single_if: 0, depth: 0, ops: 0 };
+        let mut p = Parser { toks: tokenize("-2 ^ 2 + 3 * 4 = 10 And Not x", "M").unwrap(), i: 0, module: "M", single_if: 0, depth: 0, ops: 0, enums: Rc::default() };
         let e = p.expr().unwrap();
         // ((-(2^2) + (3*4)) = 10) And (Not x)
         let Expr::Bin(BinOp::And, l, r) = e else { panic!() };

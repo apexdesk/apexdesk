@@ -949,7 +949,7 @@ mod tests {
 
     /// Frames of `v` in a 1000×800 window, the first with `events`.
     fn frames(v: &mut DocView, ctx: &egui::Context, events: Vec<Event>) {
-        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: false, file_name: "n".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None };
+        let mut shell = crate::common::Shell { cmd: None, show_formula_bar: false, file_name: "n".into(), fullscreen: false, dark: None, others: Vec::new(), books: Vec::new(), side: None, recording: None };
         let mut events = Some(events);
         for _ in 0..3 {
             let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 800.0))), events: events.take().unwrap_or_default(), ..Default::default() };

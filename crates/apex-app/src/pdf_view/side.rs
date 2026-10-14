@@ -41,7 +41,7 @@ impl PdfView {
                 let (outer, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click_and_drag());
                 let rect = egui::Rect::from_center_size(egui::pos2(outer.center().x, outer.min.y + 4.0 + h / 2.0), vec2(s[0] * z, s[1] * z));
                 let painter = ui.painter_at(outer);
-                painter.rect_filled(rect, 0.0, Color32::WHITE);
+                painter.rect_filled(rect, 0.0, self.paper());
                 let map = self.map_of(i, rect, z);
                 if engine::available() {
                     self.want(&ctx, i, THUMB_PX);
@@ -54,7 +54,7 @@ impl PdfView {
                 let on = i == self.cur || self.page_sel.contains(&i);
                 if self.page_sel.contains(&i) {
                     painter.rect_filled(outer.shrink(2.0), 4.0, crate::theme::ACCENT.gamma_multiply(0.18));
-                    painter.rect_filled(rect, 0.0, Color32::WHITE);
+                    painter.rect_filled(rect, 0.0, self.paper());
                     if engine::available()
                         && let Some(t) = self.thumbs.get(&i)
                     {

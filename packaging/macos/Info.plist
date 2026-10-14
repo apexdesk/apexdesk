@@ -15,65 +15,90 @@
 	<key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key><string>11.0</string>
 	<key>NSHighResolutionCapable</key><true/>
+	<!-- Office files only, never code or configuration ones (no
+	     public.plain-text: source code conforms to it). Types macOS may not
+	     know without Office or LibreOffice installed are imported below. -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key><string>Spreadsheet</string>
 			<key>CFBundleTypeRole</key><string>Editor</string>
-			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSHandlerRank</key><string>Default</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>org.openxmlformats.spreadsheetml.sheet</string>
+				<string>org.openxmlformats.spreadsheetml.sheet.macroenabled</string>
+				<string>org.openxmlformats.spreadsheetml.template</string>
+				<string>org.openxmlformats.spreadsheetml.template.macroenabled</string>
+				<string>com.microsoft.excel.sheet.binary.macroenabled</string>
+				<string>com.microsoft.excel.xls</string>
 				<string>org.oasis-open.opendocument.spreadsheet</string>
+				<string>org.oasis-open.opendocument.spreadsheet-template</string>
 				<string>public.comma-separated-values-text</string>
 				<string>public.tab-separated-values-text</string>
 			</array>
 		</dict>
 		<dict>
-			<key>CFBundleTypeName</key><string>Flat XML spreadsheet</string>
+			<key>CFBundleTypeName</key><string>Other spreadsheet</string>
 			<key>CFBundleTypeRole</key><string>Editor</string>
-			<key>LSHandlerRank</key><string>Alternate</string>
-			<key>CFBundleTypeExtensions</key><array><string>fods</string></array>
-			<key>CFBundleTypeMIMETypes</key><array><string>application/vnd.oasis.opendocument.spreadsheet-flat-xml</string></array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeName</key><string>Flat XML document</string>
-			<key>CFBundleTypeRole</key><string>Editor</string>
-			<key>LSHandlerRank</key><string>Alternate</string>
-			<key>CFBundleTypeExtensions</key><array><string>fodt</string></array>
-			<key>CFBundleTypeMIMETypes</key><array><string>application/vnd.oasis.opendocument.text-flat-xml</string></array>
+			<key>LSHandlerRank</key><string>Default</string>
+			<key>CFBundleTypeExtensions</key><array><string>fods</string><string>et</string><string>ett</string><string>xlt</string></array>
+			<key>CFBundleTypeMIMETypes</key><array><string>application/vnd.oasis.opendocument.spreadsheet-flat-xml</string><string>application/wps-office.et</string></array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key><string>Document</string>
 			<key>CFBundleTypeRole</key><string>Editor</string>
-			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSHandlerRank</key><string>Default</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>org.openxmlformats.wordprocessingml.document</string>
+				<string>org.openxmlformats.wordprocessingml.document.macroenabled</string>
+				<string>org.openxmlformats.wordprocessingml.template</string>
+				<string>org.openxmlformats.wordprocessingml.template.macroenabled</string>
+				<string>com.microsoft.word.doc</string>
 				<string>org.oasis-open.opendocument.text</string>
+				<string>org.oasis-open.opendocument.text-template</string>
 				<string>public.rtf</string>
 				<string>net.daringfireball.markdown</string>
-				<string>public.plain-text</string>
 			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key><string>Other document</string>
+			<key>CFBundleTypeRole</key><string>Editor</string>
+			<key>LSHandlerRank</key><string>Default</string>
+			<key>CFBundleTypeExtensions</key><array><string>fodt</string><string>wps</string><string>wpt</string><string>dot</string></array>
+			<key>CFBundleTypeMIMETypes</key><array><string>application/vnd.oasis.opendocument.text-flat-xml</string><string>application/wps-office.wps</string></array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key><string>Presentation</string>
 			<key>CFBundleTypeRole</key><string>Editor</string>
-			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSHandlerRank</key><string>Default</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>org.openxmlformats.presentationml.presentation</string>
+				<string>org.openxmlformats.presentationml.presentation.macroenabled</string>
+				<string>org.openxmlformats.presentationml.template</string>
+				<string>org.openxmlformats.presentationml.template.macroenabled</string>
 				<string>org.openxmlformats.presentationml.slideshow</string>
+				<string>org.openxmlformats.presentationml.slideshow.macroenabled</string>
+				<string>com.microsoft.powerpoint.ppt</string>
 				<string>org.oasis-open.opendocument.presentation</string>
+				<string>org.oasis-open.opendocument.presentation-template</string>
 			</array>
 		</dict>
 		<dict>
-			<key>CFBundleTypeName</key><string>PowerPoint 97-2003 presentation</string>
-			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>CFBundleTypeName</key><string>Other presentation</string>
+			<key>CFBundleTypeRole</key><string>Editor</string>
+			<key>LSHandlerRank</key><string>Default</string>
+			<key>CFBundleTypeExtensions</key><array><string>pps</string><string>pot</string></array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key><string>PDF document</string>
+			<key>CFBundleTypeRole</key><string>Editor</string>
 			<key>LSHandlerRank</key><string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.microsoft.powerpoint.ppt</string>
+				<string>com.adobe.pdf</string>
 			</array>
 		</dict>
 		<dict>
@@ -96,6 +121,159 @@
 			<dict>
 				<key>public.filename-extension</key><array><string>apexnote</string></array>
 				<key>public.mime-type</key><string>application/x-apexnote</string>
+			</dict>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.openxmlformats.spreadsheetml.sheet.macroenabled</string>
+			<key>UTTypeDescription</key><string>Excel macro-enabled workbook</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>xlsm</string></array>
+				<key>public.mime-type</key><string>application/vnd.ms-excel.sheet.macroEnabled.12</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.openxmlformats.spreadsheetml.template.macroenabled</string>
+			<key>UTTypeDescription</key><string>Excel macro-enabled template</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>xltm</string></array>
+				<key>public.mime-type</key><string>application/vnd.ms-excel.template.macroEnabled.12</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.microsoft.excel.sheet.binary.macroenabled</string>
+			<key>UTTypeDescription</key><string>Excel binary workbook</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>xlsb</string></array>
+				<key>public.mime-type</key><string>application/vnd.ms-excel.sheet.binary.macroEnabled.12</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.openxmlformats.wordprocessingml.document.macroenabled</string>
+			<key>UTTypeDescription</key><string>Word macro-enabled document</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>docm</string></array>
+				<key>public.mime-type</key><string>application/vnd.ms-word.document.macroEnabled.12</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.openxmlformats.wordprocessingml.template.macroenabled</string>
+			<key>UTTypeDescription</key><string>Word macro-enabled template</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>dotm</string></array>
+				<key>public.mime-type</key><string>application/vnd.ms-word.template.macroEnabled.12</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.openxmlformats.presentationml.presentation.macroenabled</string>
+			<key>UTTypeDescription</key><string>PowerPoint macro-enabled presentation</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>pptm</string></array>
+				<key>public.mime-type</key><string>application/vnd.ms-powerpoint.presentation.macroEnabled.12</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.openxmlformats.presentationml.template.macroenabled</string>
+			<key>UTTypeDescription</key><string>PowerPoint macro-enabled template</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>potm</string></array>
+				<key>public.mime-type</key><string>application/vnd.ms-powerpoint.template.macroEnabled.12</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.openxmlformats.presentationml.slideshow.macroenabled</string>
+			<key>UTTypeDescription</key><string>PowerPoint macro-enabled show</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>ppsm</string></array>
+				<key>public.mime-type</key><string>application/vnd.ms-powerpoint.slideshow.macroEnabled.12</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.oasis-open.opendocument.spreadsheet</string>
+			<key>UTTypeDescription</key><string>OpenDocument spreadsheet</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>ods</string></array>
+				<key>public.mime-type</key><string>application/vnd.oasis.opendocument.spreadsheet</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.oasis-open.opendocument.spreadsheet-template</string>
+			<key>UTTypeDescription</key><string>OpenDocument spreadsheet template</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>ots</string></array>
+				<key>public.mime-type</key><string>application/vnd.oasis.opendocument.spreadsheet-template</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.oasis-open.opendocument.text</string>
+			<key>UTTypeDescription</key><string>OpenDocument text</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>odt</string></array>
+				<key>public.mime-type</key><string>application/vnd.oasis.opendocument.text</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.oasis-open.opendocument.text-template</string>
+			<key>UTTypeDescription</key><string>OpenDocument text template</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>ott</string></array>
+				<key>public.mime-type</key><string>application/vnd.oasis.opendocument.text-template</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.oasis-open.opendocument.presentation</string>
+			<key>UTTypeDescription</key><string>OpenDocument presentation</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>odp</string></array>
+				<key>public.mime-type</key><string>application/vnd.oasis.opendocument.presentation</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>org.oasis-open.opendocument.presentation-template</string>
+			<key>UTTypeDescription</key><string>OpenDocument presentation template</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.composite-content</string><string>public.zip-archive</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>otp</string></array>
+				<key>public.mime-type</key><string>application/vnd.oasis.opendocument.presentation-template</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key><string>net.daringfireball.markdown</string>
+			<key>UTTypeDescription</key><string>Markdown document</string>
+			<key>UTTypeConformsTo</key><array><string>public.plain-text</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>md</string><string>markdown</string></array>
+				<key>public.mime-type</key><string>text/markdown</string>
 			</dict>
 		</dict>
 	</array>

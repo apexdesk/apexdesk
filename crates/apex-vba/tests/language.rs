@@ -9,21 +9,21 @@ use common::*;
 fn arithmetic_and_types() {
     assert_eq!(
         body("Debug.Print 1 + 2 * 3\nDebug.Print 7 \\ 2, 7 Mod 3, 2 ^ 10\nDebug.Print 10 / 4\nDebug.Print -2 ^ 2\nDebug.Print \"a\" & 1 & True\nDebug.Print \"2\" + 3\nDebug.Print TypeName(1), TypeName(100000), TypeName(1.5), TypeName(\"x\")"),
-        ["7", "3 1 1024", "2.5", "-4", "a1True", "5", "Integer Long Double String"]
+        [" 7 ", " 3             1             1024 ", " 2.5 ", "-4 ", "a1True", " 5 ", "Integer       Long          Double        String"]
     );
-    assert_eq!(body("Dim i As Integer\ni = 2.5\nDebug.Print i\ni = 3.5\nDebug.Print i\nDim s As String\ns = 12\nDebug.Print TypeName(s)"), ["2", "4", "String"]);
+    assert_eq!(body("Dim i As Integer\ni = 2.5\nDebug.Print i\ni = 3.5\nDebug.Print i\nDim s As String\ns = 12\nDebug.Print TypeName(s)"), [" 2 ", " 4 ", "String"]);
     assert_eq!(error("Dim i As Integer\ni = 40000").number, 6);
     assert_eq!(error("Dim l As Long\nl = \"abc\"").number, 13);
     assert_eq!(error("x = 1 / 0").number, 11);
-    assert_eq!(body("Dim b As Boolean\nb = 5\nDebug.Print b, Not b, True And False, True Or False, 6 And 3, 5 Xor 1"), ["True False False True 2 4"]);
-    assert_eq!(body("Debug.Print 1 < 2, \"a\" < \"b\", \"B\" = \"b\", 3 = \"3\""), ["True True False True"]);
-    assert_eq!(body("Debug.Print \"hello\" Like \"h*o\", \"x1\" Like \"x#\""), ["True True"]);
-    assert_eq!(body("Debug.Print 0.1 + 0.2, 1E+20, 1 / 3"), ["0.3 1E+20 0.333333333333333"]);
+    assert_eq!(body("Dim b As Boolean\nb = 5\nDebug.Print b, Not b, True And False, True Or False, 6 And 3, 5 Xor 1"), ["True          False         False         True           2             4 "]);
+    assert_eq!(body("Debug.Print 1 < 2, \"a\" < \"b\", \"B\" = \"b\", 3 = \"3\""), ["True          True          False         True"]);
+    assert_eq!(body("Debug.Print \"hello\" Like \"h*o\", \"x1\" Like \"x#\""), ["True          True"]);
+    assert_eq!(body("Debug.Print 0.1 + 0.2, 1E+20, 1 / 3"), [" 0.3           1E+20         0.333333333333333 "]);
 }
 
 #[test]
 fn option_compare_text_and_explicit() {
-    assert_eq!(printed("Option Compare Text\nSub Main()\nDebug.Print \"ABC\" = \"abc\", InStr(\"Hello\", \"LL\")\nEnd Sub"), ["True 3"]);
+    assert_eq!(printed("Option Compare Text\nSub Main()\nDebug.Print \"ABC\" = \"abc\", InStr(\"Hello\", \"LL\")\nEnd Sub"), ["True           3 "]);
     let mut wb = workbook();
     let mut ui = TestUi::default();
     let out = run_on(&mut wb, "Option Explicit\nSub Main()\n  Dim a\n  a = 1\n  b = 2\nEnd Sub", &mut ui);
@@ -67,7 +67,7 @@ For i = 1 To 10
 Next
 Debug.Print i",
     );
-    assert_eq!(out, ["oeoe5", "22", "3", "7", "-1", "4"]);
+    assert_eq!(out, ["oeoe5", " 22 ", " 3 ", " 7 ", "-1 ", " 4 "]);
 }
 
 #[test]
@@ -88,7 +88,7 @@ End Function
 Sub Main()
   Debug.Print Kind(2), Kind(4), Kind(500), Kind(\"a\"), Kind(50)
 End Sub";
-    assert_eq!(printed(code), ["small mid big letter other"]);
+    assert_eq!(printed(code), ["small         mid           big           letter        other"]);
 }
 
 #[test]
@@ -123,7 +123,7 @@ Sub Main()
   Debug.Print Add(1), Add(1, 2), Add(1, 2, 3), Add(1, c:=5)
   Debug.Print Total(1, 2, 3.5), Fact(10)
 End Sub";
-    assert_eq!(printed(code), ["6", "6", "12", "12", "11 3 6 16", "6.5 3628800"]);
+    assert_eq!(printed(code), [" 6 ", " 6 ", " 12 ", " 12 ", " 11            3             6             16 ", " 6.5           3628800 "]);
 }
 
 #[test]
@@ -143,7 +143,7 @@ Sub Main()
   Count
   Debug.Print Count(), counter, GREETING
 End Sub";
-    assert_eq!(printed(code), ["3 30 hi"]);
+    assert_eq!(printed(code), [" 3             30           hi"]);
 }
 
 #[test]
@@ -165,7 +165,7 @@ Handler:
   Debug.Print \"caught\", Err.Number
   Resume Done
 End Sub";
-    assert_eq!(printed(code), ["11 Division by zero", "0", "caught 13", "done"]);
+    assert_eq!(printed(code), [" 11           Division by zero", " 0 ", "caught         13 ", "done"]);
     let code = "Sub Main()
   On Error GoTo H
   Err.Raise 1234, , \"custom\"
@@ -175,7 +175,7 @@ H:
   Debug.Print Err.Number, Err.Description
   Resume Next
 End Sub";
-    assert_eq!(printed(code), ["1234 custom", "after"]);
+    assert_eq!(printed(code), [" 1234         custom", "after"]);
     // An error in a called procedure reaches the caller's handler.
     let code = "Sub Fails()
   Dim a(2)
@@ -186,7 +186,7 @@ Sub Main()
   Fails
   Debug.Print Err.Number
 End Sub";
-    assert_eq!(printed(code), ["9"]);
+    assert_eq!(printed(code), [" 9 "]);
 }
 
 #[test]
@@ -225,7 +225,7 @@ fn with_blocks_and_objects() {
   Dim e As Object
   Debug.Print e Is Nothing, TypeName(d)
 End Sub";
-    assert_eq!(printed(code), ["3 z b a", "2 11 True False", "x=11", "y=2", "True Dictionary"]);
+    assert_eq!(printed(code), [" 3            z             b             a", " 2             11           True          False", "x=11", "y=2", "True          Dictionary"]);
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn arrays() {
   parts = Split(\"a,b,,c\", \",\")
   Debug.Print UBound(parts), Join(parts, \"-\")
 End Sub";
-    assert_eq!(printed(code), ["1 3 9", "4 xz", "2 1 7", "2 two True", "1 100", "3 a-b--c"]);
+    assert_eq!(printed(code), [" 1             3             9 ", " 4            xz", " 2             1             7 ", " 2            two           True", " 1             100 ", " 3            a-b--c"]);
     assert_eq!(error("Dim a(2)\na(3) = 1").number, 9);
 }
 
@@ -265,7 +265,7 @@ Debug.Print InStr(\"hello\", \"l\"), InStr(4, \"hello\", \"l\"), InStr(\"hello\"
 Debug.Print UCase(\"ab\") & LCase(\"CD\") & \"[\" & Trim(\"  x  \") & \"]\" & LTrim(\" y\") & RTrim(\"z \")
 Debug.Print Replace(\"aXbXc\", \"X\", \"--\"), StrReverse(\"abc\"), Space(2) & \"|\", String(3, \"*\")
 Debug.Print Chr(65), Asc(\"a\"), StrComp(\"a\", \"B\", vbTextCompare), Val(\"12.5kg\"), Hex(255)"),
-        ["5 he llo ell lo", "3 4 0 4", "ABcd[x]yz", "a--b--c cba   | ***", "A 97 -1 12.5 FF"]
+        [" 5            he            llo           ell           lo", " 3             4             0             4 ", "ABcd[x]yz", "a--b--c       cba             |           ***", "A              97           -1             12.5         FF"]
     );
 }
 
@@ -277,7 +277,7 @@ Debug.Print IsNumeric(\"12\"), IsNumeric(\"a\"), IsEmpty(x), IsNull(Null), IsDat
 Debug.Print VarType(1), VarType(\"s\"), VarType(1.5), IIf(1 > 2, \"y\", \"n\"), Choose(2, \"a\", \"b\", \"c\")
 Debug.Print Format(1234.5, \"#,##0.00\"), Format(0.25, \"0%\"), Format(3, \"000\"), Format(\"abc\", \">\")
 Debug.Print Round(2.5), Round(3.14159, 2), Int(-2.5), Fix(-2.5), Abs(-3), Sgn(-4), Sqr(16)"),
-        ["13 3 3x True 2 4", "True False True True True True", "2 8 5 n b", "1,234.50 25% 003 ABC", "2 3.14 -3 -2 3 -1 4"]
+        [" 13            3            3x            True           2             4 ", "True          False         True          True          True          True", " 2             8             5            n             b", "1,234.50      25%           003           ABC", " 2             3.14         -3            -2             3            -1             4 "]
     );
     assert_eq!(error("x = CInt(\"abc\")").number, 13);
 }
@@ -291,10 +291,10 @@ Debug.Print Year(d), Month(d), Day(d), Weekday(d)
 Debug.Print Format(DateAdd(\"m\", 1, d), \"yyyy-mm-dd\"), DateDiff(\"d\", d, #3/1/2024#)
 Debug.Print Format(d + TimeSerial(13, 5, 0), \"dd/mm/yyyy hh:nn\"), Hour(TimeSerial(13, 5, 9)), Minute(#1:05:09 PM#)
 Debug.Print MonthName(2), WeekdayName(1), Format(#12/25/2023#, \"mmm d\")"),
-        ["2024 1 31 4", "2024-02-29 30", "31/01/2024 13:05 13 5", "February Sunday Dec 25"]
+        [" 2024          1             31            4 ", "2024-02-29     30 ", "31/01/2024 13:05             13            5 ", "February      Sunday        Dec 25"]
     );
     // Now is a date; Timer counts seconds.
-    assert_eq!(body("Debug.Print TypeName(Now), Now > DateSerial(2020, 1, 1), Timer >= 0"), ["Date True True"]);
+    assert_eq!(body("Debug.Print TypeName(Now), Now > DateSerial(2020, 1, 1), Timer >= 0"), ["Date          True          True"]);
 }
 
 #[test]
@@ -314,12 +314,12 @@ End Sub";
     let out = run_on(&mut wb, code, &mut ui);
     assert!(out.error.is_none(), "{:?}", out.error);
     assert_eq!(ui.shown, ["Continue?", "? Name?", "? Again", "Bye Ada"]);
-    assert_eq!(ui.printed, ["Ada []"]);
+    assert_eq!(ui.printed, ["Ada           []"]);
 }
 
 #[test]
 fn end_statement_and_goto() {
-    assert_eq!(body("Dim i\ni = 0\nAgain:\ni = i + 1\nIf i < 3 Then GoTo Again\nDebug.Print i\nEnd\nDebug.Print \"never\""), ["3"]);
+    assert_eq!(body("Dim i\ni = 0\nAgain:\ni = i + 1\nIf i < 3 Then GoTo Again\nDebug.Print i\nEnd\nDebug.Print \"never\""), [" 3 "]);
 }
 
 #[test]
@@ -347,17 +347,45 @@ fn limits_stop_runaway_macros() {
 #[test]
 fn unsupported_features_say_so() {
     let p = apex_vba::Project::parse(&[
-        apex_vba::Source { name: "Module1".into(), kind: apex_vba::ModuleKind::Standard, code: "#If VBA7 Then\nPrivate Declare PtrSafe Function GetTickCount Lib \"kernel32\" () As Long\n#Else\nPrivate Declare Function GetTickCount Lib \"kernel32\" () As Long\n#End If\nSub A()\n  x = GetTickCount()\nEnd Sub\nSub B()\n  UserForm1.Show\nEnd Sub\nSub C()\n  Set o = CreateObject(\"Outlook.Application\")\nEnd Sub\nSub D()\n  Open \"x.txt\" For Output As #1\nEnd Sub\n".into() },
+        apex_vba::Source { name: "Module1".into(), kind: apex_vba::ModuleKind::Standard, code: "#If VBA7 Then\nPrivate Declare PtrSafe Function FindWindow Lib \"user32\" Alias \"FindWindowA\" () As LongPtr\n#Else\nPrivate Declare Function FindWindow Lib \"user32\" Alias \"FindWindowA\" () As Long\n#End If\nSub A()\n  x = FindWindow()\nEnd Sub\nSub B()\n  UserForm1.Show\nEnd Sub\nSub C()\n  Set o = CreateObject(\"Outlook.Application\")\nEnd Sub\nSub D()\n  Shell \"calc.exe\"\nEnd Sub\n".into() },
         apex_vba::Source { name: "UserForm1".into(), kind: apex_vba::ModuleKind::Form, code: String::new() },
     ])
     .unwrap();
-    for (name, number) in [("A", 445), ("B", 445), ("C", 429), ("D", 445)] {
+    for (name, number) in [("A", 445), ("C", 429), ("D", 445)] {
         let mut wb = workbook();
         let mut ui = TestUi::default();
         let e = apex_vba::run_macro(&p, &mut wb, &mut ui, &apex_vba::Options::default(), name).error.unwrap();
         assert_eq!(e.number, number, "{name}: {e}");
         assert!(e.message.contains("not supported") || e.message.contains("Not supported"), "{e}");
     }
+}
+
+#[test]
+fn harmless_windows_functions() {
+    let code = "Private Declare PtrSafe Sub Sleep Lib \"kernel32\" (ByVal ms As Long)
+Private Declare PtrSafe Function GetTickCount Lib \"kernel32.dll\" () As Long
+Private Declare PtrSafe Function Ticks Lib \"winmm\" Alias \"timeGetTime\" () As Long
+Private Declare PtrSafe Function QueryPerformanceCounter Lib \"kernel32\" (c As Currency) As Long
+Private Declare PtrSafe Function QueryPerformanceFrequency Lib \"kernel32\" (f As Currency) As Long
+Private Declare PtrSafe Function Fake Lib \"C:\\x\\kernel32.dll\" Alias \"Sleep\" (ByVal ms As Long) As Long
+Sub Main()
+  Dim t As Long, c1 As Currency, c2 As Currency, f As Currency
+  t = GetTickCount()
+  Sleep 10
+  Debug.Print GetTickCount() >= t And Ticks() >= 0
+  QueryPerformanceFrequency f
+  QueryPerformanceCounter c1
+  QueryPerformanceCounter c2
+  Debug.Print f > 0 And c2 >= c1
+End Sub
+Sub Other()
+  Fake 1
+End Sub
+";
+    assert_eq!(printed(code), ["True", "True"]);
+    let mut wb = workbook();
+    let e = apex_vba::run_macro(&project(code), &mut wb, &mut TestUi::default(), &apex_vba::Options::default(), "Other").error.unwrap();
+    assert_eq!(e.number, 445, "{e}");
 }
 
 #[test]
@@ -379,5 +407,5 @@ Do While (i > 0)
 Loop
 Debug.Print i",
     );
-    assert_eq!(out, ["one", "-1"]);
+    assert_eq!(out, ["one", "-1 "]);
 }

@@ -802,7 +802,11 @@ impl SheetView {
                         if let Some((ri, name)) = &mut self.renaming {
                             if *ri == i {
                                 let r = ui.add(egui::TextEdit::singleline(name).desired_width(110.0));
-                                r.request_focus();
+                                // Only when it starts: asked every frame, Enter and
+                                // clicks elsewhere could never end the rename.
+                                if std::mem::take(&mut self.rename_focus) {
+                                    r.request_focus();
+                                }
                                 if r.lost_focus() {
                                     rename_done = Some((i, !ui.input(|i| i.key_pressed(Key::Escape))));
                                 }
@@ -888,7 +892,10 @@ impl SheetView {
                 self.select_sheet(k);
             }
             Some(TabAction::MoveCopy(i)) => self.open_move_copy(i),
-            Some(TabAction::Rename(i)) => self.renaming = Some((i, self.wb.sheets[i].name.clone())),
+            Some(TabAction::Rename(i)) => {
+                self.renaming = Some((i, self.wb.sheets[i].name.clone()));
+                self.rename_focus = true;
+            }
             Some(TabAction::Delete(i)) => self.remove_sheet(i),
             Some(TabAction::Color(i, c)) => {
                 let hidden = self.wb.sheets[i].hidden;

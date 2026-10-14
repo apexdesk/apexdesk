@@ -23,6 +23,8 @@ pub struct Job {
     /// Draw annotations and form fields (pdfium; ours always does).
     #[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
     pub annots: bool,
+    /// Draw it for the dark workspace (screen only).
+    pub dark: bool,
     pub reply: Sender<Done>,
     pub ctx: Option<eframe::egui::Context>,
 }
@@ -34,6 +36,10 @@ pub struct Done {
     pub width: u32,
     pub size: [usize; 2],
     pub rgba: Vec<u8>,
+    /// Pixel boxes of the pictures drawn (kept in their colors when dark).
+    pub images: Vec<[u32; 4]>,
+    /// The pixels are drawn dark.
+    pub dark: bool,
 }
 
 struct Engine {
@@ -127,7 +133,7 @@ pub fn request(job: Job) -> bool {
 /// Draws a page and waits for it (printing, pictures).
 pub fn render_now(bytes: Arc<[u8]>, password: Option<String>, page: usize, width: u32) -> Option<Done> {
     let (reply, rx) = channel();
-    if !request(Job { doc: 0, rev: 0, bytes, password, page, width, annots: true, reply, ctx: None }) {
+    if !request(Job { doc: 0, rev: 0, bytes, password, page, width, annots: true, dark: false, reply, ctx: None }) {
         return None;
     }
     rx.recv().ok().filter(|d| d.width > 0)
@@ -159,7 +165,7 @@ fn worker(path: PathBuf, rx: Receiver<Job>, ok: Sender<bool>) {
         let cfg = PdfRenderConfig::new().set_target_width(job.width as Pixels).render_annotations(job.annots).render_form_data(job.annots).set_clear_color(PdfColor::WHITE);
         let bmp = page.render_with_config(&cfg).ok()?;
         let size = [bmp.width() as usize, bmp.height() as usize];
-        let done = Done { rev: job.rev, page: job.page, width: job.width, size, rgba: bmp.as_rgba_bytes() };
+        let done = Done { rev: job.rev, page: job.page, width: job.width, size, rgba: bmp.as_rgba_bytes(), images: Vec::new(), dark: false };
         if job.doc == 0 {
             current = None;
         }
@@ -190,7 +196,7 @@ fn own_worker(rx: Receiver<Job>) {
             current = None;
         }
         let r = r.ok()??;
-        Some(Done { rev: job.rev, page: job.page, width: job.width, size: [r.width as usize, r.height as usize], rgba: r.rgba })
+        Some(Done { rev: job.rev, page: job.page, width: job.width, size: [r.width as usize, r.height as usize], rgba: r.rgba, images: r.images, dark: false })
     });
 }
 
@@ -217,7 +223,11 @@ fn serve(rx: Receiver<Job>, mut draw: impl FnMut(&Job) -> Option<Done>) {
         if job.doc != 0 && newest.get(&job.doc).is_some_and(|&r| r > job.rev) {
             continue;
         }
-        let done = draw(&job).unwrap_or(Done { rev: job.rev, page: job.page, width: 0, size: [0, 0], rgba: Vec::new() });
+        let mut done = draw(&job).unwrap_or(Done { rev: job.rev, page: job.page, width: 0, size: [0, 0], rgba: Vec::new(), images: Vec::new(), dark: false });
+        if job.dark && !done.rgba.is_empty() {
+            super::dark::darken_page(&mut done.rgba, done.size[0], &done.images);
+            done.dark = true;
+        }
         let _ = job.reply.send(done);
         if let Some(c) = &job.ctx {
             c.request_repaint();

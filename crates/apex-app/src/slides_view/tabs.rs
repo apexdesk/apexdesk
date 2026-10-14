@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use apex_doc::Align;
+use apex_slides::combine::Merge;
 use apex_slides::edit::{AlignTo, Order};
 use apex_slides::fill::Background;
 use apex_slides::{Fill, Frame, ObjKind, SColor};
@@ -368,6 +369,24 @@ impl SlidesView {
                 self.ungroup_selected();
                 ui.close();
             }
+            ui.add_enabled_ui(self.can_merge(), |ui| {
+                crate::widgets::menu_button(ui, tr("shape.merge"), |ui| {
+                    for (how, key) in [
+                        (Merge::Union, "shape.merge_union"),
+                        (Merge::Combine, "shape.merge_combine"),
+                        (Merge::Fragment, "shape.merge_fragment"),
+                        (Merge::Intersect, "shape.merge_intersect"),
+                        (Merge::Subtract, "shape.merge_subtract"),
+                    ] {
+                        if ui.button(tr(key)).clicked() {
+                            self.merge_selected(ui.painter(), how);
+                            ui.close();
+                        }
+                    }
+                });
+            })
+            .response
+            .on_disabled_hover_text(tr("shape.merge_none"));
             ui.separator();
             crate::widgets::menu_button(ui, tr("slides.align"), |ui| {
                 for (how, key) in [

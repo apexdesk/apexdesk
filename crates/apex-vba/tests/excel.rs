@@ -35,7 +35,7 @@ Debug.Print Range(\"A3\").Value, Range(\"B3\").Formula, Range(\"B2\").Value, Typ
 Debug.Print Range(\"A3\").HasFormula, Range(\"A1\").HasFormula, Range(\"A1:A3\").HasFormula
 Debug.Print Range(\"A1\").Formula, Cells(1, 3).Text, Range(\"E1\").Value",
     );
-    assert_eq!(ui.printed, ["30 =A3*2 40 Double", "True False Null", "10 hello True"]);
+    assert_eq!(ui.printed, [" 30           =A3*2          40           Double", "True          False         Null", "10            hello         True"]);
     assert_eq!(text(&wb, 0, "B2"), "40");
     assert_eq!(text(&wb, 0, "D1"), "12.5");
 }
@@ -63,15 +63,7 @@ Debug.Print r.EntireRow.Address, r.EntireColumn.Address, Intersect(r, Range(\"A1
     );
     assert_eq!(
         ui.printed,
-        [
-            "4 1048576 16384",
-            "$A$4 B1",
-            "$D$3 $A$1:$C$2 4 3 12",
-            "$C$3 2 2 $C:$C $2:$3",
-            "$A$1:$B$4 $A$1:$B$4",
-            "$A$3 True",
-            "$2:$2 $B:$B $B$2 True",
-        ]
+        [" 4             1048576       16384 ", "$A$4          B1", "$D$3          $A$1:$C$2      4             3             12 ", "$C$3           2             2            $C:$C         $2:$3", "$A$1:$B$4     $A$1:$B$4", "$A$3          True", "$2:$2         $B:$B         $B$2          True"]
     );
 }
 
@@ -102,7 +94,7 @@ For Each row In Range(\"A1:B3\").Rows
 Next
 Debug.Print n, Range(\"E2\").Value, Range(\"I1\").Value",
     );
-    assert_eq!(ui.printed, ["150", "2 2 20 2", "3 5 3"]);
+    assert_eq!(ui.printed, [" 150 ", " 2             2             20            2 ", " 3             5             3 "]);
     assert_eq!(text(&wb, 0, "D1"), "x");
 }
 
@@ -124,7 +116,7 @@ Range(\"C1\").Interior.ColorIndex = 3
 Debug.Print Range(\"A1\").Font.Bold, Range(\"C1\").Font.Bold, Range(\"B2\").Font.Color = vbRed, Range(\"A1\").Interior.Color = vbYellow
 Debug.Print Range(\"A1\").Text, Range(\"A1\").NumberFormat, Range(\"C1\").Font.Size, Range(\"A1\").HorizontalAlignment = xlCenter",
     );
-    assert_eq!(ui.printed, ["True False True True", "1.50 0.00 14 True"]);
+    assert_eq!(ui.printed, ["True          False         True          True", "1.50          0.00           14           True"]);
     let st = wb.styles.get(wb.cell(0, CellRef::new(1, 1)).unwrap().style);
     assert!(st.bold);
     assert_eq!(st.color, Some(0xFF0000));
@@ -155,7 +147,7 @@ Debug.Print Range(\"D1\").Formula
 Columns(\"C\").Delete
 Debug.Print Range(\"C1\").Formula",
     );
-    assert_eq!(ui.printed, ["True True 7", "True", "3", "1 True", "=C2*2", "=#REF!*2"]);
+    assert_eq!(ui.printed, ["True          True           7 ", "True", " 3 ", " 1            True", "=C2*2", "=#REF!*2"]);
 }
 
 #[test]
@@ -182,7 +174,7 @@ On Error Resume Next
 Set ws = Worksheets(\"Nope\")
 Debug.Print Err.Number",
     );
-    assert_eq!(ui.printed, ["2 Data 2 on data", "Sheet1", "Sheet1;Data; 2", "1", "9"]);
+    assert_eq!(ui.printed, [" 2            Data           2            on data", "Sheet1", "Sheet1;Data;   2 ", " 1 ", " 9 "]);
     assert_eq!(text(&wb, 0, "B1"), "on sheet1");
 }
 
@@ -199,7 +191,7 @@ Dim x
 x = WorksheetFunction.VLookup(99, Range(\"A1:A3\"), 1, False)
 Debug.Print Err.Number",
     );
-    assert_eq!(ui.printed, ["12 10 4", "4 7 5", "1004"]);
+    assert_eq!(ui.printed, [" 12            10            4 ", " 4             7             5 ", " 1004 "]);
 }
 
 #[test]
@@ -263,7 +255,7 @@ ActiveSheet.Unprotect \"pw\"
 Range(\"A1\") = 2
 Debug.Print ActiveSheet.ProtectContents, Range(\"A1\").Value",
     );
-    assert_eq!(ui.printed, ["1004 True", "1004", "False 2"]);
+    assert_eq!(ui.printed, [" 1004         True", " 1004 ", "False          2 "]);
 }
 
 fn events_project() -> Project {
@@ -302,6 +294,56 @@ fn workbook_open_and_worksheet_change() {
 }
 
 #[test]
+fn code_that_changes_cells_runs_the_change_events() {
+    let p = Project::parse(&[
+        Source { name: "ThisWorkbook".into(), kind: ModuleKind::Document, code: "Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)\n  Debug.Print \"book \" & Sh.Name & \" \" & Target.Address\nEnd Sub\n".into() },
+        // It forgets to turn events off: what it writes runs nothing.
+        Source { name: "Sheet1".into(), kind: ModuleKind::Document, code: "Private Sub Worksheet_Change(ByVal Target As Range)\n  Debug.Print \"sheet \" & Target.Address\n  Me.Range(\"Z1\").Value = Me.Range(\"Z1\").Value + 1\nEnd Sub\n".into() },
+        Source {
+            name: "Module1".into(),
+            kind: ModuleKind::Standard,
+            code: "Sub Main()
+  Worksheets(1).Range(\"A1:B2\").Value = 5
+  Worksheets(1).Range(\"C1\").Formula = \"=A1*2\"
+  Debug.Print \"next \" & Worksheets(1).Range(\"Z1\").Value
+  Application.EnableEvents = False
+  Worksheets(1).Range(\"D1\").Value = 1
+  Application.EnableEvents = True
+  Worksheets(1).Range(\"A1\").ClearContents
+  Worksheets(1).Range(\"A1\").Font.Bold = True
+  Worksheets(2).Range(\"A1\").Value = 1
+  Dim wb As Workbook
+  Set wb = Workbooks.Add
+  wb.Worksheets(1).Range(\"A1\").Value = 1
+  wb.Close False
+End Sub
+"
+            .into(),
+        },
+    ])
+    .unwrap();
+    let mut wb = workbook();
+    wb.sheets.push(apex_sheet::Sheet::new("Other"));
+    let mut ui = TestUi::default();
+    let out = apex_vba::call_macro(&p, &mut wb, &mut ui, &Options::default(), "Main", &[]);
+    assert!(out.error.is_none(), "{:?}", out.error);
+    assert_eq!(
+        ui.printed,
+        [
+            "sheet $A$1:$B$2",
+            "book Sheet1 $A$1:$B$2",
+            "sheet $C$1",
+            "book Sheet1 $C$1",
+            "next 2",
+            "sheet $A$1",
+            "book Sheet1 $A$1",
+            "book Other $A$1",
+        ]
+    );
+    assert_eq!(text(&wb, 0, "Z1"), "3");
+}
+
+#[test]
 fn application_settings_and_status() {
     let mut wb = workbook();
     let ui = main(
@@ -316,7 +358,7 @@ Application.EnableEvents = True
 ThisWorkbook.Save
 Debug.Print ThisWorkbook.Name, Application.Name",
     );
-    assert_eq!(ui.printed, ["False False True", "Book1 ApexDesk"]);
+    assert_eq!(ui.printed, ["False         False         True", "Book1         ApexDesk"]);
 }
 
 #[test]
@@ -391,9 +433,135 @@ fn code_names_and_module_members() {
     let mut ui = TestUi::default();
     let out = apex_vba::run_macro(&p, &mut wb, &mut ui, &Options::default(), "Main");
     assert!(out.error.is_none(), "{:?}", out.error);
-    assert_eq!(ui.printed, ["help 2 3 Datos Sheet2 x"]);
+    assert_eq!(ui.printed, ["help           2             3            Datos         Sheet2        x"]);
     assert_eq!(text(&wb, 0, "A1"), "refreshed x");
     assert_eq!(text(&wb, 1, "B2"), "42");
     let e = apex_vba::run_macro(&p, &mut wb, &mut ui, &Options::default(), "Controls").error.unwrap();
     assert_eq!(e.number, 445, "{e}");
+}
+
+#[test]
+fn events_with_arguments_and_cancel() {
+    use apex_vba::{EventArg, Owner};
+    let p = Project::parse(&[
+        Source {
+            name: "ThisWorkbook".into(),
+            kind: ModuleKind::Document,
+            code: "Private Sub Workbook_BeforeSave(ByVal SaveAsUI As Boolean, Cancel As Boolean)\n    If Sheet1.Range(\"A1\").Value = \"\" Then Cancel = True\nEnd Sub\n\
+                   Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)\n    Sh.Range(\"D1\").Value = Sh.Name & \"!\" & Target.Address\nEnd Sub\n\
+                   Private Sub Workbook_NewSheet(ByVal Sh As Object, Extra)\nEnd Sub\n"
+                .into(),
+        },
+        Source { name: "Sheet1".into(), kind: ModuleKind::Document, code: "Private Sub Worksheet_SelectionChange(ByVal Target As Range)\n    Range(\"E1\").Value = Target.Address\nEnd Sub\n\
+                   Private Sub Worksheet_FollowHyperlink(ByVal Target As Hyperlink)\n    Range(\"F1\").Value = Target.Address & \" \" & Target.Range.Address\nEnd Sub\n".into() },
+        Source { name: "Module1".into(), kind: ModuleKind::Standard, code: "Sub AddLink()\n    Sheet1.Hyperlinks.Add Anchor:=Sheet1.Range(\"B3\"), Address:=\"https://example.com\"\nEnd Sub\n".into() },
+    ])
+    .unwrap();
+    let mut wb = workbook();
+    let mut ui = TestUi::default();
+    let o = Options::default();
+    let save = [EventArg::Bool(false), EventArg::Cancel];
+    let out = apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Workbook, "BeforeSave", &save).unwrap();
+    assert!(out.error.is_none() && out.cancel);
+    wb.set_input(0, CellRef::new(0, 0), "x");
+    assert!(!apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Workbook, "BeforeSave", &save).unwrap().cancel);
+    let b2 = Range::single(CellRef::new(1, 1));
+    let out = apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Workbook, "SheetChange", &[EventArg::Sheet(0), EventArg::Range(0, b2)]).unwrap();
+    assert!(out.error.is_none(), "{:?}", out.error);
+    assert_eq!(text(&wb, 0, "D1"), format!("{}!$B$2", wb.sheets[0].name));
+    apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Sheet(0), "SelectionChange", &[EventArg::Range(0, b2)]).unwrap();
+    assert_eq!(text(&wb, 0, "E1"), "$B$2");
+    assert!(apex_vba::run_macro(&p, &mut wb, &mut ui, &o, "AddLink").error.is_none());
+    let out = apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Sheet(0), "FollowHyperlink", &[EventArg::Hyperlink(0, CellRef::new(2, 1))]).unwrap();
+    assert!(out.error.is_none(), "{:?}", out.error);
+    assert_eq!(text(&wb, 0, "F1"), "https://example.com $B$3");
+    // No handler, or one on another sheet, or a sheet that is gone.
+    assert!(apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Workbook, "BeforeClose", &[EventArg::Cancel]).is_none());
+    assert!(apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Sheet(1), "SelectionChange", &[EventArg::Range(1, b2)]).is_none());
+    assert!(apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Workbook, "SheetChange", &[EventArg::Sheet(9), EventArg::Range(9, b2)]).is_none());
+    // A handler declared with other arguments says so.
+    let out = apex_vba::fire_event(&p, &mut wb, &mut ui, &o, Owner::Workbook, "NewSheet", &[EventArg::Sheet(0)]).unwrap();
+    assert!(out.error.unwrap().to_string().contains("does not match"));
+}
+
+#[test]
+fn on_key_and_on_time_are_asked_of_the_app() {
+    use apex_vba::{Key, Request};
+    let mut wb = Workbook::new();
+    let mut ui = TestUi::default();
+    let code = "Sub Main()\n    Application.OnKey \"^+k\", \"Module1.Hello\"\n    Application.OnKey \"{F5}\", \"\"\n    Application.OnKey \"%~\"\n    Application.OnTime 45000.5, \"'Book1.xlsm'!Hello\"\n    Application.OnTime 45000.5, \"Hello\", , False\nEnd Sub\nSub Hello()\nEnd Sub\n";
+    let out = run_on(&mut wb, code, &mut ui);
+    assert!(out.error.is_none(), "{:?}", out.error);
+    let key = |s: &str| Key::parse(s).unwrap();
+    assert_eq!(key("^+k"), Key { ctrl: true, shift: true, alt: false, name: "K".into() });
+    assert_eq!(key("+"), Key { ctrl: false, shift: false, alt: false, name: "+".into() });
+    assert_eq!(key("^{del}").name, "DELETE");
+    assert!(Key::parse("{F16}").is_none() && Key::parse("ab").is_none() && Key::parse("").is_none());
+    assert_eq!(
+        out.requests,
+        [
+            Request::OnKey { key: key("^+K"), procedure: Some("Module1.Hello".into()) },
+            Request::OnKey { key: key("{F5}"), procedure: Some(String::new()) },
+            Request::OnKey { key: Key { ctrl: false, shift: false, alt: true, name: "ENTER".into() }, procedure: None },
+            Request::OnTime { at: 45000.5, procedure: "Hello".into(), latest: None, schedule: true },
+            Request::OnTime { at: 45000.5, procedure: "Hello".into(), latest: None, schedule: false },
+        ]
+    );
+    // Not a key, or a macro of a path.
+    for bad in ["Application.OnKey \"{nope}\", \"Hello\"", "Application.OnKey \"a\", \"C:\\x.xlsm!Hello\"", "Application.OnTime Now, \"\""] {
+        let out = run_on(&mut wb, &format!("Sub Main()\n    {bad}\nEnd Sub\n"), &mut ui);
+        assert_eq!(out.error.map(|e| e.number), Some(1004), "{bad}");
+    }
+    let sc = apex_vba::macro_shortcuts("Sub Go()\nAttribute Go.VB_ProcData.VB_Invoke_Func = \"q\\n14\"\nEnd Sub\nSub Up()\nAttribute Up.VB_ProcData.VB_Invoke_Func = \"Q\\n14\"\nEnd Sub\nSub No()\nAttribute No.VB_ProcData.VB_Invoke_Func = \" \\n14\"\nEnd Sub\n");
+    assert_eq!(sc, [(key("^q"), "Go".to_string()), (key("^+Q"), "Up".to_string())]);
+}
+
+#[test]
+fn macros_called_with_arguments() {
+    let code = "Sub Fill(addr As String, n As Double, Optional bold As Boolean = False)\n    Range(addr).Value = n * 2\n    Debug.Print Range(\"B2\").Value & \"|\" & bold\nEnd Sub\nFunction Twice(x)\n    Twice = x * 2\nEnd Function\nPrivate Function Hidden()\nEnd Function\nSub Arr(a() As Long)\nEnd Sub\nSub Plain()\nEnd Sub\n";
+    let p = common::project(code);
+    let names: Vec<_> = p.with_arguments().into_iter().map(|(n, a)| format!("{n}({})", a.join(", "))).collect();
+    assert_eq!(names, ["Fill(addr, n, [bold])", "Twice(x)"]);
+    let mut wb = common::workbook();
+    let mut ui = TestUi::default();
+    let out = apex_vba::call_macro(&p, &mut wb, &mut ui, &apex_vba::Options::default(), "Fill", &["B2".into(), "21".into(), String::new()]);
+    assert!(out.error.is_none(), "{:?}", out.error);
+    assert_eq!(ui.printed, ["42|False"]);
+    let out = apex_vba::call_macro(&p, &mut wb, &mut ui, &apex_vba::Options::default(), "Twice", &["=B2".into()]);
+    assert!(out.error.is_some(), "text times two");
+    ui.shown.clear();
+    let out = apex_vba::call_macro(&p, &mut wb, &mut ui, &apex_vba::Options::default(), "Twice", &["2.5".into()]);
+    assert!(out.error.is_none(), "{:?}", out.error);
+    assert_eq!(ui.shown, ["5"]);
+    let out = apex_vba::call_macro(&p, &mut wb, &mut ui, &apex_vba::Options::default(), "Fill", &["B2".into()]);
+    assert_eq!(out.error.map(|e| e.number), Some(449));
+}
+
+#[test]
+fn run_reaches_the_personal_workbook() {
+    use std::sync::Arc;
+    let personal = "Sub Mark(v)\n    ActiveSheet.Range(\"C3\").Value = v\n    Application.OnKey \"^q\", \"Mark\"\nEnd Sub\nSub Deep(n)\n    Deep n + 1\nEnd Sub\n";
+    let lib = apex_vba::Library { name: "PERSONAL.XLSM".into(), sources: Arc::new(vec![Source { name: "Module1".into(), kind: ModuleKind::Standard, code: personal.into() }]) };
+    let code = "Sub Main()\n    Application.Run \"PERSONAL.XLSM!Mark\", 7\n    Application.Run \"'personal'!Module1.Mark\", 8\n    Debug.Print Range(\"C3\").Value\n    Application.Run \"Book1.xlsm!Here\"\nEnd Sub\nSub Here()\n    Debug.Print \"here\"\nEnd Sub\nSub Other()\n    Application.Run \"Nope.xlsm!Mark\"\nEnd Sub\nSub Rec()\n    Application.Run \"PERSONAL.XLSM!Deep\", 1\nEnd Sub\n";
+    let p = common::project(code);
+    let opts = apex_vba::Options { file_name: "Book1.xlsm".into(), libraries: vec![lib], max_stack: 8 << 20, ..Default::default() };
+    let mut wb = common::workbook();
+    let mut ui = TestUi::default();
+    let out = apex_vba::run_macro(&p, &mut wb, &mut ui, &opts, "Main");
+    assert!(out.error.is_none(), "{:?}", out.error);
+    assert_eq!(ui.printed, [" 8 ", "here"]);
+    assert!(out.changed && out.requests.len() == 2);
+    assert!(out.requests.iter().any(|r| matches!(r, apex_vba::Request::OnKey { procedure: Some(p), .. } if p == "PERSONAL.XLSM!Mark")));
+    // One undo step takes both.
+    assert!(wb.undo());
+    assert!(wb.cell(0, CellRef::new(2, 2)).is_none_or(|c| c.value().is_empty()));
+    let out = apex_vba::run_macro(&p, &mut wb, &mut ui, &opts, "Other");
+    assert_eq!(out.error.map(|e| e.number), Some(1004));
+    // Endless recursion in the library stops with an error, not a crash.
+    let t = std::thread::Builder::new().stack_size(16 << 20).spawn(move || {
+        let p = common::project(code);
+        let mut ui = TestUi::default();
+        apex_vba::run_macro(&p, &mut wb, &mut ui, &opts, "Rec").error.map(|e| e.number)
+    });
+    assert_eq!(t.unwrap().join().unwrap(), Some(28));
 }

@@ -32,6 +32,9 @@ pub struct Rendered {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
+    /// Where pictures were painted, as pixel boxes `[x0, y0, x1, y1]`
+    /// (stencil masks, which take the fill color, not included).
+    pub images: Vec<[u32; 4]>,
 }
 
 const MAX_OPS: usize = 6_000_000;
@@ -247,7 +250,8 @@ fn render_page(f: &PdfFile, p: &PageRef, width: u32, fallback: Fallback, off: &H
     shared.images_bytes = shared.images.values().flatten().map(|p| p.width() as usize * p.height() as usize * 4).sum();
     // The paper is opaque: the pixels are as they are, not premultiplied.
     let rgba = pix.data_as_u8_slice().to_vec();
-    Some(Rendered { width, height, rgba })
+    let images = std::mem::take(&mut r.image_boxes);
+    Some(Rendered { width, height, rgba, images })
 }
 
 /// A fill or stroke colour.
@@ -361,6 +365,8 @@ struct R<'a, 'f> {
     dashes: usize,
     /// Glyph path elements the page may still draw.
     glyph_elems: usize,
+    /// Pixel boxes of the pictures painted.
+    image_boxes: Vec<[u32; 4]>,
     /// The file's limit on inflating before this page (given back after).
     decode_before: Option<usize>,
     /// The function steps left before this page (given back after).
@@ -534,7 +540,7 @@ impl<'a, 'f> R<'a, 'f> {
     fn new(f: &'a PdfFile<'f>, width: u16, height: u16, fallback: Fallback<'a>) -> Self {
         let decode_before = f.set_decode_budget(Some(DECODE_BUDGET));
         let func_before = color::set_func_budget(FUNC_BUDGET);
-        R { decode_before, func_before, marked_off: 0, f, ctx: RenderContext::new_with(width, height, settings(threads())), resources: Resources::new(), layers: Vec::new(), width, height, fonts: HashMap::new(), images: HashMap::new(), nesting: Vec::new(), ops: 0, pixels: PIXEL_BUDGET, dashes: DASH_BUDGET, glyph_elems: GLYPH_BUDGET, fallback, ocg_off: HashSet::new(), marked: Vec::new(), glyph: false, page_base: Affine::IDENTITY, cells: 0, shadings: HashMap::new(), spaces: HashMap::new(), inline_spaces: HashMap::new(), inline_loads: 0, streams: HashMap::new(), stream_bytes: 0, masks: HashMap::new() }
+        R { decode_before, func_before, marked_off: 0, f, ctx: RenderContext::new_with(width, height, settings(threads())), resources: Resources::new(), layers: Vec::new(), width, height, fonts: HashMap::new(), images: HashMap::new(), nesting: Vec::new(), ops: 0, pixels: PIXEL_BUDGET, dashes: DASH_BUDGET, glyph_elems: GLYPH_BUDGET, image_boxes: Vec::new(), fallback, ocg_off: HashSet::new(), marked: Vec::new(), glyph: false, page_base: Affine::IDENTITY, cells: 0, shadings: HashMap::new(), spaces: HashMap::new(), inline_spaces: HashMap::new(), inline_loads: 0, streams: HashMap::new(), stream_bytes: 0, masks: HashMap::new() }
     }
 
     /// The resource dictionary of `kind` in `res`. Copying it costs as
@@ -1435,6 +1441,9 @@ impl<'a, 'f> R<'a, 'f> {
                     if mask && matches!(gs.fill, Ink::Pattern(_, None)) && gs.smask.is_none() {
                         self.pattern_stencil(p, gs);
                     } else {
+                        if !mask {
+                            self.note_image(gs);
+                        }
                         self.draw_image(p, gs);
                     }
                 }
@@ -1536,6 +1545,18 @@ impl<'a, 'f> R<'a, 'f> {
             return None;
         }
         Some(Arc::new(pixmap(w, h, &data)))
+    }
+
+    /// Notes where a picture lands (the app keeps these in its colors
+    /// when it darkens the page).
+    fn note_image(&mut self, gs: &Gs) {
+        if self.hidden() || self.image_boxes.len() >= 4096 {
+            return;
+        }
+        let r = gs.ctm.transform_rect_bbox(Rect::new(0.0, 0.0, 1.0, 1.0));
+        let (w, h) = (self.width as f64, self.height as f64);
+        let c = |v: f64, max: f64| v.clamp(0.0, max) as u32;
+        self.image_boxes.push([c(r.x0.floor(), w), c(r.y0.floor(), h), c(r.x1.ceil(), w), c(r.y1.ceil(), h)]);
     }
 
     fn draw_image(&mut self, p: Arc<Pixmap>, gs: &Gs) {
@@ -1667,6 +1688,9 @@ impl<'a, 'f> R<'a, 'f> {
             _ => [0.0; 3],
         };
         if let Some(p) = self.image_pixmap(&d, raw, fill, Some(res), gs.ctm) {
+            if !matches!(d.get("ImageMask"), Some(Obj::Bool(true))) {
+                self.note_image(gs);
+            }
             self.draw_image(p, gs);
         }
     }

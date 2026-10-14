@@ -70,6 +70,24 @@ pub struct DimVar {
     pub ty: VType,
     /// `As New Collection`.
     pub new: Option<String>,
+    /// The name after `As` when it isn't a built-in type (a class or a
+    /// user-defined type), lowercase.
+    pub ty_name: Option<String>,
+    /// `String * n`.
+    pub fixed: Option<u32>,
+    /// `ReDim p.list(9)`: the fields after the variable, lowercase.
+    pub fields: Vec<String>,
+    /// `WithEvents`: its object's events run `name_Event` of this module.
+    pub withevents: bool,
+}
+
+/// `Type Name ... End Type`.
+#[derive(Clone, Debug)]
+pub struct TypeDef {
+    /// As written.
+    pub name: String,
+    pub fields: Vec<DimVar>,
+    pub public: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -126,14 +144,73 @@ pub enum Stmt {
     OnError(OnError),
     Resume(ResumeKind),
     GoTo(String),
+    /// `GoSub label`: runs from the label until `Return`.
+    GoSub(String),
+    Return,
+    /// `LSet s = x` (`right`: RSet): `x` aligned in the length `s` has.
+    Align { target: Expr, value: Expr, right: bool },
     Label(String),
     Erase(Vec<Expr>),
-    /// `Debug.Print a; b, c`: the parts and whether a `;`/`,` ended it.
-    Print(Vec<Expr>, bool),
-    /// `End` (stops everything) and `Stop`.
+    /// `RaiseEvent Name(args)` in a class module.
+    RaiseEvent(String, Vec<Arg>),
+    /// `Debug.Print a; b, c`.
+    Print(Vec<PrintItem>),
+    /// `End`: stops everything.
     End,
-    /// Statements ApexDesk doesn't run (file I/O, Declare...): the reason.
+    /// `Stop`: pauses in the debugger (ends the macro without one).
+    Stop,
+    /// `Debug.Assert expr`: pauses in the debugger when False.
+    Assert(Expr),
+    /// `Open`, `Print #`, `Close`... (see [`FileStmt`]).
+    File(FileStmt),
+    /// Statements ApexDesk doesn't run (Declare...): the reason.
     Unsupported(String),
+}
+
+/// How `Open` opens a file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileMode {
+    Input,
+    Output,
+    Append,
+    Binary,
+    Random,
+}
+
+/// A part of `Print #n, ...`.
+#[derive(Clone, Debug)]
+pub enum PrintItem {
+    Expr(Expr),
+    /// `,`: to the next print zone.
+    Comma,
+    /// `;`: right after.
+    Semi,
+    /// `Spc(n)`.
+    Spc(Expr),
+    /// `Tab(n)` (`Tab` alone: the next print zone).
+    Tab(Option<Expr>),
+}
+
+/// The file statements; files are named by their number (`#1`).
+#[derive(Clone, Debug)]
+pub enum FileStmt {
+    /// `Open path For mode [Access ...] [lock] As #n [Len = len]`; `read`/`write`
+    /// are the Access clause (both false without one).
+    Open { path: Expr, mode: FileMode, read: bool, write: bool, num: Expr, len: Option<Expr> },
+    /// `Close #1, #2` (`Close` or `Reset` alone: all).
+    Close(Vec<Expr>),
+    Print { num: Expr, items: Vec<PrintItem> },
+    /// `Write #n, a, b`: whether a `,`/`;` ended it.
+    Write { num: Expr, items: Vec<Expr>, open: bool },
+    Input { num: Expr, vars: Vec<Expr> },
+    LineInput { num: Expr, var: Expr },
+    /// `Get #n, [pos], var` (`put`: `Put`).
+    Get { num: Expr, pos: Option<Expr>, var: Expr, put: bool },
+    Seek { num: Expr, pos: Expr },
+    /// `Name from As to`.
+    Name { from: Expr, to: Expr },
+    /// `Lock`, `Unlock`, `Width #`: nothing to do here.
+    Nothing,
 }
 
 /// A statement and the line it starts on.
@@ -171,6 +248,8 @@ pub struct Proc {
     pub public: bool,
     pub params: Vec<Param>,
     pub ret: VType,
+    /// The return type's name when it isn't built-in, lowercase.
+    pub ret_name: Option<String>,
     pub body: Vec<Line>,
     pub line: u32,
     /// All locals are Static.
@@ -200,8 +279,20 @@ pub struct Module {
     /// Module-level constants (Enum members too): (name, value, public).
     pub consts: Vec<(String, Expr, bool)>,
     pub procs: Vec<Rc<Proc>>,
-    /// Functions declared with `Declare` (lowercase): calling them fails.
-    pub declares: Vec<String>,
+    /// Functions declared with `Declare`.
+    pub declares: Vec<Declare>,
+    /// User-defined types.
+    pub types: Vec<TypeDef>,    /// The classes a class module implements (`Implements IShape`), lowercase.
+    pub implements: Vec<String>,
+}
+
+/// `Declare Function Name Lib "lib" Alias "api"`, lowercase.
+#[derive(Debug, Clone)]
+pub struct Declare {
+    pub name: String,
+    pub lib: String,
+    /// The alias, or the name when there is none.
+    pub api: String,
 }
 
 impl Module {

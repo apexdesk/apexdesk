@@ -546,6 +546,15 @@ impl Workbook {
 
     /// Sorts the rows of `r` (or its columns when `by_cols`, left to right).
     pub fn sort_range(&mut self, sheet: usize, r: &Range, keys: &[SortKey], case_sensitive: bool, by_cols: bool) {
+        if let Some(rec) = &mut self.recorder {
+            rec.sorting(sheet, *r, keys, case_sensitive, by_cols);
+        }
+        let op = self.sort_op(sheet, r, keys, case_sensitive, by_cols);
+        self.execute_as(op, "undo.sort");
+    }
+
+    /// The edit [`Self::sort_range`] makes.
+    pub fn sort_op(&self, sheet: usize, r: &Range, keys: &[SortKey], case_sensitive: bool, by_cols: bool) -> Op {
         use std::cmp::Ordering;
         let lines: Vec<u32> = if by_cols { (r.start.col..=r.end.col).collect() } else { (r.start.row..=r.end.row).collect() };
         let at = |line: u32, k: u32| if by_cols { CellRef::new(k, line) } else { CellRef::new(line, k) };
@@ -644,7 +653,7 @@ impl Workbook {
         }
         let mut cells: Vec<(CellRef, Option<Cell>)> = out.into_iter().collect();
         cells.sort_by_key(|(c, _)| (c.row, c.col));
-        self.execute_as(Op::SetCells { sheet, cells }, "undo.sort");
+        Op::SetCells { sheet, cells }
     }
 
     /// Copies sheet `i` right after it; returns the new index.
@@ -653,6 +662,8 @@ impl Workbook {
         let base = format!("{} (", sh.name);
         sh.name = (2..).map(|n| format!("{base}{n})")).find(|n| self.sheet_index(n).is_none()).unwrap();
         sh.hidden = false;
+        // Two sheets with one code name: Excel takes the file as damaged.
+        sh.code_name = None;
         self.execute_as(Op::AddSheet { index: i + 1, sheet: Box::new(sh) }, "undo.duplicate_sheet");
         i + 1
     }
@@ -669,6 +680,8 @@ impl Workbook {
             sh.name = (2..).map(|n| format!("{base}{n})")).find(|n| self.sheet_index(n).is_none()).unwrap();
         }
         sh.hidden = false;
+        // Its code name belongs to the other workbook's project.
+        sh.code_name = None;
         let index = index.min(self.sheets.len());
         self.execute_as(Op::AddSheet { index, sheet: Box::new(sh) }, "undo.copy_sheet");
         index
