@@ -3,11 +3,54 @@
 
 use crate::value::Value;
 
+mod date_orders;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DateOrder {
     Dmy,
     Mdy,
     Ymd,
+}
+
+impl DateOrder {
+    /// Gregorian date order from Unicode CLDR. Accept POSIX and BCP 47
+    /// spellings, resolve aliases and likely scripts/regions with ICU.
+    /// Calendar extensions do not change Excel's Gregorian date system.
+    pub fn from_tag(tag: &str) -> Option<Self> {
+        let tag = tag.split(['.', '@']).next().unwrap_or_default().replace('_', "-");
+        if tag.eq_ignore_ascii_case("c") || tag.eq_ignore_ascii_case("posix") {
+            return Some(Self::Mdy);
+        }
+        let lookup = |tag: &str| {
+            let tag = tag.to_ascii_lowercase();
+            date_orders::ORDERS.binary_search_by_key(&tag.as_str(), |&(name, _)| name)
+                .ok().map(|i| date_orders::ORDERS[i].1)
+        };
+        let mut locale: icu_locale::Locale = tag.parse().ok()?;
+        icu_locale::LocaleCanonicalizer::new_extended().canonicalize(&mut locale);
+        if let Some(value) = locale.extensions.unicode.keywords.get(&icu_locale::extensions::unicode::key!("rg"))
+            && let Some(region) = value.to_string().strip_suffix("zzzz").and_then(|s| s.parse().ok())
+        {
+            locale.id.region = Some(region);
+        }
+        if let Some(order) = lookup(&locale.id.to_string()) {
+            return Some(order);
+        }
+        locale.id.variants = Default::default();
+        icu_locale::LocaleExpander::new_extended().maximize(&mut locale.id);
+        let language = locale.id.language;
+        // Try the inferred script (e.g. zh-HK -> zh-Hant-HK), then the
+        // regional form (en-Latn-AU -> en-AU), then the language default.
+        let mut candidates = vec![locale.id.to_string()];
+        if let Some(script) = locale.id.script {
+            candidates.push(format!("{language}-{script}"));
+        }
+        if let Some(region) = locale.id.region {
+            candidates.push(format!("{language}-{region}"));
+        }
+        candidates.push(language.to_string());
+        candidates.iter().find_map(|tag| lookup(tag))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,31 +85,26 @@ impl Locale {
         currency_after: true,
     };
 
-    /// Picks a locale from `LC_ALL`/`LC_NUMERIC`/`LANG`.
+    /// Number and date categories are independent: LC_ALL overrides both,
+    /// otherwise LC_NUMERIC and LC_TIME each fall back to LANG.
     pub fn from_env() -> Locale {
-        let lang = ["LC_ALL", "LC_NUMERIC", "LANG"]
-            .iter()
-            .filter_map(|k| std::env::var(k).ok())
-            .find(|v| !v.is_empty())
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        Self::from_tag(&lang)
+        let category = |name| ["LC_ALL", name, "LANG"].iter()
+            .filter_map(|k| std::env::var(k).ok()).find(|v| !v.is_empty()).unwrap_or_default();
+        let mut locale = Self::from_tag(&category("LC_NUMERIC"));
+        locale.date_order = DateOrder::from_tag(&category("LC_TIME")).unwrap_or(Self::EN.date_order);
+        locale
     }
 
     pub fn from_tag(tag: &str) -> Locale {
         let t = tag.to_ascii_lowercase();
-        // Regional English keeps English number/formula separators, but
-        // uses day-first dates. Ignore POSIX encoding and modifier suffixes.
-        let region = t.split(['.', '@']).next().unwrap_or_default();
-        if matches!(region, "en_nz" | "en-nz" | "en_gb" | "en-gb") {
-            return Locale { date_order: DateOrder::Dmy, ..Locale::EN };
-        }
         let comma_langs = ["es", "fr", "de", "it", "pt", "nl", "ca", "gl", "eu", "ru", "pl", "tr", "sv", "da", "nb", "fi", "cs"];
-        if comma_langs.iter().any(|l| t.starts_with(l)) {
+        let mut locale = if comma_langs.iter().any(|l| t.starts_with(l)) {
             Locale::ES
         } else {
             Locale::EN
-        }
+        };
+        locale.date_order = DateOrder::from_tag(tag).unwrap_or(locale.date_order);
+        locale
     }
 
     pub fn short_date_code(&self) -> &'static str {
@@ -1229,19 +1267,41 @@ mod tests {
 
     #[test]
     fn regional_english_input() {
-        for tag in ["en_NZ", "en-NZ", "en_NZ.UTF-8", "EN-gb", "en_GB.UTF-8", "en-GB@euro"] {
+        for tag in ["en_NZ", "en-NZ", "en_NZ.UTF-8", "EN-gb", "en_GB.UTF-8", "en-GB@euro", "en_AU", "en_IN", "en-IE", "en-Latn-AU", "en-NZ-u-ca-gregory", "en-US-u-rg-gbzzzz"] {
             let locale = Locale::from_tag(tag);
             assert_eq!(locale, Locale { date_order: DateOrder::Dmy, ..Locale::EN }, "{tag}");
             assert_eq!(parse_input("1,234.5", &locale).value, Value::Number(1234.5));
             assert_eq!(parse_input("31/12/2020", &locale).value, Value::Number(date_to_serial(2020, 12, 31)));
             assert_eq!(parse_input("1/4/2021", &locale).value, Value::Number(date_to_serial(2021, 4, 1)));
         }
-        for tag in ["en", "en_US.UTF-8", "en-US", "C", "", "en_NZZ", "en_GBextra"] {
+        for tag in ["en", "en_US.UTF-8", "en-US", "C", "", "en_NZZ", "en_GBextra", "en-GB-u-rg-uszzzz"] {
             let locale = Locale::from_tag(tag);
             assert_eq!(locale, Locale::EN, "{tag}");
             assert_eq!(parse_input("1/4/2021", &locale).value, Value::Number(date_to_serial(2021, 1, 4)));
         }
         assert_eq!(Locale::from_tag("es_ES.UTF-8"), Locale::ES);
+    }
+
+    #[test]
+    fn cldr_date_orders() {
+        for (tag, order, text, date) in [
+            ("en_US", DateOrder::Mdy, "4/1/2021", (2021, 4, 1)),
+            ("en_CA", DateOrder::Ymd, "21/4/1", (2021, 4, 1)),
+            ("en_ZA", DateOrder::Ymd, "21/4/1", (2021, 4, 1)),
+            ("fr_CA", DateOrder::Ymd, "21/4/1", (2021, 4, 1)),
+            ("ja_JP", DateOrder::Ymd, "21/4/1", (2021, 4, 1)),
+            ("zh_HK", DateOrder::Dmy, "1/4/2021", (2021, 4, 1)),
+            ("zh-Hant-HK", DateOrder::Dmy, "1/4/2021", (2021, 4, 1)),
+            ("iw_IL", DateOrder::Dmy, "1/4/2021", (2021, 4, 1)),
+            ("de_DE", DateOrder::Dmy, "1/4/2021", (2021, 4, 1)),
+        ] {
+            let locale = Locale::from_tag(tag);
+            assert_eq!(locale.date_order, order, "{tag}");
+            assert_eq!(parse_input(text, &locale).value, Value::Number(date_to_serial(date.0, date.1, date.2)), "{tag}");
+        }
+        for tag in ["", "xx_YY", "en_NZZ", "en-123456789"] {
+            assert_eq!(DateOrder::from_tag(tag), None, "{tag}");
+        }
     }
 
     #[test]

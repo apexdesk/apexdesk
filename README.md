@@ -238,6 +238,26 @@ apexdesk merge letter.docx people.csv --out letters/ --name "{n}-{Name}" [--pdf]
 apexdesk info book.xlsm --json                   # sheets, pages, author, macros...
 ```
 
+Date coercion uses Unicode CLDR's Gregorian date order for the selected
+locale, including regional and script variants. `LC_ALL` overrides both
+number and date settings; otherwise `LC_NUMERIC` controls numbers and
+`LC_TIME` controls dates, each falling back to `LANG`. Unknown locales keep
+the English MDY fallback. This selects numeric date order; it does not add
+localized month names, calendars, or change existing number/currency presets.
+
+`get`, `set`, `recalc` and `eval` accept `--date-locale TAG` to override date
+order explicitly, including for workbook recalculation. `eval` formulas and
+`set` values retain English number/formula syntax while using that date order:
+
+```sh
+apexdesk get calculator.xlsx C12 M12 H16 --date-locale en-NZ
+apexdesk eval 'MONTH("1/4/2021")' --date-locale en-AU  # 4; en-US gives 1
+```
+
+The committed date-order table is generated from CLDR 48.2.0 by
+`python3 scripts/date_orders.py`; regeneration checks the source archive's
+SHA256. Normal builds need no network access to obtain locale data.
+
 `apexdesk tui [file]` (or `apexdesk --tui`) edits a spreadsheet or document in
 the terminal: the whole grid with formulas, autocomplete, sorting, filters,
 find and replace, formats, undo and mouse; documents in a reading view with

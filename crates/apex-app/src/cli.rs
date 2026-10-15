@@ -127,10 +127,10 @@ fn dispatch(cmd: &str, rest: &[String]) -> Res<i32> {
         }
         "convert" => (Spec { values: &["to", "out", "output", "sheet", "password", "encoding", "from-encoding", "handouts", "width"], flags: &["quiet", "pdfa", "notes"] }, CONVERT_HELP),
         "cat" => (Spec { values: &["sheet", "range", "format", "width", "password"], flags: &["formulas", "raw"] }, CAT_HELP),
-        "eval" => (Spec { values: &["sheet", "password"], flags: &[] }, EVAL_HELP),
-        "get" => (Spec { values: &["sheet", "format", "password"], flags: &["raw", "formulas"] }, GET_HELP),
-        "set" => (Spec { values: &["sheet", "output", "password"], flags: &[] }, SET_HELP),
-        "recalc" => (Spec { values: &["output", "password"], flags: &[] }, RECALC_HELP),
+        "eval" => (Spec { values: &["sheet", "password", "date-locale"], flags: &[] }, EVAL_HELP),
+        "get" => (Spec { values: &["sheet", "format", "password", "date-locale"], flags: &["raw", "formulas"] }, GET_HELP),
+        "set" => (Spec { values: &["sheet", "output", "password", "date-locale"], flags: &[] }, SET_HELP),
+        "recalc" => (Spec { values: &["output", "password", "date-locale"], flags: &[] }, RECALC_HELP),
         "run-macro" => (Spec { values: &["output", "password"], flags: &["trust", "save", "allow-writes", "allow-suspicious"] }, RUN_MACRO_HELP),
         "merge" => (Spec { values: &["out", "sheet", "name", "query", "sql", "password-env"], flags: &["pdf", "single", "quiet", "allow-remote"] }, MERGE_HELP),
         "info" => (Spec { values: &["password"], flags: &["json", "page-starts"] }, INFO_HELP),
@@ -300,6 +300,8 @@ prints the result. Formulas use English function names and ',' between
 arguments: 'SUM(B2:B10)/2', '=AVERAGE(Sheet2!A:A)'. Nothing is saved.
 
 Options:
+      --date-locale TAG
+                      Gregorian date order, e.g. en-NZ (default: LC_TIME)
   -s, --sheet SHEET   sheet the formula is on (default: the first)
   -p, --password PW   password of an encrypted file
       --password-env VAR
@@ -312,6 +314,8 @@ Prints the value of cells or ranges: B3, A1:C10, Sheet2!D4 or a defined
 name. A range prints one row per line.
 
 Options:
+      --date-locale TAG
+                      Gregorian date order, e.g. en-NZ (default: LC_TIME)
   -s, --sheet SHEET   sheet number (1 = first) or name
   -f, --format FMT    ranges: tsv (default), csv, json, table, md
       --raw           values without number formats
@@ -328,6 +332,8 @@ Values use English syntax: 3.5, TRUE, 2024-05-31, =SUM(A1:A3).
 Protected cells are not changed.
 
 Options:
+      --date-locale TAG
+                      Gregorian date order, e.g. en-NZ (default: LC_TIME)
   -s, --sheet SHEET   sheet number (1 = first) or name
   -o, --output FILE   save to another file (format by its extension)
   -p, --password PW   password of an encrypted file (kept when saving)
@@ -340,6 +346,8 @@ const RECALC_HELP: &str = "Usage: apexdesk recalc FILE [options]
 Recalculates every formula of a spreadsheet and saves it.
 
 Options:
+      --date-locale TAG
+                      Gregorian date order, e.g. en-NZ (default: LC_TIME)
   -o, --output FILE   save to another file (format by its extension)
   -p, --password PW   password of an encrypted file (kept when saving)
       --password-env VAR
@@ -439,9 +447,24 @@ fn open(path: &Path, a: &Parsed) -> Res<(Loaded, Format)> {
 
 fn open_sheet(path: &Path, a: &Parsed) -> Res<(Workbook, Format)> {
     match open(path, a)? {
-        (Loaded::Sheet(wb), f) => Ok((*wb, f)),
+        (Loaded::Sheet(mut wb), f) => {
+            apply_date_locale(&mut wb, a)?;
+            Ok((*wb, f))
+        }
         (Loaded::Doc(_) | Loaded::Slides(_), _) => error(format!("{}: not a spreadsheet", path.display())),
     }
+}
+
+fn apply_date_locale(wb: &mut Workbook, a: &Parsed) -> Res<()> {
+    if let Some(tag) = a.value("date-locale") {
+        let order = apex_sheet::format::DateOrder::from_tag(tag)
+            .ok_or_else(|| Fail::Usage(format!("unsupported date locale '{tag}'")))?;
+        if wb.locale.date_order != order {
+            wb.locale.date_order = order;
+            wb.recalc_all();
+        }
+    }
+    Ok(())
 }
 
 /// The sheet `--sheet` names: a number from 1, or a name.
@@ -949,8 +972,9 @@ fn eval(a: &Parsed) -> Res<i32> {
         [] => return usage("no formula given"),
         _ => return usage(format!("unexpected argument '{}'", a.pos[2])),
     };
+    apply_date_locale(&mut wb, a)?;
     let sheet = pick_sheet(&wb, a.value("sheet"))?;
-    wb.locale = Locale::EN;
+    wb.locale = Locale { date_order: wb.locale.date_order, ..Locale::EN };
     let formula = if formula.starts_with('=') { formula } else { format!("={formula}") };
     wb.check_formula(&formula).map_err(|e| Fail::Error(format!("{formula}: {e}")))?;
     let v = wb.eval_formula(sheet, &formula);
@@ -977,7 +1001,8 @@ fn set(a: &Parsed) -> Res<i32> {
     let (out, out_fmt) = output_of(&path, fmt, a)?;
     let sheet = pick_sheet(&wb, a.value("sheet"))?;
     // Typed values and formulas in English syntax, whatever the system's.
-    let locale = std::mem::replace(&mut wb.locale, Locale::EN);
+    let input_locale = Locale { date_order: wb.locale.date_order, ..Locale::EN };
+    let locale = std::mem::replace(&mut wb.locale, input_locale);
     wb.enforce_protection = true;
     for pair in pairs.chunks(2) {
         let (s, r) = target(&wb, sheet, &pair[0])?;
@@ -1391,4 +1416,3 @@ fn tui(a: &Parsed) -> Res<i32> {
     apex_tui::run(path.as_deref(), hooks).map_err(Fail::Error)?;
     Ok(0)
 }
-

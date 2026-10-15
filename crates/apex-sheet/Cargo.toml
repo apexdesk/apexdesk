@@ -7,4 +7,5 @@ publish.workspace = true
 
 [dependencies]
 apex-doc.workspace = true
+icu_locale = "2.3"
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }

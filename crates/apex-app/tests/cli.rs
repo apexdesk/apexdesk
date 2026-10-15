@@ -16,7 +16,13 @@ fn folder(name: &str) -> PathBuf {
 
 /// Runs `apexdesk args...` in `dir` with English number formats.
 fn run(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_apexdesk")).args(args).current_dir(dir).env("LC_ALL", "C").env("LANG", "C").env("APEXDESK_SCRIPT", "1").output().unwrap()
+    run_env(dir, args, &[])
+}
+
+fn run_env(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_apexdesk")).args(args).current_dir(dir)
+        .env("LC_ALL", "C").env("LANG", "C").env_remove("LC_TIME").env_remove("LC_NUMERIC")
+        .env("APEXDESK_SCRIPT", "1").envs(env.iter().copied()).output().unwrap()
 }
 
 fn stdout(o: &Output) -> String {
@@ -141,6 +147,39 @@ fn eval_get_and_set() {
     ok(&d, &["recalc", "t_book.xlsx"]);
     let info = ok(&d, &["info", "t_book.xlsx", "--json"]);
     assert!(info.contains("\"type\": \"spreadsheet\"") && info.contains("\"name\": \"Notes\"") && info.contains("\"macros\": false"), "{info}");
+}
+
+#[test]
+fn date_locale() {
+    let d = folder("date_locale");
+    book(&d);
+    let out = run_env(&d, &["get", "t_book.xlsx", "C2"], &[("LC_ALL", ""), ("LC_NUMERIC", "es_ES"), ("LC_TIME", "en_US")]);
+    assert!(out.status.success());
+    assert_eq!(stdout(&out), "10,5\n");
+    // English formula syntax is independent of numeric and date categories.
+    for (env, expected) in [
+        (vec![("LC_ALL", ""), ("LC_NUMERIC", "es_ES"), ("LC_TIME", "en_AU")], "4.5\n"),
+        (vec![("LC_ALL", ""), ("LC_NUMERIC", "en_AU"), ("LC_TIME", "en_US")], "1.5\n"),
+        (vec![("LC_ALL", "en_US"), ("LC_TIME", "en_NZ")], "1.5\n"),
+        (vec![("LC_ALL", ""), ("LC_TIME", ""), ("LANG", "en_NZ")], "4.5\n"),
+    ] {
+        let out = run_env(&d, &["eval", "SUM(MONTH(\"1/4/2021\"),0.5)"], &env);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(stdout(&out), expected, "{env:?}");
+    }
+    assert_eq!(ok(&d, &["eval", "SUM(MONTH(\"1/4/2021\"),0.5)", "--date-locale", "en-AU"]), "4.5\n");
+    assert_eq!(ok(&d, &["eval", "MONTH(\"1/4/2021\")", "--date-locale", "en-US"]), "1\n");
+    assert_eq!(ok(&d, &["eval", "YEAR(\"21/4/1\")", "--date-locale", "en-CA"]), "2021\n");
+    assert_eq!(run(&d, &["eval", "1", "--date-locale", "xx-YY"]).status.code(), Some(2));
+
+    // The override must recalculate loaded formulas, not return cached results.
+    ok(&d, &["set", "t_book.xlsx", "Z1", "31/12/2020", "Z2", "=MONTH(\"1/4/2021\")", "Z3", "=SUM(Z2,0.5)", "--date-locale", "en-AU"]);
+    assert_eq!(ok(&d, &["get", "t_book.xlsx", "Z1", "Z2", "Z3", "--raw", "--date-locale", "en-AU"]), "44196\n4\n4.5\n");
+    assert_eq!(ok(&d, &["get", "t_book.xlsx", "Z2", "Z3", "--date-locale", "en-US"]), "1\n1.5\n");
+    assert_eq!(ok(&d, &["eval", "t_book.xlsx", "SUM(Z2,0.5)", "--date-locale", "en-AU"]), "4.5\n");
+    ok(&d, &["recalc", "t_book.xlsx", "--date-locale", "en-AU"]);
+    let wb = open_sheet(&d.join("t_book.xlsx"));
+    assert_eq!(wb.sheets[0].value(CellRef::parse("Z1").unwrap()), &apex_sheet::Value::Number(44196.0));
 }
 
 #[test]
