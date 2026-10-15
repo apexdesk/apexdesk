@@ -42,25 +42,22 @@ impl Locale {
         currency_after: true,
     };
 
-    /// Picks a locale from `LC_ALL`/`LC_NUMERIC`/`LANG`.
+    /// Picks a locale from the environment: numbers from `LC_ALL`,
+    /// `LC_NUMERIC` or `LANG`, the order of dates from `LC_ALL`, `LC_TIME`
+    /// or `LANG`.
     pub fn from_env() -> Locale {
-        let lang = ["LC_ALL", "LC_NUMERIC", "LANG"]
-            .iter()
-            .filter_map(|k| std::env::var(k).ok())
-            .find(|v| !v.is_empty())
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        Self::from_tag(&lang)
+        let var = |keys: [&str; 3]| keys.iter().filter_map(|k| std::env::var(k).ok()).find(|v| !v.is_empty()).unwrap_or_default();
+        let numbers = var(["LC_ALL", "LC_NUMERIC", "LANG"]);
+        let dates = var(["LC_ALL", "LC_TIME", "LANG"]);
+        Locale { date_order: date_order_of(&dates), ..Self::from_tag(&numbers) }
     }
 
+    /// The locale of a tag such as `en_NZ.UTF-8`, `es-ES` or `ja`.
     pub fn from_tag(tag: &str) -> Locale {
         let t = tag.to_ascii_lowercase();
         let comma_langs = ["es", "fr", "de", "it", "pt", "nl", "ca", "gl", "eu", "ru", "pl", "tr", "sv", "da", "nb", "fi", "cs"];
-        if comma_langs.iter().any(|l| t.starts_with(l)) {
-            Locale::ES
-        } else {
-            Locale::EN
-        }
+        let base = if comma_langs.iter().any(|l| t.starts_with(l)) { Locale::ES } else { Locale::EN };
+        Locale { date_order: date_order_of(tag), ..base }
     }
 
     pub fn short_date_code(&self) -> &'static str {
@@ -69,6 +66,26 @@ impl Locale {
             DateOrder::Mdy => "mm/dd/yyyy",
             DateOrder::Ymd => "yyyy-mm-dd",
         }
+    }
+}
+
+/// How a region writes numeric dates. Month first only in English for the
+/// United States and the places that follow it; year first in East Asia,
+/// Hungary, Lithuania, Sweden and Canada; day first everywhere else. An
+/// empty tag (or `C`/`POSIX`) keeps the month first, as before.
+fn date_order_of(tag: &str) -> DateOrder {
+    // "en_NZ.UTF-8@euro" -> ("en", "nz"); "zh-Hant-TW" -> ("zh", "tw").
+    let t = tag.split(['.', '@']).next().unwrap_or("").to_ascii_lowercase();
+    let mut parts = t.split(['_', '-']);
+    let lang = parts.next().unwrap_or("");
+    let region = parts.find(|p| p.len() == 2 || (p.len() == 3 && p.chars().all(|c| c.is_ascii_digit()))).unwrap_or("");
+    const MONTH_FIRST: [&str; 10] = ["us", "pr", "ph", "um", "vi", "as", "gu", "mp", "mh", "fm"];
+    match lang {
+        "" | "c" | "posix" => DateOrder::Mdy,
+        "ja" | "zh" | "ko" | "hu" | "lt" | "mn" | "sv" => DateOrder::Ymd,
+        "en" | "fr" if region == "ca" => DateOrder::Ymd,
+        "en" if region.is_empty() || MONTH_FIRST.contains(&region) => DateOrder::Mdy,
+        _ => DateOrder::Dmy,
     }
 }
 
@@ -1235,5 +1252,50 @@ mod tests {
         assert_eq!(parse_input("'123", &es).value, Value::text("123"));
         assert_eq!(parse_input("1,234.5", &Locale::EN).value, Value::Number(1234.5));
         assert_eq!(parse_input("1,23", &Locale::EN).value, Value::text("1,23"));
+    }
+
+    #[test]
+    fn date_order_follows_language_and_region() {
+        use DateOrder::*;
+        for (tag, order) in [
+            ("", Mdy),
+            ("C", Mdy),
+            ("en", Mdy),
+            ("en_US.UTF-8", Mdy),
+            ("en-PH", Mdy),
+            ("en_NZ.UTF-8", Dmy),
+            ("en_GB", Dmy),
+            ("en-AU", Dmy),
+            ("en_IE@euro", Dmy),
+            ("en_IN", Dmy),
+            ("en_CA", Ymd),
+            ("fr_CA.UTF-8", Ymd),
+            ("es_ES.UTF-8", Dmy),
+            ("es_US", Dmy),
+            ("de_DE", Dmy),
+            ("ja_JP.UTF-8", Ymd),
+            ("zh-Hant-TW", Ymd),
+            ("sv_SE", Ymd),
+            ("el_GR", Dmy),
+        ] {
+            assert_eq!(Locale::from_tag(tag).date_order, order, "{tag}");
+        }
+        // Numbers keep following the language.
+        let nz = Locale::from_tag("en_NZ.UTF-8");
+        assert_eq!((nz.decimal, nz.thousands, nz.arg_sep), ('.', ',', ','));
+    }
+
+    #[test]
+    fn ambiguous_dates_follow_the_region() {
+        let serial = |tag: &str| match parse_input("1/4/2021", &Locale::from_tag(tag)).value {
+            Value::Number(n) => n,
+            v => panic!("{tag}: {v:?}"),
+        };
+        assert_eq!(serial("en_NZ"), excel_serial(2021, 4, 1));
+        assert_eq!(serial("en_US"), excel_serial(2021, 1, 4));
+        assert_eq!(parse_input("2021/4/1", &Locale::from_tag("ja_JP")).value, Value::Number(excel_serial(2021, 4, 1)));
+        let gb = Locale::from_tag("en_GB");
+        assert_eq!(parse_input("31/12/2020", &gb).value, Value::Number(excel_serial(2020, 12, 31)));
+        assert_eq!(parse_input("2021-04-01", &gb).value, Value::Number(excel_serial(2021, 4, 1)));
     }
 }

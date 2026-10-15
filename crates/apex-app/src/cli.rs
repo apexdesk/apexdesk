@@ -950,7 +950,8 @@ fn eval(a: &Parsed) -> Res<i32> {
         _ => return usage(format!("unexpected argument '{}'", a.pos[2])),
     };
     let sheet = pick_sheet(&wb, a.value("sheet"))?;
-    wb.locale = Locale::EN;
+    // English syntax; dates in the system's order.
+    wb.locale = Locale { date_order: wb.locale.date_order, ..Locale::EN };
     let formula = if formula.starts_with('=') { formula } else { format!("={formula}") };
     wb.check_formula(&formula).map_err(|e| Fail::Error(format!("{formula}: {e}")))?;
     let v = wb.eval_formula(sheet, &formula);
@@ -977,7 +978,8 @@ fn set(a: &Parsed) -> Res<i32> {
     let (out, out_fmt) = output_of(&path, fmt, a)?;
     let sheet = pick_sheet(&wb, a.value("sheet"))?;
     // Typed values and formulas in English syntax, whatever the system's.
-    let locale = std::mem::replace(&mut wb.locale, Locale::EN);
+    let english = Locale { date_order: wb.locale.date_order, ..Locale::EN };
+    let locale = std::mem::replace(&mut wb.locale, english);
     wb.enforce_protection = true;
     for pair in pairs.chunks(2) {
         let (s, r) = target(&wb, sheet, &pair[0])?;
