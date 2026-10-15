@@ -55,6 +55,12 @@ impl Locale {
 
     pub fn from_tag(tag: &str) -> Locale {
         let t = tag.to_ascii_lowercase();
+        // Regional English keeps English number/formula separators, but
+        // uses day-first dates. Ignore POSIX encoding and modifier suffixes.
+        let region = t.split(['.', '@']).next().unwrap_or_default();
+        if matches!(region, "en_nz" | "en-nz" | "en_gb" | "en-gb") {
+            return Locale { date_order: DateOrder::Dmy, ..Locale::EN };
+        }
         let comma_langs = ["es", "fr", "de", "it", "pt", "nl", "ca", "gl", "eu", "ru", "pl", "tr", "sv", "da", "nb", "fi", "cs"];
         if comma_langs.iter().any(|l| t.starts_with(l)) {
             Locale::ES
@@ -1219,6 +1225,23 @@ mod tests {
         assert_eq!(date_to_serial(2023, 3, 15), 45000.0);
         assert_eq!(serial_to_date(45000.0), (2023, 3, 15));
         assert_eq!(date_to_serial(2023, 13, 1), date_to_serial(2024, 1, 1));
+    }
+
+    #[test]
+    fn regional_english_input() {
+        for tag in ["en_NZ", "en-NZ", "en_NZ.UTF-8", "EN-gb", "en_GB.UTF-8", "en-GB@euro"] {
+            let locale = Locale::from_tag(tag);
+            assert_eq!(locale, Locale { date_order: DateOrder::Dmy, ..Locale::EN }, "{tag}");
+            assert_eq!(parse_input("1,234.5", &locale).value, Value::Number(1234.5));
+            assert_eq!(parse_input("31/12/2020", &locale).value, Value::Number(date_to_serial(2020, 12, 31)));
+            assert_eq!(parse_input("1/4/2021", &locale).value, Value::Number(date_to_serial(2021, 4, 1)));
+        }
+        for tag in ["en", "en_US.UTF-8", "en-US", "C", "", "en_NZZ", "en_GBextra"] {
+            let locale = Locale::from_tag(tag);
+            assert_eq!(locale, Locale::EN, "{tag}");
+            assert_eq!(parse_input("1/4/2021", &locale).value, Value::Number(date_to_serial(2021, 1, 4)));
+        }
+        assert_eq!(Locale::from_tag("es_ES.UTF-8"), Locale::ES);
     }
 
     #[test]

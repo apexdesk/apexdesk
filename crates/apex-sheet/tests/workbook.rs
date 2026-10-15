@@ -27,6 +27,42 @@ fn recalc_chain() {
 }
 
 #[test]
+fn regional_english_date_coercion() {
+    for (tag, month, day) in [("en_NZ.UTF-8", 4.0, 1.0), ("en-GB", 4.0, 1.0), ("en_US.UTF-8", 1.0, 4.0)] {
+        let mut w = wb();
+        w.locale = Locale::from_tag(tag);
+        assert_eq!(w.eval_formula(0, "=MONTH(\"1/4/2021\")"), Value::Number(month), "{tag}");
+        assert_eq!(w.eval_formula(0, "=DAY(\"1/4/2021\")"), Value::Number(day), "{tag}");
+        if month == 1.0 {
+            continue;
+        }
+        for (cell, input) in [
+            ("C6", "31"), ("D6", "12"), ("E6", "2020"),
+            ("G6", "31"), ("H6", "3"), ("I6", "2021"),
+            ("M6", "1"), ("N6", "4"), ("O6", "2021"),
+            ("C8", "=C6&\"/\"&D6&\"/\"&E6"),
+            ("G8", "=G6&\"/\"&H6&\"/\"&I6"),
+            ("M8", "=M6&\"/\"&N6&\"/\"&O6"),
+            ("Q6", "=DATE(YEAR(C8)+1,MONTH(C8),DAY(C8)-1)"),
+            ("Q8", "=Q6"),
+            ("C12", "=G8-C8+1"),
+            ("M12", "=Q8-M8+1"),
+            ("H16", "=C12+M12"),
+        ] {
+            w.set_input(0, c(cell), input);
+        }
+        w.recalc_all();
+        for (cell, expected) in [("C12", "91"), ("M12", "274"), ("H16", "365")] {
+            assert_eq!(show(&w, cell), expected, "{tag}: {cell}");
+        }
+        w.set_input(0, c("H6"), "2");
+        w.set_input(0, c("G6"), "28");
+        assert_eq!(show(&w, "C12"), "60");
+        assert_eq!(show(&w, "H16"), "334");
+    }
+}
+
+#[test]
 fn range_dependency_new_cell() {
     let mut w = wb();
     w.set_input(0, c("B1"), "=SUM(A1:A100)");
