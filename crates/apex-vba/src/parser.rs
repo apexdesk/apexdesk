@@ -1369,6 +1369,12 @@ mod tests {
 
     #[test]
     fn deep_code_is_refused() {
+        // Macros run with a large stack (as the app runs them); a debug
+        // build's frames overflow a test thread's 2 MB on some systems.
+        std::thread::Builder::new().stack_size(16 << 20).spawn(deep_code_checks).unwrap().join().unwrap();
+    }
+
+    fn deep_code_checks() {
         let deep = |open: &str, close: &str, n: usize| format!("Sub M()\n  x = {}1{}\nEnd Sub\n", open.repeat(n), close.repeat(n));
         assert!(parse_module("M", ModuleKind::Standard, &deep("(", ")", 20)).is_ok());
         assert!(parse_module("M", ModuleKind::Standard, &deep("(", ")", 50_000)).is_err());

@@ -1,8 +1,9 @@
 # Tests on every push and pull request, and the programs for every platform:
 # Linux (x86-64 and ARM: portable, .deb, .rpm), Windows (x86-64 and ARM zip,
-# x86-64 MSI and MSIX), macOS (Apple silicon and Intel in one .dmg) and
-# Android (APK signed with a debug key made here). Each build is kept as a
-# workflow artifact; a tag v* also puts them in a draft release.
+# x86-64 MSI and MSIX), macOS (Apple silicon and Intel in one .dmg),
+# Android (APK signed with a debug key made here) and the browser version
+# `apexdesk serve` serves. Each build is kept as a workflow artifact; a tag
+# v* also puts them in a draft release.
 name: CI
 
 on:
@@ -200,10 +201,33 @@ jobs:
           name: android
           path: dist/*.apk
 
+  # ApexDesk for the browser, for `apexdesk serve`: unpacked next to the
+  # program it is the `web` folder the server looks for.
+  web:
+    name: Web
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-noto-core fonts-dejavu-core
+      - run: cargo install --locked wasm-bindgen-cli --version "$(awk '/^name = "wasm-bindgen"$/ { getline; print $3 }' Cargo.lock | tr -d '"')"
+      - run: |
+          crates/apex-web/web/build.sh "$PWD/stage/web"
+          ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          mkdir -p dist
+          tar -C stage -czf "dist/apexdesk-$ver-web.tar.gz" web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: dist/*.tar.gz
+
   release:
     name: Draft release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows, windows-installers, macos, android]
+    needs: [linux, windows, windows-installers, macos, android, web]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

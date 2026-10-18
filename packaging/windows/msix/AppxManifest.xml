@@ -9,7 +9,7 @@
        For local signing, Publisher must also match the certificate subject. -->
   <Identity Name="DrQubit.ApexDesk"
             Publisher="CN=F81B9BC0-0AEB-4E34-AF5F-5B21EB57BA0D"
-            Version="1.1.0.0"
+            Version="1.2.0.0"
             ProcessorArchitecture="x64" />
 
   <Properties>

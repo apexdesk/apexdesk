@@ -209,10 +209,24 @@ fn split_pattern(text: &str) -> (String, String) {
     }
 }
 
+/// The path with its links followed, as Windows users write it: `C:\\x`,
+/// not `\\\\?\\C:\\x` (what macros show, compare and save to).
+fn canonical(p: impl AsRef<Path>) -> std::io::Result<PathBuf> {
+    let real = fs::canonicalize(p)?;
+    if let Some(Component::Prefix(pre)) = real.components().next()
+        && let std::path::Prefix::VerbatimDisk(d) = pre.kind()
+    {
+        let mut out = PathBuf::from(format!("{}:\\", d as char));
+        out.extend(real.components().skip(1).filter(|c| !matches!(c, Component::RootDir)));
+        return Ok(out);
+    }
+    Ok(real)
+}
+
 /// Whether macros only reach the files right in folder `r` (not below):
 /// the home folder or a top one.
 fn shallow(r: &Path) -> bool {
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).and_then(|h| fs::canonicalize(h).ok());
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).and_then(|h| canonical(h).ok());
     r.components().filter(|c| matches!(c, Component::Normal(_))).count() <= 2 || home.as_deref() == Some(r)
 }
 
@@ -292,7 +306,7 @@ pub(crate) struct Files {
 
 impl Files {
     pub(crate) fn new(file_path: &str, file_name: &str, access: &FileAccess) -> Files {
-        let root = Some(file_path).filter(|p| !p.is_empty()).and_then(|p| fs::canonicalize(p).ok()).filter(|p| p.fs_is_dir());
+        let root = Some(file_path).filter(|p| !p.is_empty()).and_then(|p| canonical(p).ok()).filter(|p| p.fs_is_dir());
         let shallow = root.as_deref().is_some_and(shallow);
         let book = root.as_ref().filter(|_| !file_name.is_empty()).map(|r| r.join(file_name));
         let dialogs = std::array::from_fn(|k| Dialog::new(k as u8 + 1));
@@ -357,7 +371,7 @@ impl Files {
         let mut rest: Vec<OsString> = Vec::new();
         let mut head = out;
         loop {
-            if let Ok(mut real) = fs::canonicalize(&head) {
+            if let Ok(mut real) = canonical(&head) {
                 real.extend(rest.iter().rev());
                 return Ok(real);
             }

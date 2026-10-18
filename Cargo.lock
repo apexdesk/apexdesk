@@ -218,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "apex-android"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-db",
  "apex-doc",
@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "apex-app"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-db",
  "apex-doc",
@@ -307,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "apex-bench"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-doc",
  "apex-io",
@@ -322,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "apex-db"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-fs",
  "encoding_rs",
@@ -333,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "apex-doc"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "regex",
  "web-time",
@@ -341,21 +341,21 @@ dependencies = [
 
 [[package]]
 name = "apex-fs"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "web-time",
 ]
 
 [[package]]
 name = "apex-i18n"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-sheet",
 ]
 
 [[package]]
 name = "apex-io"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "aes",
  "apex-db",
@@ -390,7 +390,7 @@ dependencies = [
 
 [[package]]
 name = "apex-pdf"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "miniz_oxide 0.9.1",
  "web-time",
@@ -398,7 +398,7 @@ dependencies = [
 
 [[package]]
 name = "apex-query"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-db",
  "apex-fs",
@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "apex-sheet"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-doc",
  "apex-fs",
@@ -431,7 +431,7 @@ dependencies = [
 
 [[package]]
 name = "apex-sign"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "aes",
  "apex-fs",
@@ -458,7 +458,7 @@ dependencies = [
 
 [[package]]
 name = "apex-slides"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-doc",
  "i_overlay",
@@ -466,7 +466,7 @@ dependencies = [
 
 [[package]]
 name = "apex-spell"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-fs",
  "web-time",
@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "apex-tui"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-doc",
  "apex-i18n",
@@ -486,7 +486,7 @@ dependencies = [
 
 [[package]]
 name = "apex-vba"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-doc",
  "apex-fs",
@@ -496,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "apex-web"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "apex-db",
  "apex-doc",
