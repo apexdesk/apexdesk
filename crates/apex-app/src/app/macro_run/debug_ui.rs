@@ -735,6 +735,8 @@ mod tests {
         let dir = apex_fs::temp_dir().join(format!("apex-saveas-{}", apex_fs::process_id()));
         let _ = apex_fs::remove_dir_all(&dir);
         apex_fs::create_dir_all(&dir).unwrap();
+        // As macros see it: links followed (macOS's /var), long names (Windows').
+        let dir = apex_vba::files::canonical(&dir).unwrap();
         let (app, _) = run_in(&dir, "Sub Main()\n    Range(\"A1\").Value = 5\n    ThisWorkbook.SaveCopyAs ThisWorkbook.Path & \"/copy.xlsx\"\n    ThisWorkbook.SaveAs ThisWorkbook.Path & \"/new.ods\"\nEnd Sub\n");
         // The tab is the new file, saved; the copy is a workbook too.
         assert_eq!(app.tabs[0].path.as_deref(), Some(dir.join("new.ods").as_path()));

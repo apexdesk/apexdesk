@@ -211,7 +211,7 @@ fn split_pattern(text: &str) -> (String, String) {
 
 /// The path with its links followed, as Windows users write it: `C:\\x`,
 /// not `\\\\?\\C:\\x` (what macros show, compare and save to).
-fn canonical(p: impl AsRef<Path>) -> std::io::Result<PathBuf> {
+pub fn canonical(p: impl AsRef<Path>) -> std::io::Result<PathBuf> {
     let real = fs::canonicalize(p)?;
     if let Some(Component::Prefix(pre)) = real.components().next()
         && let std::path::Prefix::VerbatimDisk(d) = pre.kind()

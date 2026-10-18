@@ -1,6 +1,6 @@
 # Maintainer: ApexDesk <50219414+apexdesk@users.noreply.github.com>
 pkgname=apexdesk-bin
-pkgver=1.1.0
+pkgver=1.2.0
 pkgrel=1
 pkgdesc="Free office suite: documents, spreadsheets, presentations, PDF, databases and notebooks"
 arch=('x86_64')
@@ -19,8 +19,8 @@ source=("https://github.com/apexdesk/apexdesk/releases/download/v${pkgver}/apexd
         'apexdesk.desktop'
         'apexdesk-mime.xml'
         'apexdesk.svg')
-sha256sums=('f28a6ca847352bc29b2b09cf64ad5796d656e416aa4d852f8bd06c6b21b779a9'
-            'ee00aedeff5e26bde6f0bf7d18ad28f7e001e493ba1a05804a816526b461dcdf'
+sha256sums=('461102b61589fc3d375911bae564308b7e66ce85304dd9b932dc2564c32eb96c'
+            '5d414a55f644196c05626b5353a0cb1bf17d6ada790a911cc79e9e0cd949741c'
             '0f5f53b985ccced98108aeeb978f29779f7141bda5a4de58e12b46a9b85d5d11'
             '68d0cbf0878537b3dc66c5c7e515182554e01b593bfd0ad0c2fbae74df84ad9e')
 

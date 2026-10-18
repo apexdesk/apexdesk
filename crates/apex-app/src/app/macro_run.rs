@@ -2028,6 +2028,7 @@ mod tests {
     fn documents_a_macro_leaves_open() {
         let dir = apex_fs::temp_dir().join(format!("apex-doc-open-{}", apex_fs::process_id()));
         apex_fs::create_dir_all(&dir).unwrap();
+        let dir = apex_vba::files::canonical(&dir).unwrap();
         apex_fs::write(dir.join("Other.docx"), apex_io::docx::write(&apex_doc::Document::from_plain_text("Otro"))).unwrap();
         let (ctx, mut app, id) = doc_app("Sub Main()\n    Documents.Add.Content.Text = \"Nuevo\"\n    Set d = Documents.Open(ThisDocument.Path & \"/Other.docx\")\n    d.Content.InsertAfter \" cambiado\"\n    ThisDocument.Content.InsertAfter \" propio\"\nEnd Sub\n");
         app.tabs[0].path = Some(dir.join("Doc1.docm"));
@@ -2062,6 +2063,7 @@ mod tests {
     fn trying_a_documents_macro() {
         let dir = apex_fs::temp_dir().join(format!("apex-doc-try-{}", apex_fs::process_id()));
         apex_fs::create_dir_all(&dir).unwrap();
+        let dir = apex_vba::files::canonical(&dir).unwrap();
         let (ctx, mut app, id) = doc_app("Sub Main()\n    ActiveDocument.Content.InsertAfter \" mundo\"\n    ActiveDocument.SaveAs2 ActiveDocument.Path & \"/copy.docx\"\nEnd Sub\n");
         app.tabs[0].path = Some(dir.join("Doc1.docm"));
         app.macro_run.trial = Some((id, "Main".into()));
