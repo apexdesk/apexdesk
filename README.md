@@ -251,6 +251,40 @@ so run commands as `start /wait apexdesk ...` (or pipe the output) to see
 their output before the prompt and get `%ERRORLEVEL%`; `tui` opens its own
 console window.
 
+## ApexDesk in the browser (`apexdesk serve`)
+
+`apexdesk serve` serves ApexDesk to web browsers from your own computer or
+server (Linux, Windows or macOS). Each user signs in with a name and a
+password and finds their own files, which are kept on the server. Nothing
+listens for connections unless you run this command.
+
+1. Unpack `apexdesk-X-web.tar.gz` from the release next to the program, so
+   there is a `web` folder beside `apexdesk` (or build it with
+   `crates/apex-web/web/build.sh DIR`), or give its place with `--web DIR`.
+2. Add the users; the password is asked for:
+
+   ```sh
+   apexdesk serve --add-user ana        # again to change her password
+   apexdesk serve --list-users
+   apexdesk serve --remove-user ana     # her files are kept
+   ```
+
+3. Start it and open the address it prints (Ctrl+C stops it):
+
+   ```sh
+   apexdesk serve                                   # http://127.0.0.1:8080/, this computer only
+   apexdesk serve --bind 0.0.0.0 --cert fullchain.pem --key privkey.pem   # the network, HTTPS on 8443
+   ```
+
+Users and files live in the `serve` folder of the settings folder (`--dir DIR`
+for another one): `users` holds the password hashes and `files/NAME/` each
+user's files. `--port N` changes the port. Without `--cert` and `--key`,
+passwords and files travel unencrypted, so open it to the network only with a
+certificate or behind an HTTPS reverse proxy. Get Data in the browser can
+reach only the database servers named with `--db-hosts host1,host2`. On
+Windows, keep the `--dir` folder readable only by the account that runs the
+server.
+
 ## Workspace layout
 
 | Crate        | Purpose                                                   |
@@ -290,6 +324,16 @@ cálculo, presentaciones, PDF, bases de datos y cuadernos de notas en un
 solo programa, escrito en Rust. Los instaladores están en
 **[Releases](../../releases/latest)** y en la
 [web](https://apexdesk.github.io/download.html).
+
+**ApexDesk en el navegador:** descomprime `apexdesk-X-web.tar.gz` junto
+al programa (queda una carpeta `web` al lado de `apexdesk`), añade usuarios
+con `apexdesk serve --add-user NOMBRE` (pide la contraseña) y arráncalo con
+`apexdesk serve`: por defecto en `http://127.0.0.1:8080/`, solo para este
+equipo. Para la red, `apexdesk serve --bind 0.0.0.0 --cert fullchain.pem
+--key privkey.pem` (HTTPS en el puerto 8443); sin certificado, las
+contraseñas y los archivos viajan sin cifrar. Cada usuario ve solo sus
+archivos, guardados en el servidor. Más opciones en la sección
+*ApexDesk in the browser* y con `apexdesk serve --help`.
 
 **Licencia:** el código fuente **no es de código abierto**. Se publica
 bajo la **PolyForm Strict License 1.0.0** ([LICENSE](LICENSE)): puedes

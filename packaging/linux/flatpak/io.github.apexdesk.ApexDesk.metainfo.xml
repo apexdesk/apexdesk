@@ -10,6 +10,9 @@
   </description>
   <launchable type="desktop-id">io.github.apexdesk.ApexDesk.desktop</launchable>
   <url type="homepage">https://github.com/apexdesk/apexdesk</url>
+  <releases>
+    <release version="1.2.0" date="2026-10-18"/>
+  </releases>
   <content_rating type="oars-1.1"/>
   <categories>
     <category>Office</category>
