@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <!-- Identity values must match Partner Center's Product identity.
+       For local signing, Publisher must also match the certificate subject. -->
+  <Identity Name="DrQubit.ApexDesk"
+            Publisher="CN=F81B9BC0-0AEB-4E34-AF5F-5B21EB57BA0D"
+            Version="1.1.0.0"
+            ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>ApexDesk</DisplayName>
+    <PublisherDisplayName>DrQubit</PublisherDisplayName>
+    <!-- 50x50 -->
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop"
+                        MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="es-ES" />
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="ApexDesk"
+                 Executable="ApexDesk.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="ApexDesk"
+                          Description="Hoja de cálculo y procesador de textos"
+                          BackgroundColor="transparent"
+                          Square150x150Logo="Assets\Square150x150Logo.png"
+                          Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- Offered under "Open with"; the default is the user's choice
+             (Settings > Default apps). The same types as the MSI
+             (apexdesk.wxs); no code or configuration ones. -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="spreadsheets">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.xlsx</uap:FileType>
+              <uap:FileType>.xlsm</uap:FileType>
+              <uap:FileType>.xltx</uap:FileType>
+              <uap:FileType>.xltm</uap:FileType>
+              <uap:FileType>.xlsb</uap:FileType>
+              <uap:FileType>.xls</uap:FileType>
+              <uap:FileType>.ods</uap:FileType>
+              <uap:FileType>.ots</uap:FileType>
+              <uap:FileType>.fods</uap:FileType>
+              <uap:FileType>.csv</uap:FileType>
+              <uap:FileType>.tsv</uap:FileType>
+              <uap:FileType>.et</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="documents">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.docx</uap:FileType>
+              <uap:FileType>.docm</uap:FileType>
+              <uap:FileType>.dotx</uap:FileType>
+              <uap:FileType>.dotm</uap:FileType>
+              <uap:FileType>.doc</uap:FileType>
+              <uap:FileType>.odt</uap:FileType>
+              <uap:FileType>.ott</uap:FileType>
+              <uap:FileType>.fodt</uap:FileType>
+              <uap:FileType>.rtf</uap:FileType>
+              <uap:FileType>.md</uap:FileType>
+              <uap:FileType>.wps</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="presentations">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.pptx</uap:FileType>
+              <uap:FileType>.pptm</uap:FileType>
+              <uap:FileType>.potx</uap:FileType>
+              <uap:FileType>.potm</uap:FileType>
+              <uap:FileType>.ppsx</uap:FileType>
+              <uap:FileType>.ppsm</uap:FileType>
+              <uap:FileType>.ppt</uap:FileType>
+              <uap:FileType>.odp</uap:FileType>
+              <uap:FileType>.otp</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="pdf">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.pdf</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="apexnote">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.apexnote</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <!-- A plain desktop program does not start without it. -->
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

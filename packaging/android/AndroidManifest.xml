@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ApexDesk for Android: a NativeActivity running libapexdesk.so
+     (crates/apex-android), full screen (java/.../MainActivity.java). apk.sh sets versionCode and versionName. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.apexdesk.app"
+    android:versionCode="1"
+    android:versionName="0">
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+  <!-- Opening and saving files of the shared storage: Android 11 and later
+       ask for "All files access" in the settings (the file browser offers
+       it); older versions for these two. -->
+  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+  <!-- Tablets, phones and TVs: no touch screen or keyboard required. -->
+  <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+  <uses-feature android:name="android.software.leanback" android:required="false" />
+  <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+  <application
+      android:label="ApexDesk"
+      android:icon="@mipmap/ic_launcher"
+      android:banner="@drawable/banner"
+      android:hasCode="true"
+      android:extractNativeLibs="true"
+      android:requestLegacyExternalStorage="true">
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:launchMode="singleTask"
+        android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode|locale|layoutDirection|fontScale|colorMode|mcc|mnc|touchscreen|fontWeightAdjustment|grammaticalGender"
+        android:windowSoftInputMode="adjustResize"
+        android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+      <meta-data android:name="android.app.lib_name" android:value="apexdesk" />
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+        <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+      </intent-filter>
+      <!-- Files other apps open with ApexDesk: the same types as the
+           desktop's (packaging/linux/apexdesk.desktop). MainActivity reads
+           them. -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <action android:name="android.intent.action.EDIT" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="content" />
+        <data android:scheme="file" />
+        <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        <data android:mimeType="application/vnd.oasis.opendocument.spreadsheet" />
+        <data android:mimeType="application/vnd.oasis.opendocument.text" />
+        <data android:mimeType="application/vnd.oasis.opendocument.spreadsheet-flat-xml" />
+        <data android:mimeType="application/vnd.oasis.opendocument.text-flat-xml" />
+        <data android:mimeType="text/csv" />
+        <data android:mimeType="text/tab-separated-values" />
+        <data android:mimeType="application/rtf" />
+        <data android:mimeType="text/rtf" />
+        <data android:mimeType="text/markdown" />
+        <data android:mimeType="text/x-markdown" />
+        <data android:mimeType="application/msword" />
+        <data android:mimeType="application/vnd.ms-excel" />
+        <data android:mimeType="application/wps-office.wps" />
+        <data android:mimeType="application/wps-office.et" />
+        <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+        <data android:mimeType="application/vnd.ms-powerpoint.presentation.macroEnabled.12" />
+        <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.template" />
+        <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.slideshow" />
+        <data android:mimeType="application/vnd.oasis.opendocument.presentation" />
+        <data android:mimeType="application/vnd.oasis.opendocument.presentation-template" />
+        <data android:mimeType="application/vnd.ms-powerpoint" />
+        <data android:mimeType="application/vnd.ms-excel.sheet.macroEnabled.12" />
+        <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.template" />
+        <data android:mimeType="application/vnd.ms-excel.template.macroEnabled.12" />
+        <data android:mimeType="application/vnd.ms-excel.sheet.binary.macroEnabled.12" />
+        <data android:mimeType="application/vnd.oasis.opendocument.spreadsheet-template" />
+        <data android:mimeType="application/vnd.ms-word.document.macroEnabled.12" />
+        <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.template" />
+        <data android:mimeType="application/vnd.ms-word.template.macroEnabled.12" />
+        <data android:mimeType="application/vnd.oasis.opendocument.text-template" />
+        <data android:mimeType="application/vnd.ms-powerpoint.template.macroEnabled.12" />
+        <data android:mimeType="application/vnd.ms-powerpoint.slideshow.macroEnabled.12" />
+        <data android:mimeType="application/pdf" />
+        <data android:mimeType="application/x-apexnote" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

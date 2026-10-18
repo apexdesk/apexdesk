@@ -1,0 +1,120 @@
+ApexDesk
+Copyright (c) 2026 the author of ApexDesk. All rights reserved except as stated
+in LICENSE and below.
+
+English · Español below
+
+1. LICENSE
+
+The source code in this repository is licensed under the PolyForm Strict
+License 1.0.0 (see LICENSE, https://polyformproject.org/licenses/strict/1.0.0).
+In short, and LICENSE is what counts:
+
+  - You may read the code, build it and use it for noncommercial purposes:
+    personal study, research, testing, hobby projects, and use by
+    charitable, educational, public research and government organizations.
+  - You may not distribute it, in source or in built form, and you may not
+    change it or make new works based on it.
+  - Commercial use needs a separate written license from the author.
+
+In addition to LICENSE, anyone, companies included, may read this source
+code and build it solely to inspect and verify its security and what it
+does, provided the result is not used for anything else and is not
+distributed.
+
+The official ApexDesk builds (the installers on the website) come with their
+own license agreement, EULA.md and EULA.es.md, which says who may use them
+free of charge. That agreement, not this repository's license, governs the
+official builds.
+
+Versions of this code published before 18 October 2026 were made available
+under the GNU General Public License. Copies obtained then keep that
+license; it does not extend to anything published here since.
+
+2. RESERVATION OF RIGHTS: TEXT AND DATA MINING AND ARTIFICIAL INTELLIGENCE
+
+The author expressly reserves the rights to this source code, its
+documentation and its history for text and data mining, within the meaning
+of Article 4(3) of Directive (EU) 2019/790 on copyright in the Digital
+Single Market and of the national laws that implement it, Spain's included.
+
+Without a separate written license from the author, no one may use any part
+of this repository, by any automated means, to:
+
+  - train, fine-tune, evaluate or benchmark machine-learning or artificial
+    intelligence models, including large language models and code
+    assistants;
+  - build datasets, corpora, embeddings or retrieval indexes from it;
+  - generate code or other works derived from it with such systems.
+
+None of these is a permitted purpose under LICENSE either: LICENSE does not
+allow distributing the software or making new works based on it. This
+reservation is made to the full extent the law allows; it does not limit
+exceptions that the law makes mandatory.
+
+3. CONTACT
+
+Commercial licenses, ApexDesk Empresa and permissions not covered here:
+https://apexdesk.github.io/license.html
+
+---
+
+ApexDesk
+Copyright (c) 2026 el autor de ApexDesk. Todos los derechos reservados salvo
+lo que dicen LICENSE y este aviso.
+
+1. LICENCIA
+
+El código fuente de este repositorio se publica bajo la PolyForm Strict
+License 1.0.0 (ver LICENSE). En resumen, y lo que vale es LICENSE:
+
+  - Puedes leer el código, compilarlo y usarlo sin fines comerciales:
+    estudio personal, investigación, pruebas, proyectos de afición, y uso
+    por entidades benéficas, educativas, de investigación pública y
+    administraciones.
+  - No puedes distribuirlo, ni el código ni compilado, ni modificarlo ni
+    crear obras nuevas a partir de él.
+  - El uso comercial necesita una licencia aparte y por escrito del autor.
+
+Además de lo que permite LICENSE, cualquiera, empresas incluidas, puede leer
+este código y compilarlo con el único fin de revisar y comprobar su
+seguridad y lo que hace, siempre que el resultado no se use para nada más
+ni se distribuya.
+
+Las versiones oficiales de ApexDesk (los instaladores de la web) tienen su
+propio contrato de licencia, EULA.md y EULA.es.md, que dice quién puede
+usarlas gratis. Ese contrato, y no la licencia de este repositorio, rige
+las versiones oficiales.
+
+Las versiones de este código publicadas antes del 18 de octubre de 2026 se
+ofrecieron bajo la Licencia Pública General de GNU. Las copias obtenidas
+entonces conservan esa licencia; no se extiende a nada de lo publicado aquí
+después.
+
+2. RESERVA DE DERECHOS: MINERÍA DE TEXTOS Y DATOS E INTELIGENCIA ARTIFICIAL
+
+El autor se reserva expresamente los derechos sobre este código fuente, su
+documentación y su historial frente a la minería de textos y datos, en el
+sentido del artículo 4, apartado 3, de la Directiva (UE) 2019/790 sobre los
+derechos de autor en el mercado único digital y de las leyes nacionales que
+la incorporan, incluida la española.
+
+Sin una licencia aparte y por escrito del autor, nadie puede usar ninguna
+parte de este repositorio, por ningún medio automatizado, para:
+
+  - entrenar, ajustar, evaluar o medir modelos de aprendizaje automático o
+    de inteligencia artificial, incluidos los grandes modelos de lenguaje y
+    los asistentes de programación;
+  - crear a partir de él conjuntos de datos, corpus, embeddings o índices
+    de búsqueda;
+  - generar con esos sistemas código u otras obras derivadas de él.
+
+Ninguno de estos usos está permitido tampoco por LICENSE, que no permite
+distribuir el software ni crear obras nuevas a partir de él. Esta reserva
+se hace en toda la medida que permite la ley y no limita las excepciones
+que la ley hace obligatorias.
+
+3. CONTACTO
+
+Licencias comerciales, ApexDesk Empresa y permisos no previstos aquí:
+https://apexdesk.github.io/license.html

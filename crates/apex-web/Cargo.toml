@@ -1,0 +1,69 @@
+[package]
+name = "apex-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "ApexDesk in the browser: apex-app's code built for WebAssembly"
+
+# The same source as the desktop program (crates/apex-app/src/main.rs),
+# its browser parts under cfg(target_arch = "wasm32"). Built for another
+# target the library is empty (build.rs sets cfg(apex_web)), so the
+# workspace's builds and tests don't build it twice. web/build.sh builds
+# it, runs wasm-bindgen and puts the page together.
+[lib]
+name = "apexdesk"
+path = "../apex-app/src/main.rs"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+# The desktop program's optional features its code tests for (off here),
+# and ApexDesk Empresa, on as in crates/apex-app.
+[features]
+default = []
+empresa = ["apex-io/empresa"]
+ffmpeg = []
+pdfium = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(apex_android)", "cfg(apex_web)"] }
+
+# The desktop program's dependencies (crates/apex-app/Cargo.toml) without
+# the system's file dialogs, clipboard, sound and loaded libraries, and
+# without the network and server database clients of Get Data.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+apex-sheet.workspace = true
+apex-doc.workspace = true
+apex-slides.workspace = true
+apex-io.workspace = true
+apex-pdf.workspace = true
+apex-sign.workspace = true
+apex-spell.workspace = true
+apex-i18n.workspace = true
+apex-tui.workspace = true
+apex-query = { path = "../apex-query", default-features = false, features = ["sqlite"] }
+apex-db.workspace = true
+apex-vba.workspace = true
+apex-fs.workspace = true
+eframe = { version = "0.36.2", default-features = false, features = ["glow", "default_fonts", "accesskit"] }
+png = "0.18.1"
+zune-jpeg = "0.5.15"
+weezl = "0.1.12"
+image-webp = "0.2.4"
+tiff = "0.11.3"
+qrcode = { version = "0.14.1", default-features = false }
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+unicode-width = "0.2"
+serde_json = "1"
+sha2 = "0.10"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+# The older version the signature crates use (rand_core 0.6).
+getrandom02 = { package = "getrandom", version = "0.2", features = ["js"] }
+raw-window-handle = "0.6"
+web-time = "1.1"
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "HtmlAnchorElement", "HtmlInputElement", "Blob", "BlobPropertyBag", "Url", "File", "FileList", "FileReader", "Storage", "Location", "Navigator", "Request", "RequestInit", "Response", "Headers", "console", "XmlHttpRequest"] }

@@ -1,0 +1,13 @@
+[package]
+name = "apex-sheet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+apex-fs.workspace = true
+# The clock, also in the browser (where std has none); std's own elsewhere.
+web-time = "1.1"
+apex-doc.workspace = true
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }

@@ -1,0 +1,126 @@
+# ApexDesk policies for every user of this computer: copy to
+# /etc/apexdesk/policy (or a .conf file in /etc/apexdesk/policy.d) and
+# keep only the lines wanted. `Name = value`; a list repeats its name.
+# Made by `apexdesk policy --templates`.
+
+# Whether VBA macros may run: never, asking the user first, or only when the project is signed by a trusted certificate.
+# Values: disabled, ask, signed
+#MacroSecurity = signed
+
+# Folders whose files' macros are enabled when opened. They replace the ones users add.
+#TrustedLocations = /Volumes/Company/Macros
+#TrustedLocations = /Users/Shared/Macros
+
+# Certificates (SHA-256 or SHA-1 fingerprints, in hex) whose signed macros run under "Only signed macros". When set, only macros signed by these run and users can't add more.
+#TrustedPublishers = 5F:3A:9C:12:E4:7B:08:D6:21:AF:64:C3:90:1E:B7:58:2D:F0:46:9A:BB:13:7C:E5:08:42:D9:61:FA:2C:85:30
+
+# Whether to ask a certificate's authority if it was revoked before enabling macros signed with it (only with "Signed macros only"). A revoked certificate never runs.
+# Values: check, off, require
+#MacroRevocation = check
+
+# 1: the macro editor (Alt+F11) can't be opened. Macros still run under the macro security policy.
+#DisableMacroEditor = 0
+
+# A folder of templates (docx, dotx, odt, xlsx, xltx, ods...) listed in New from Template next to the user's own.
+#TemplatesFolder = /Volumes/Company/Templates
+
+# A folder of glossaries (.docx, .dotx, .dotm such as Normal.dotm or Building Blocks.dotx) whose building blocks are offered next to the user's own (read-only).
+#BuildingBlocksFolder = /Volumes/Company/Building Blocks
+
+# A folder of pictures (PNG, JPEG, GIF, BMP) offered in Insert > Library in documents, spreadsheets and presentations; its subfolders are categories.
+#LibraryFolder = /Volumes/Company/Library
+
+# A shared folder where each computer with the business license leaves a small file (its name, user, version and the last day it ran). About > License then shows how many computers used ApexDesk in the last 30 days against the seats licensed. Nothing is blocked and no server is needed.
+#SeatsFolder = /Volumes/Company/ApexDesk Seats
+
+# New from Template shows only the templates of the shared folder (no built-in or personal ones) and Save as Template is not offered.
+#OnlySharedTemplates = 1
+
+# The format Save As offers first for new spreadsheets.
+# Values: xlsx, xlsm, ods, csv
+#DefaultSheetFormat = xlsx
+
+# The format Save As offers first for new documents.
+# Values: docx, docm, odt, rtf
+#DefaultDocFormat = docx
+
+# The language of menus and dialogs: en, es, de, fr, it, pt, ja, ko, zh or zh-Hant.
+#UILanguage = es
+
+# The dictionary spelling uses, by its code (es_ES, en_US...).
+#SpellingLanguage = es_ES
+
+# A folder of Hunspell dictionaries (.aff and .dic) and thesauri searched before the installed ones.
+#DictionariesFolder = /Volumes/Company/Dictionaries
+
+# Get Data queries can't read files, web pages or databases; queries over the workbook's own tables still work.
+#DisableGetData = 0
+
+# The proxy for web requests (Get Data, revocation checks, time stamps): empty for the system's, "direct" for none, or a URL like http://user@proxy:3128.
+#Proxy = http://proxy.example.com:3128
+
+# Names or endings (.corp.example), separated by commas, that are reached directly; they add to the system's exceptions.
+#ProxyBypass = .corp.example.com, intranet
+
+# Names or endings, separated by commas, where web requests sign in as the session (Kerberos or NTLM, through Negotiate).
+#SignInSites = .corp.example.com
+
+# The e-mail address a report is addressed to when the user sends it. Reports are never sent by themselves.
+#SupportEmail = helpdesk@example.com
+
+# Fonts to show with another one when they aren't installed, like "Corporate Sans=Liberation Sans; Old Serif=Liberation Serif".
+#FontSubstitutes = Corporate Sans=Liberation Sans; Corporate Serif=Liberation Serif
+
+# A folder of root certificates (.cer, .crt, .der, .pem) trusted for signatures besides the system's.
+#CertificateRoots = /Volumes/Company/Certificates
+
+# The long-term level of new signatures: B, T (time stamp), LT (with revocation data) or LTA (archive).
+# Values: b, t, lt, lta
+#SignatureLevel = lt
+
+# The URL of the time-stamp server (TSA) signatures use.
+#TimestampURL = http://timestamp.example.com
+
+# How the window is drawn: OpenGL, which starts fastest, or wgpu (Direct3D, Metal or Vulkan). Takes effect on the next start.
+# Values: glow, wgpu
+#Renderer = glow
+
+# Mark open files with a lock file (like Office and LibreOffice) and warn when someone else has a file open.
+#LockFiles = 1
+
+# What to do with links in documents to files, network folders and other programs. Web and e-mail links always open; programs, scripts and dangerous kinds of links never do.
+# Values: ask, allow, block
+#LinkSecurity = ask
+
+# 1: files marked as downloaded from the Internet open read-only, with macros off, until the user enables editing (files in trusted locations excepted). 0: they open like any other file.
+#ProtectedView = 1
+
+# Whether AI assistants connected with "apexdesk mcp" may read and edit the files open in ApexDesk. 0 turns it off and users can't turn it on.
+#AllowAIAssistants = 0
+
+# Whether scripts may convert, read and write files with "apexdesk api" (business license). 0 turns it off and users can't turn it on; 1 turns it on for everyone.
+#AllowAutomationAPI = 0
+
+# How often recovery copies of open files are saved (0 turns them off).
+#AutosaveMinutes = 5
+
+# Properties (built-in like Title, or custom like Client) a workbook, document or presentation must have before it is saved. Saving asks for the ones that are empty.
+#RequiredProperties = Client
+#RequiredProperties = Case number
+
+# Before a file is exported as PDF or sent by e-mail, look for personal data (e-mail addresses, ID numbers, IBANs, card and phone numbers), empty required properties, formula errors, comments and tracked changes. Warn lets the user go on; Block doesn't while something is found.
+# Values: off, warn, block
+#CheckBeforeSharing = warn
+
+# The organization's fonts, one per entry: listed first in the font box and checked before sharing. The first one replaces the others when the user applies the brand.
+#BrandFonts = Inter
+#BrandFonts = Source Serif 4
+
+# The organization's colors as #RRGGBB, one per entry: shown first in the color menus and checked before sharing (black, white and grays always pass).
+#BrandColors = #1F4E79
+#BrandColors = #C00000
+#BrandColors = #F2A900
+
+# Words or phrases documents must not contain (old company names, internal code names...), one per entry: found by Check Before Sharing.
+#ForbiddenTerms = Confidential draft
+#ForbiddenTerms = ACME Corp

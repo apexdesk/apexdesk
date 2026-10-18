@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made by the apexdesk policy command: edit the program, not this file. -->
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>ApexDesk</displayName>
+  <description>組織原則</description>
+  <resources>
+    <stringTable>
+      <string id="ApexDesk">ApexDesk</string>
+      <string id="SUPPORTED_ApexDesk">ApexDesk 0.1 或更新版本</string>
+      <string id="MacroSecurity">巨集安全性</string>
+      <string id="MacroSecurity_Help">VBA 巨集是否可以執行：永不、先詢問使用者，或僅在專案由受信任憑證簽署時。</string>
+      <string id="MacroSecurity_disabled">停用所有巨集</string>
+      <string id="MacroSecurity_ask">啟用巨集之前詢問</string>
+      <string id="MacroSecurity_signed">僅限受信任憑證簽署的巨集</string>
+      <string id="TrustedLocations">受信任位置</string>
+      <string id="TrustedLocations_Help">其中檔案開啟時啟用巨集的資料夾。它們取代使用者新增的資料夾。</string>
+      <string id="TrustedPublishers">受信任的巨集發行者</string>
+      <string id="TrustedPublishers_Help">在「僅已簽署的巨集」下其簽署巨集可以執行的憑證（SHA-256 或 SHA-1 指紋，十六進位）。設定後，只有這些憑證簽署的巨集才會執行，使用者無法新增。</string>
+      <string id="MacroRevocation">巨集憑證的撤銷檢查</string>
+      <string id="MacroRevocation_Help">在啟用以某憑證簽署的巨集之前，是否向其發行機構查詢該憑證是否已被撤銷（僅在「僅限已簽署的巨集」時）。已撤銷的憑證永遠不會執行。</string>
+      <string id="MacroRevocation_check">查詢；無回應時執行</string>
+      <string id="MacroRevocation_off">不查詢（隔離網路）</string>
+      <string id="MacroRevocation_require">查詢；無回應時不執行</string>
+      <string id="DisableMacroEditor">關閉巨集編輯器</string>
+      <string id="DisableMacroEditor_Help">1：無法開啟巨集編輯器 (Alt+F11)。巨集仍依巨集安全性原則執行。</string>
+      <string id="TemplatesFolder">共用範本資料夾</string>
+      <string id="TemplatesFolder_Help">範本資料夾（docx、dotx、odt、xlsx、xltx、ods 等），與使用者自己的範本一起列在「從範本新增」中。</string>
+      <string id="BuildingBlocksFolder">共用建置組塊資料夾</string>
+      <string id="BuildingBlocksFolder_Help">詞彙表資料夾 (.docx、.dotx、.dotm,例如 Normal.dotm 或 Building Blocks.dotx),其中的建置組塊會與使用者自己的並列提供 (唯讀)。</string>
+      <string id="LibraryFolder">共用圖片庫資料夾</string>
+      <string id="LibraryFolder_Help">一個圖片資料夾（PNG、JPEG、GIF、BMP），在文件、試算表和簡報的「插入」&gt;「圖庫」中提供；其子資料夾為類別。</string>
+      <string id="SeatsFolder">授權席位記錄資料夾</string>
+      <string id="SeatsFolder_Help">一個共用資料夾，每台使用企業授權的電腦都會在其中留下一個小檔案（名稱、使用者、版本和最後使用日期）。「關於 &gt; 授權」隨後會顯示最近 30 天內使用 ApexDesk 的電腦數量與授權席位數的對比。不會封鎖任何操作，也不需要伺服器。</string>
+      <string id="OnlySharedTemplates">僅共用範本</string>
+      <string id="OnlySharedTemplates_Help">「從範本新增」僅顯示共用資料夾中的範本（不含內建和個人範本），且不提供「另存為範本」。</string>
+      <string id="DefaultSheetFormat">試算表的預設格式</string>
+      <string id="DefaultSheetFormat_Help">「另存新檔」為新試算表首先提供的格式。</string>
+      <string id="DefaultSheetFormat_xlsx">xlsx</string>
+      <string id="DefaultSheetFormat_xlsm">xlsm</string>
+      <string id="DefaultSheetFormat_ods">ods</string>
+      <string id="DefaultSheetFormat_csv">csv</string>
+      <string id="DefaultDocFormat">文件的預設格式</string>
+      <string id="DefaultDocFormat_Help">「另存新檔」為新文件首先提供的格式。</string>
+      <string id="DefaultDocFormat_docx">docx</string>
+      <string id="DefaultDocFormat_docm">docm</string>
+      <string id="DefaultDocFormat_odt">odt</string>
+      <string id="DefaultDocFormat_rtf">rtf</string>
+      <string id="UILanguage">介面語言</string>
+      <string id="UILanguage_Help">功能表和對話方塊的語言：en、es、de、fr、it、pt、ja、ko、zh 或 zh-Hant。</string>
+      <string id="SpellingLanguage">拼字檢查語言</string>
+      <string id="SpellingLanguage_Help">拼字檢查使用的字典代碼（es_ES、en_US 等）。</string>
+      <string id="DictionariesFolder">共用字典資料夾</string>
+      <string id="DictionariesFolder_Help">Hunspell 字典（.aff 和 .dic）和同義字庫的資料夾，先於已安裝的字典搜尋。</string>
+      <string id="DisableGetData">關閉從外部來源取得資料</string>
+      <string id="DisableGetData_Help">「取得資料」查詢無法讀取檔案、網頁或資料庫；基於活頁簿本身表格的查詢仍可使用。</string>
+      <string id="Proxy">Proxy</string>
+      <string id="Proxy_Help">Web 要求（取得資料、撤銷檢查、時間戳記）的 Proxy：留空使用系統設定，「direct」表示不用 Proxy，或類似 http://user@proxy:3128 的 URL。</string>
+      <string id="ProxyBypass">不經過 Proxy 的伺服器</string>
+      <string id="ProxyBypass_Help">直接連線的名稱或結尾 (.corp.example)，以逗號分隔；會加入系統的例外清單。</string>
+      <string id="SignInSites">使用 Windows 登入的伺服器</string>
+      <string id="SignInSites_Help">以逗號分隔的名稱或結尾，其網路要求會以目前工作階段登入 (透過 Negotiate 使用 Kerberos 或 NTLM)。</string>
+      <string id="SupportEmail">當機報告的收件地址</string>
+      <string id="SupportEmail_Help">使用者傳送報告時的收件電子郵件地址。報告絕不會自動傳送。</string>
+      <string id="FontSubstitutes">字型替代</string>
+      <string id="FontSubstitutes_Help">未安裝時以其他字型顯示的字型，例如「Corporate Sans=Liberation Sans; Old Serif=Liberation Serif」。</string>
+      <string id="CertificateRoots">組織的根憑證</string>
+      <string id="CertificateRoots_Help">除系統憑證外，簽章還信任的根憑證（.cer、.crt、.der、.pem）資料夾。</string>
+      <string id="SignatureLevel">簽章等級</string>
+      <string id="SignatureLevel_Help">新簽章的長期等級：B、T（時間戳記）、LT（含撤銷資料）或 LTA（封存）。</string>
+      <string id="SignatureLevel_b">B</string>
+      <string id="SignatureLevel_t">T</string>
+      <string id="SignatureLevel_lt">LT</string>
+      <string id="SignatureLevel_lta">LTA</string>
+      <string id="TimestampURL">時間戳記授權單位</string>
+      <string id="TimestampURL_Help">簽章使用的時間戳記伺服器 (TSA) 的 URL。</string>
+      <string id="Renderer">圖形轉譯器</string>
+      <string id="Renderer_Help">視窗的繪製方式：啟動最快的 OpenGL，或 wgpu（Direct3D、Metal 或 Vulkan）。下次啟動時生效。</string>
+      <string id="Renderer_glow">OpenGL</string>
+      <string id="Renderer_wgpu">wgpu</string>
+      <string id="LockFiles">鎖定檔案</string>
+      <string id="LockFiles_Help">以鎖定檔案標記開啟的檔案（與 Office 和 LibreOffice 相同），並在他人開啟檔案時發出警告。</string>
+      <string id="LinkSecurity">文件中的連結</string>
+      <string id="LinkSecurity_Help">如何處理文件中指向檔案、網路資料夾和其他程式的連結。Web 和電子郵件連結一律開啟；程式、指令碼和危險類型的連結一律不開啟。</string>
+      <string id="LinkSecurity_ask">開啟前詢問</string>
+      <string id="LinkSecurity_allow">不詢問直接開啟</string>
+      <string id="LinkSecurity_block">一律不開啟</string>
+      <string id="ProtectedView">已下載檔案的受保護的檢視</string>
+      <string id="ProtectedView_Help">1：標記為從網際網路下載的檔案以唯讀方式開啟且停用巨集，直到使用者啟用編輯（信任位置中的檔案除外）。0：像其他檔案一樣開啟。</string>
+      <string id="AllowAIAssistants">允許 AI 助理 (MCP)</string>
+      <string id="AllowAIAssistants_Help">透過「apexdesk mcp」連線的 AI 助理能否讀取和編輯 ApexDesk 中開啟的檔案。0 表示關閉，使用者無法開啟。</string>
+      <string id="AllowAutomationAPI">允許自動化 API</string>
+      <string id="AllowAutomationAPI_Help">指令碼能否透過「apexdesk api」轉換、讀取和寫入檔案（企業授權）。0 表示關閉且使用者無法開啟；1 表示為所有人開啟。</string>
+      <string id="AutosaveMinutes">復原副本之間的分鐘數</string>
+      <string id="AutosaveMinutes_Help">儲存開啟檔案復原副本的頻率（0 表示關閉）。</string>
+      <string id="RequiredProperties">必填屬性</string>
+      <string id="RequiredProperties_Help">活頁簿、文件或簡報儲存前必須具有的屬性（內建屬性如標題，或自訂屬性如客戶）。儲存時會詢問空白的屬性。</string>
+      <string id="CheckBeforeSharing">共用前檢查</string>
+      <string id="CheckBeforeSharing_Help">在將檔案匯出為 PDF 或以電子郵件傳送之前，尋找個人資料（電子郵件地址、身分證號碼、IBAN、卡號和電話號碼）、空白的必填屬性、公式錯誤、註解和修訂。「警告」允許繼續；「封鎖」在發現問題時不允許繼續。</string>
+      <string id="CheckBeforeSharing_off">關閉</string>
+      <string id="CheckBeforeSharing_warn">警告</string>
+      <string id="CheckBeforeSharing_block">封鎖</string>
+      <string id="BrandFonts">品牌字型</string>
+      <string id="BrandFonts_Help">組織的字型，每項一個：在字型方塊中最先列出，並在共用前檢查。使用者套用品牌時，第一個字型會取代其他字型。</string>
+      <string id="BrandColors">品牌色彩</string>
+      <string id="BrandColors_Help">組織的色彩，格式為 #RRGGBB，每項一個：在色彩功能表中最先顯示，並在共用前檢查（黑色、白色和灰色一律允許）。</string>
+      <string id="ForbiddenTerms">禁用詞語</string>
+      <string id="ForbiddenTerms_Help">文件不得包含的詞語（舊公司名稱、內部代號等），每項一個：由「共用前檢查」尋找。</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="MacroSecurity">
+        <dropdownList refId="MacroSecurity" noSort="true">巨集安全性</dropdownList>
+      </presentation>
+      <presentation id="TrustedLocations">
+        <listBox refId="TrustedLocations">受信任位置</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">受信任的巨集發行者</listBox>
+      </presentation>
+      <presentation id="MacroRevocation">
+        <dropdownList refId="MacroRevocation" noSort="true">巨集憑證的撤銷檢查</dropdownList>
+      </presentation>
+      <presentation id="TemplatesFolder">
+        <textBox refId="TemplatesFolder"><label>共用範本資料夾</label></textBox>
+      </presentation>
+      <presentation id="BuildingBlocksFolder">
+        <textBox refId="BuildingBlocksFolder"><label>共用建置組塊資料夾</label></textBox>
+      </presentation>
+      <presentation id="LibraryFolder">
+        <textBox refId="LibraryFolder"><label>共用圖片庫資料夾</label></textBox>
+      </presentation>
+      <presentation id="SeatsFolder">
+        <textBox refId="SeatsFolder"><label>授權席位記錄資料夾</label></textBox>
+      </presentation>
+      <presentation id="DefaultSheetFormat">
+        <dropdownList refId="DefaultSheetFormat" noSort="true">試算表的預設格式</dropdownList>
+      </presentation>
+      <presentation id="DefaultDocFormat">
+        <dropdownList refId="DefaultDocFormat" noSort="true">文件的預設格式</dropdownList>
+      </presentation>
+      <presentation id="UILanguage">
+        <textBox refId="UILanguage"><label>介面語言</label></textBox>
+      </presentation>
+      <presentation id="SpellingLanguage">
+        <textBox refId="SpellingLanguage"><label>拼字檢查語言</label></textBox>
+      </presentation>
+      <presentation id="DictionariesFolder">
+        <textBox refId="DictionariesFolder"><label>共用字典資料夾</label></textBox>
+      </presentation>
+      <presentation id="Proxy">
+        <textBox refId="Proxy"><label>Proxy</label></textBox>
+      </presentation>
+      <presentation id="ProxyBypass">
+        <textBox refId="ProxyBypass"><label>不經過 Proxy 的伺服器</label></textBox>
+      </presentation>
+      <presentation id="SignInSites">
+        <textBox refId="SignInSites"><label>使用 Windows 登入的伺服器</label></textBox>
+      </presentation>
+      <presentation id="SupportEmail">
+        <textBox refId="SupportEmail"><label>當機報告的收件地址</label></textBox>
+      </presentation>
+      <presentation id="FontSubstitutes">
+        <textBox refId="FontSubstitutes"><label>字型替代</label></textBox>
+      </presentation>
+      <presentation id="CertificateRoots">
+        <textBox refId="CertificateRoots"><label>組織的根憑證</label></textBox>
+      </presentation>
+      <presentation id="SignatureLevel">
+        <dropdownList refId="SignatureLevel" noSort="true">簽章等級</dropdownList>
+      </presentation>
+      <presentation id="TimestampURL">
+        <textBox refId="TimestampURL"><label>時間戳記授權單位</label></textBox>
+      </presentation>
+      <presentation id="Renderer">
+        <dropdownList refId="Renderer" noSort="true">圖形轉譯器</dropdownList>
+      </presentation>
+      <presentation id="LinkSecurity">
+        <dropdownList refId="LinkSecurity" noSort="true">文件中的連結</dropdownList>
+      </presentation>
+      <presentation id="AutosaveMinutes">
+        <decimalTextBox refId="AutosaveMinutes">復原副本之間的分鐘數</decimalTextBox>
+      </presentation>
+      <presentation id="RequiredProperties">
+        <listBox refId="RequiredProperties">必填屬性</listBox>
+      </presentation>
+      <presentation id="CheckBeforeSharing">
+        <dropdownList refId="CheckBeforeSharing" noSort="true">共用前檢查</dropdownList>
+      </presentation>
+      <presentation id="BrandFonts">
+        <listBox refId="BrandFonts">品牌字型</listBox>
+      </presentation>
+      <presentation id="BrandColors">
+        <listBox refId="BrandColors">品牌色彩</listBox>
+      </presentation>
+      <presentation id="ForbiddenTerms">
+        <listBox refId="ForbiddenTerms">禁用詞語</listBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

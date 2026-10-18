@@ -1,0 +1,11 @@
+[package]
+name = "apex-doc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The clock, also in the browser (where std has none); std's own elsewhere.
+web-time = "1.1"
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }

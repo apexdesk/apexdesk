@@ -1,0 +1,21 @@
+[package]
+name = "apex-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Databases for ApexDesk: Access and dBase readers, and the database tab's model over SQLite"
+
+[features]
+default = ["sqlite"]
+# The database tab's own files (SQLite compiled in, as in apex-query).
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+apex-fs.workspace = true
+web-time.workspace = true
+# 8-bit text of Jet 3 databases and dBase files in their code page.
+encoding_rs = "0.8"
+# Attachments of Access 2007+ are stored deflated (zlib).
+miniz_oxide = "0.9"
+rusqlite = { version = "0.40", features = ["bundled", "column_decltype", "backup", "hooks", "limits"], optional = true }

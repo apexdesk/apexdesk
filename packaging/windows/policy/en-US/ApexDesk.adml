@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made by the apexdesk policy command: edit the program, not this file. -->
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>ApexDesk</displayName>
+  <description>Organization Policies</description>
+  <resources>
+    <stringTable>
+      <string id="ApexDesk">ApexDesk</string>
+      <string id="SUPPORTED_ApexDesk">ApexDesk 0.1 or later</string>
+      <string id="MacroSecurity">Macro security</string>
+      <string id="MacroSecurity_Help">Whether VBA macros may run: never, asking the user first, or only when the project is signed by a trusted certificate.</string>
+      <string id="MacroSecurity_disabled">Disable all macros</string>
+      <string id="MacroSecurity_ask">Ask before enabling macros</string>
+      <string id="MacroSecurity_signed">Only macros signed by a trusted certificate</string>
+      <string id="TrustedLocations">Trusted locations</string>
+      <string id="TrustedLocations_Help">Folders whose files' macros are enabled when opened. They replace the ones users add.</string>
+      <string id="TrustedPublishers">Trusted macro publishers</string>
+      <string id="TrustedPublishers_Help">Certificates (SHA-256 or SHA-1 fingerprints, in hex) whose signed macros run under &quot;Only signed macros&quot;. When set, only macros signed by these run and users can't add more.</string>
+      <string id="MacroRevocation">Revocation of macro certificates</string>
+      <string id="MacroRevocation_Help">Whether to ask a certificate's authority if it was revoked before enabling macros signed with it (only with &quot;Signed macros only&quot;). A revoked certificate never runs.</string>
+      <string id="MacroRevocation_check">Ask; run if there is no answer</string>
+      <string id="MacroRevocation_off">Don't ask (isolated networks)</string>
+      <string id="MacroRevocation_require">Ask; don't run without an answer</string>
+      <string id="DisableMacroEditor">Turn off the macro editor</string>
+      <string id="DisableMacroEditor_Help">1: the macro editor (Alt+F11) can't be opened. Macros still run under the macro security policy.</string>
+      <string id="TemplatesFolder">Shared templates folder</string>
+      <string id="TemplatesFolder_Help">A folder of templates (docx, dotx, odt, xlsx, xltx, ods...) listed in New from Template next to the user's own.</string>
+      <string id="BuildingBlocksFolder">Shared building blocks folder</string>
+      <string id="BuildingBlocksFolder_Help">A folder of glossaries (.docx, .dotx, .dotm such as Normal.dotm or Building Blocks.dotx) whose building blocks are offered next to the user's own (read-only).</string>
+      <string id="LibraryFolder">Shared picture library folder</string>
+      <string id="LibraryFolder_Help">A folder of pictures (PNG, JPEG, GIF, BMP) offered in Insert &gt; Library in documents, spreadsheets and presentations; its subfolders are categories.</string>
+      <string id="SeatsFolder">License seats folder</string>
+      <string id="SeatsFolder_Help">A shared folder where each computer with the business license leaves a small file (its name, user, version and the last day it ran). About &gt; License then shows how many computers used ApexDesk in the last 30 days against the seats licensed. Nothing is blocked and no server is needed.</string>
+      <string id="OnlySharedTemplates">Only shared templates</string>
+      <string id="OnlySharedTemplates_Help">New from Template shows only the templates of the shared folder (no built-in or personal ones) and Save as Template is not offered.</string>
+      <string id="DefaultSheetFormat">Default format for spreadsheets</string>
+      <string id="DefaultSheetFormat_Help">The format Save As offers first for new spreadsheets.</string>
+      <string id="DefaultSheetFormat_xlsx">xlsx</string>
+      <string id="DefaultSheetFormat_xlsm">xlsm</string>
+      <string id="DefaultSheetFormat_ods">ods</string>
+      <string id="DefaultSheetFormat_csv">csv</string>
+      <string id="DefaultDocFormat">Default format for documents</string>
+      <string id="DefaultDocFormat_Help">The format Save As offers first for new documents.</string>
+      <string id="DefaultDocFormat_docx">docx</string>
+      <string id="DefaultDocFormat_docm">docm</string>
+      <string id="DefaultDocFormat_odt">odt</string>
+      <string id="DefaultDocFormat_rtf">rtf</string>
+      <string id="UILanguage">Interface language</string>
+      <string id="UILanguage_Help">The language of menus and dialogs: en, es, de, fr, it, pt, ja, ko, zh or zh-Hant.</string>
+      <string id="SpellingLanguage">Spelling language</string>
+      <string id="SpellingLanguage_Help">The dictionary spelling uses, by its code (es_ES, en_US...).</string>
+      <string id="DictionariesFolder">Shared dictionaries folder</string>
+      <string id="DictionariesFolder_Help">A folder of Hunspell dictionaries (.aff and .dic) and thesauri searched before the installed ones.</string>
+      <string id="DisableGetData">Turn off Get Data from outside sources</string>
+      <string id="DisableGetData_Help">Get Data queries can't read files, web pages or databases; queries over the workbook's own tables still work.</string>
+      <string id="Proxy">Proxy</string>
+      <string id="Proxy_Help">The proxy for web requests (Get Data, revocation checks, time stamps): empty for the system's, &quot;direct&quot; for none, or a URL like http://user@proxy:3128.</string>
+      <string id="ProxyBypass">Servers reached without the proxy</string>
+      <string id="ProxyBypass_Help">Names or endings (.corp.example), separated by commas, that are reached directly; they add to the system's exceptions.</string>
+      <string id="SignInSites">Servers that get your Windows sign-in</string>
+      <string id="SignInSites_Help">Names or endings, separated by commas, where web requests sign in as the session (Kerberos or NTLM, through Negotiate).</string>
+      <string id="SupportEmail">Address for crash reports</string>
+      <string id="SupportEmail_Help">The e-mail address a report is addressed to when the user sends it. Reports are never sent by themselves.</string>
+      <string id="FontSubstitutes">Font substitutes</string>
+      <string id="FontSubstitutes_Help">Fonts to show with another one when they aren't installed, like &quot;Corporate Sans=Liberation Sans; Old Serif=Liberation Serif&quot;.</string>
+      <string id="CertificateRoots">Organization's root certificates</string>
+      <string id="CertificateRoots_Help">A folder of root certificates (.cer, .crt, .der, .pem) trusted for signatures besides the system's.</string>
+      <string id="SignatureLevel">Signature level</string>
+      <string id="SignatureLevel_Help">The long-term level of new signatures: B, T (time stamp), LT (with revocation data) or LTA (archive).</string>
+      <string id="SignatureLevel_b">B</string>
+      <string id="SignatureLevel_t">T</string>
+      <string id="SignatureLevel_lt">LT</string>
+      <string id="SignatureLevel_lta">LTA</string>
+      <string id="TimestampURL">Time-stamp authority</string>
+      <string id="TimestampURL_Help">The URL of the time-stamp server (TSA) signatures use.</string>
+      <string id="Renderer">Graphics renderer</string>
+      <string id="Renderer_Help">How the window is drawn: OpenGL, which starts fastest, or wgpu (Direct3D, Metal or Vulkan). Takes effect on the next start.</string>
+      <string id="Renderer_glow">OpenGL</string>
+      <string id="Renderer_wgpu">wgpu</string>
+      <string id="LockFiles">Lock files</string>
+      <string id="LockFiles_Help">Mark open files with a lock file (like Office and LibreOffice) and warn when someone else has a file open.</string>
+      <string id="LinkSecurity">Links in documents</string>
+      <string id="LinkSecurity_Help">What to do with links in documents to files, network folders and other programs. Web and e-mail links always open; programs, scripts and dangerous kinds of links never do.</string>
+      <string id="LinkSecurity_ask">Ask before opening</string>
+      <string id="LinkSecurity_allow">Open without asking</string>
+      <string id="LinkSecurity_block">Never open</string>
+      <string id="ProtectedView">Protected View for downloaded files</string>
+      <string id="ProtectedView_Help">1: files marked as downloaded from the Internet open read-only, with macros off, until the user enables editing (files in trusted locations excepted). 0: they open like any other file.</string>
+      <string id="AllowAIAssistants">Allow AI assistants (MCP)</string>
+      <string id="AllowAIAssistants_Help">Whether AI assistants connected with &quot;apexdesk mcp&quot; may read and edit the files open in ApexDesk. 0 turns it off and users can't turn it on.</string>
+      <string id="AllowAutomationAPI">Allow the automation API</string>
+      <string id="AllowAutomationAPI_Help">Whether scripts may convert, read and write files with &quot;apexdesk api&quot; (business license). 0 turns it off and users can't turn it on; 1 turns it on for everyone.</string>
+      <string id="AutosaveMinutes">Minutes between recovery copies</string>
+      <string id="AutosaveMinutes_Help">How often recovery copies of open files are saved (0 turns them off).</string>
+      <string id="RequiredProperties">Required properties</string>
+      <string id="RequiredProperties_Help">Properties (built-in like Title, or custom like Client) a workbook, document or presentation must have before it is saved. Saving asks for the ones that are empty.</string>
+      <string id="CheckBeforeSharing">Check before sharing</string>
+      <string id="CheckBeforeSharing_Help">Before a file is exported as PDF or sent by e-mail, look for personal data (e-mail addresses, ID numbers, IBANs, card and phone numbers), empty required properties, formula errors, comments and tracked changes. Warn lets the user go on; Block doesn't while something is found.</string>
+      <string id="CheckBeforeSharing_off">Off</string>
+      <string id="CheckBeforeSharing_warn">Warn</string>
+      <string id="CheckBeforeSharing_block">Block</string>
+      <string id="BrandFonts">Brand fonts</string>
+      <string id="BrandFonts_Help">The organization's fonts, one per entry: listed first in the font box and checked before sharing. The first one replaces the others when the user applies the brand.</string>
+      <string id="BrandColors">Brand colors</string>
+      <string id="BrandColors_Help">The organization's colors as #RRGGBB, one per entry: shown first in the color menus and checked before sharing (black, white and grays always pass).</string>
+      <string id="ForbiddenTerms">Forbidden terms</string>
+      <string id="ForbiddenTerms_Help">Words or phrases documents must not contain (old company names, internal code names...), one per entry: found by Check Before Sharing.</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="MacroSecurity">
+        <dropdownList refId="MacroSecurity" noSort="true">Macro security</dropdownList>
+      </presentation>
+      <presentation id="TrustedLocations">
+        <listBox refId="TrustedLocations">Trusted locations</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">Trusted macro publishers</listBox>
+      </presentation>
+      <presentation id="MacroRevocation">
+        <dropdownList refId="MacroRevocation" noSort="true">Revocation of macro certificates</dropdownList>
+      </presentation>
+      <presentation id="TemplatesFolder">
+        <textBox refId="TemplatesFolder"><label>Shared templates folder</label></textBox>
+      </presentation>
+      <presentation id="BuildingBlocksFolder">
+        <textBox refId="BuildingBlocksFolder"><label>Shared building blocks folder</label></textBox>
+      </presentation>
+      <presentation id="LibraryFolder">
+        <textBox refId="LibraryFolder"><label>Shared picture library folder</label></textBox>
+      </presentation>
+      <presentation id="SeatsFolder">
+        <textBox refId="SeatsFolder"><label>License seats folder</label></textBox>
+      </presentation>
+      <presentation id="DefaultSheetFormat">
+        <dropdownList refId="DefaultSheetFormat" noSort="true">Default format for spreadsheets</dropdownList>
+      </presentation>
+      <presentation id="DefaultDocFormat">
+        <dropdownList refId="DefaultDocFormat" noSort="true">Default format for documents</dropdownList>
+      </presentation>
+      <presentation id="UILanguage">
+        <textBox refId="UILanguage"><label>Interface language</label></textBox>
+      </presentation>
+      <presentation id="SpellingLanguage">
+        <textBox refId="SpellingLanguage"><label>Spelling language</label></textBox>
+      </presentation>
+      <presentation id="DictionariesFolder">
+        <textBox refId="DictionariesFolder"><label>Shared dictionaries folder</label></textBox>
+      </presentation>
+      <presentation id="Proxy">
+        <textBox refId="Proxy"><label>Proxy</label></textBox>
+      </presentation>
+      <presentation id="ProxyBypass">
+        <textBox refId="ProxyBypass"><label>Servers reached without the proxy</label></textBox>
+      </presentation>
+      <presentation id="SignInSites">
+        <textBox refId="SignInSites"><label>Servers that get your Windows sign-in</label></textBox>
+      </presentation>
+      <presentation id="SupportEmail">
+        <textBox refId="SupportEmail"><label>Address for crash reports</label></textBox>
+      </presentation>
+      <presentation id="FontSubstitutes">
+        <textBox refId="FontSubstitutes"><label>Font substitutes</label></textBox>
+      </presentation>
+      <presentation id="CertificateRoots">
+        <textBox refId="CertificateRoots"><label>Organization's root certificates</label></textBox>
+      </presentation>
+      <presentation id="SignatureLevel">
+        <dropdownList refId="SignatureLevel" noSort="true">Signature level</dropdownList>
+      </presentation>
+      <presentation id="TimestampURL">
+        <textBox refId="TimestampURL"><label>Time-stamp authority</label></textBox>
+      </presentation>
+      <presentation id="Renderer">
+        <dropdownList refId="Renderer" noSort="true">Graphics renderer</dropdownList>
+      </presentation>
+      <presentation id="LinkSecurity">
+        <dropdownList refId="LinkSecurity" noSort="true">Links in documents</dropdownList>
+      </presentation>
+      <presentation id="AutosaveMinutes">
+        <decimalTextBox refId="AutosaveMinutes">Minutes between recovery copies</decimalTextBox>
+      </presentation>
+      <presentation id="RequiredProperties">
+        <listBox refId="RequiredProperties">Required properties</listBox>
+      </presentation>
+      <presentation id="CheckBeforeSharing">
+        <dropdownList refId="CheckBeforeSharing" noSort="true">Check before sharing</dropdownList>
+      </presentation>
+      <presentation id="BrandFonts">
+        <listBox refId="BrandFonts">Brand fonts</listBox>
+      </presentation>
+      <presentation id="BrandColors">
+        <listBox refId="BrandColors">Brand colors</listBox>
+      </presentation>
+      <presentation id="ForbiddenTerms">
+        <listBox refId="ForbiddenTerms">Forbidden terms</listBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

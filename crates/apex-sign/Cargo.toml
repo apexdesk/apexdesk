@@ -1,0 +1,46 @@
+[package]
+name = "apex-sign"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+apex-fs.workspace = true
+web-time.workspace = true
+apex-io.workspace = true
+# Digital signatures with pure Rust crypto (same build on Windows, macOS
+# and Linux, no system OpenSSL): digests, RSA and ECDSA (P-256, P-384).
+sha1 = { version = "0.10", features = ["oid"] }
+sha2 = { version = "0.10", features = ["oid"] }
+rsa = { version = "0.9", default-features = false, features = ["std", "hazmat"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8", "std"] }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8", "std"] }
+# Certificate files (.p12/.pfx): PBES2 (AES) and the legacy 3DES and RC2.
+aes = "0.8"
+des = "0.8"
+rc2 = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+hmac = "0.12"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+getrandom = "0.3"
+
+# Not in the browser, which has neither system roots nor card readers.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# The system's trusted roots (Windows and macOS stores, Linux bundles).
+rustls-native-certs = "0.8"
+# Smart cards, tokens and HSMs: any PKCS #11 module, loaded at run time
+# (nothing linked when building). cryptoki-sys for the one call cryptoki
+# doesn't wrap (C_Sign after a context-specific login).
+cryptoki = "0.12"
+cryptoki-sys = "0.5"
+
+# The system's certificate stores with their private keys.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[dev-dependencies]
+apex-pdf.workspace = true

@@ -1,0 +1,86 @@
+ApexDesk installers and portable mode
+==============================================
+
+What each script makes, and whether it has been tried:
+
+  windows/build.sh     zip and portable zip (cross-built from Linux)   tested before
+  windows/msix.cmd     MSIX (msix/AppxManifest.xml), on Windows       UNTESTED
+  windows/msi.cmd      MSI with WiX v5 (apexdesk.wxs), on Windows      UNTESTED
+  macos/build.sh       ApexDesk.app in a disk image, on a Mac          tested before
+  macos/pkg.sh         signed, notarized .pkg with choices, on a Mac   UNTESTED
+  linux/install.sh     per-user install from the source tree           tested before
+  linux/deb.sh         .deb                                            built and inspected
+  linux/rpm.sh         .rpm, apexdesk.spec                             built and inspected
+  linux/portable.sh    portable .tar.gz (glibc 2.31, cargo-zigbuild)   built and run
+  linux/aur/           Arch PKGBUILD (apexdesk-bin, from the portable)  built with makepkg, installed with pacman; the .pkg.tar.zst is a release asset
+  linux/flatpak/       Flatpak manifest and AppStream metadata         UNTESTED
+
+.github/workflows/ci.yml builds on GitHub Actions, from the public (PolyForm Strict)
+code, the zips, portables, deb, rpm, dmg, MSI, MSIX (unsigned: for the
+Store, or to sign) and the APK (signed with a debug key made there).
+
+"built and inspected": packages made with a stand-in program and their
+contents and dependencies listed (dpkg-deb -c, rpm -qlp); not installed.
+
+Silent installs
+---------------
+  Windows   msiexec /i ApexDesk-<v>-x64.msi /qn ALLUSERS=1       (per machine)
+            msiexec /i ApexDesk-<v>-x64.msi /qn MSIINSTALLPERUSER=1   (per user)
+            ADDLOCAL=Main,Dictionaries,PolicyTemplates picks
+            features. msiexec /x ... /qn removes it.
+            MSIX: Add-AppxPackage .\ApexDesk-<v>-x64.msix (per user; signed)
+  macOS     sudo installer -pkg ApexDesk-<v>.pkg -target /
+  Debian    apt install -y ./apexdesk_<v>_amd64.deb   (--no-install-recommends
+            leaves GStreamer's plugins out)
+  Fedora    dnf install -y ./apexdesk-<v>-1.x86_64.rpm
+
+pdfium
+------
+No installer ships pdfium: ApexDesk draws PDF pages with its own renderer.
+pdfium is a development tool, to compare pages against:
+tools/pdfium-fetch.sh puts this computer's copy in target/pdfium, where
+builds with the pdfium feature (cargo ... --features pdfium) run from
+target/ find it (APEXDESK_PDFIUM names another copy, or "off" for none).
+The installers build without that feature.
+
+Optional components
+-------------------
+Dictionaries are a feature of the MSI and a choice of the macOS package,
+off unless chosen; the scripts take them from APEXDESK_DICT_DIR. They land
+in dictionaries next to the program (macOS: /Library/Application
+Support/ApexDesk). Linux packages suggest the distribution's hunspell
+dictionaries.
+
+Videos and sounds play through the system's own decoders, loaded while
+running: GStreamer on Linux (the packages recommend its base and good
+plugins; the Flatpak uses the runtime's), Media Foundation on Windows
+(Windows N editions need Microsoft's Media Feature Pack); on macOS they
+don't play yet and show their poster. No FFmpeg is shipped; builds with
+apex-app's `ffmpeg` feature can still load one made with
+tools/ffmpeg-build.sh from components/ffmpeg.
+
+Portable mode
+-------------
+A file named "portable" (or portable.txt) next to the program, or
+APEXDESK_PORTABLE=1, keeps settings, templates, building blocks, recovery
+files and logs in a "data" folder next to the program. Nothing is written to
+the user's profile or the registry (policies and the system proxy are still
+read). windows/build.sh makes such a zip; on Linux, unpack the program into
+a folder and add the file. Temporary files still go to the system's
+temporary folder.
+
+Signing the installers
+----------------------
+Windows: APEXDESK_SIGN_CERT (.pfx) and APEXDESK_SIGN_PASSWORD for signtool.
+macOS: APEXDESK_SIGN_ID, APEXDESK_INSTALLER_ID and APEXDESK_NOTARY_PROFILE.
+Linux packages are signed by the repository that serves them (not here).
+
+File types
+----------
+ApexDesk is offered under "Open with" for spreadsheets, documents and
+presentations, never made their default. Its own notebooks (.apexnote,
+application/x-apexnote) are registered as a type of its own: the MSI's
+ApexDesk.Notebook ProgId, the macOS exported type
+io.github.apexdesk.apexnote, and linux/apexdesk-mime.xml installed in
+share/mime/packages by install.sh, the .deb, the .rpm and the Flatpak.
+Code and configuration files are never registered.

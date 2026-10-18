@@ -1,0 +1,58 @@
+# Flatpak manifest (UNTESTED: flatpak-builder was not available where it
+# was written). Build and install for the current user:
+#
+#   pip install aiohttp toml   # once, for flatpak-cargo-generator
+#   python3 flatpak-cargo-generator.py Cargo.lock -o packaging/linux/flatpak/cargo-sources.json
+#   flatpak-builder --user --install --force-clean target/flatpak packaging/linux/flatpak/io.github.apexdesk.ApexDesk.yml
+#   flatpak build-bundle ~/.local/share/flatpak/repo dist/apexdesk.flatpak io.github.apexdesk.ApexDesk
+#
+# flatpak-cargo-generator.py comes from github.com/flatpak/flatpak-builder-tools
+# (the build has no network: every crate is listed in cargo-sources.json).
+#
+# Videos and sounds play through the runtime's own GStreamer; dictionaries
+# come through the runtime's hunspell locale extension.
+app-id: io.github.apexdesk.ApexDesk
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: apexdesk
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --device=dri
+  - --share=network
+  # Documents anywhere in the home folder (the file dialogs also work
+  # through the portal without it).
+  - --filesystem=home
+  - --filesystem=xdg-run/pipewire-0:ro
+  # Printing goes through the system's lp.
+  - --socket=cups
+  - --talk-name=org.freedesktop.portal.*
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/apexdesk/cargo
+    CARGO_PROFILE_RELEASE_LTO: 'false'
+modules:
+  - name: apexdesk
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release -p apex-app
+      - install -Dm755 target/release/apexdesk /app/bin/apexdesk
+      - sed 's/^Icon=apexdesk/Icon=io.github.apexdesk.ApexDesk/' packaging/linux/apexdesk.desktop > io.github.apexdesk.ApexDesk.desktop
+      - install -Dm644 io.github.apexdesk.ApexDesk.desktop /app/share/applications/io.github.apexdesk.ApexDesk.desktop
+      - install -Dm644 packaging/linux/apexdesk-mime.xml /app/share/mime/packages/io.github.apexdesk.ApexDesk.xml
+      - install -Dm644 packaging/linux/apexdesk.svg /app/share/icons/hicolor/scalable/apps/io.github.apexdesk.ApexDesk.svg
+      - install -Dm644 packaging/linux/apexdesk-256.png /app/share/icons/hicolor/256x256/apps/io.github.apexdesk.ApexDesk.png
+      - install -Dm644 packaging/linux/flatpak/io.github.apexdesk.ApexDesk.metainfo.xml /app/share/metainfo/io.github.apexdesk.ApexDesk.metainfo.xml
+    sources:
+      - type: dir
+        path: ../../..
+        skip:
+          - target
+          - dist
+      - cargo-sources.json

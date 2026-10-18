@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Windows Installer package for ApexDesk (WiX Toolset v5). UNTESTED: it
+  was written on Linux, where MSI files can't be built; see msi.cmd.
+
+  One package installs per machine (Program Files, every user) or per user
+  (%LOCALAPPDATA%\Programs, no administrator rights): the setup asks, and
+  silently the command line decides:
+
+    msiexec /i ApexDesk.msi /qn ALLUSERS=1                   per machine
+    msiexec /i ApexDesk.msi /qn MSIINSTALLPERUSER=1          per user
+    msiexec /i ApexDesk.msi /qn ALLUSERS=1 ADDLOCAL=Main,Dictionaries
+    msiexec /x ApexDesk.msi /qn                              uninstall
+
+  Optional features (off unless chosen or listed in
+  ADDLOCAL): Dictionaries and the Group Policy templates. Videos and sounds play
+  through Windows' own Media Foundation: nothing to install.
+
+  Uninstalling removes everything installed; the users' settings in
+  %APPDATA%\apexdesk stay, as with other programs.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="ApexDesk" Manufacturer="ApexDesk" Version="$(var.Version)" Language="1033"
+           UpgradeCode="7E4B3C1A-5D2F-4E8B-9A61-3C0D2B7F4A15" Scope="perUserOrMachine" Compressed="yes">
+    <SummaryInformation Description="ApexDesk $(var.Version)" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ApexDesk is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="apexdesk.ico" SourceFile="apexdesk.ico" />
+    <Property Id="ARPPRODUCTICON" Value="apexdesk.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/apexdesk/apexdesk" />
+    <Property Id="ApplicationFolderName" Value="ApexDesk" />
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+    <ui:WixUI Id="WixUI_Advanced" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="APPLICATIONFOLDER" Name="ApexDesk">
+        <Directory Id="DictDir" Name="dictionaries" />
+        <Directory Id="PolicyDir" Name="policy" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="ApexDesk" Description="The program." Level="1" AllowAbsent="no" Display="expand">
+      <!-- A fixed Guid: ApexDesk.exe has no version resource, so WiX can't
+           make one for a component with several files. -->
+      <Component Id="Program" Directory="APPLICATIONFOLDER" Guid="4D7A1409-5870-4D41-8D4E-35930A9971ED">
+        <File Id="ApexDeskExe" Source="$(var.Stage)\ApexDesk.exe" KeyPath="yes">
+          <Shortcut Id="StartMenu" Name="ApexDesk" Directory="ProgramMenuFolder" Advertise="yes" Icon="apexdesk.ico" WorkingDirectory="APPLICATIONFOLDER" />
+        </File>
+        <File Source="$(var.Stage)\README.txt" />
+        <File Source="$(var.Stage)\THIRD-PARTY-NOTICES.md" />
+        <!-- "Open with" for the office file types (the same as
+             crates/apex-app/src/default_apps.rs; no code or configuration
+             ones), and ApexDesk among the programs of Settings > Default
+             apps. Making it the default is the user's choice there, or in
+             File > Options > General. -->
+        <ProgId Id="ApexDesk.Spreadsheet" Description="Spreadsheet" Icon="apexdesk.ico" Advertise="yes">
+          <Extension Id="xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="xlsm" ContentType="application/vnd.ms-excel.sheet.macroEnabled.12"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="xltx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.template"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="xltm" ContentType="application/vnd.ms-excel.template.macroEnabled.12"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="xlsb" ContentType="application/vnd.ms-excel.sheet.binary.macroEnabled.12"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="xls" ContentType="application/vnd.ms-excel"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="ods" ContentType="application/vnd.oasis.opendocument.spreadsheet"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="ots" ContentType="application/vnd.oasis.opendocument.spreadsheet-template"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="fods" ContentType="application/vnd.oasis.opendocument.spreadsheet-flat-xml"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="csv" ContentType="text/csv"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="tsv" ContentType="text/tab-separated-values"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="et" ContentType="application/wps-office.et"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+        <ProgId Id="ApexDesk.Document" Description="Document" Icon="apexdesk.ico" Advertise="yes">
+          <Extension Id="docx" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="docm" ContentType="application/vnd.ms-word.document.macroEnabled.12"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="dotx" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.template"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="dotm" ContentType="application/vnd.ms-word.template.macroEnabled.12"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="doc" ContentType="application/msword"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="odt" ContentType="application/vnd.oasis.opendocument.text"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="ott" ContentType="application/vnd.oasis.opendocument.text-template"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="fodt" ContentType="application/vnd.oasis.opendocument.text-flat-xml"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="rtf" ContentType="application/rtf"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="md" ContentType="text/markdown"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="wps" ContentType="application/wps-office.wps"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+        <ProgId Id="ApexDesk.Presentation" Description="Presentation" Icon="apexdesk.ico" Advertise="yes">
+          <Extension Id="pptx" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="pptm" ContentType="application/vnd.ms-powerpoint.presentation.macroEnabled.12"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="potx" ContentType="application/vnd.openxmlformats-officedocument.presentationml.template"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="potm" ContentType="application/vnd.ms-powerpoint.template.macroEnabled.12"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="ppsx" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideshow"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="ppsm" ContentType="application/vnd.ms-powerpoint.slideshow.macroEnabled.12"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="ppt" ContentType="application/vnd.ms-powerpoint"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="odp" ContentType="application/vnd.oasis.opendocument.presentation"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+          <Extension Id="otp" ContentType="application/vnd.oasis.opendocument.presentation-template"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+        <ProgId Id="ApexDesk.Pdf" Description="PDF document" Icon="apexdesk.ico" Advertise="yes">
+          <Extension Id="pdf" ContentType="application/pdf"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+        <RegistryKey Root="HKMU" Key="Software\ApexDesk\Capabilities">
+          <RegistryValue Name="ApplicationName" Value="ApexDesk" Type="string" />
+          <RegistryValue Name="ApplicationDescription" Value="Spreadsheets, documents, presentations and PDF" Type="string" />
+          <RegistryKey Key="FileAssociations">
+            <RegistryValue Name=".xlsx" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".xlsm" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".xltx" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".xltm" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".xlsb" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".xls" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".ods" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".ots" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".fods" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".csv" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".tsv" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".et" Value="ApexDesk.Spreadsheet" Type="string" />
+            <RegistryValue Name=".docx" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".docm" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".dotx" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".dotm" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".doc" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".odt" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".ott" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".fodt" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".rtf" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".md" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".wps" Value="ApexDesk.Document" Type="string" />
+            <RegistryValue Name=".pptx" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".pptm" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".potx" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".potm" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".ppsx" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".ppsm" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".ppt" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".odp" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".otp" Value="ApexDesk.Presentation" Type="string" />
+            <RegistryValue Name=".pdf" Value="ApexDesk.Pdf" Type="string" />
+          </RegistryKey>
+        </RegistryKey>
+        <RegistryValue Root="HKMU" Key="Software\RegisteredApplications" Name="ApexDesk" Value="Software\ApexDesk\Capabilities" Type="string" />
+        <!-- ApexDesk's own notebooks. -->
+        <ProgId Id="ApexDesk.Notebook" Description="ApexDesk notebook" Icon="apexdesk.ico" Advertise="yes">
+          <Extension Id="apexnote" ContentType="application/x-apexnote"><Verb Id="open" Command="Open" Argument="&quot;%1&quot;" /></Extension>
+        </ProgId>
+      </Component>
+    </Feature>
+
+    <?if $(var.WithDictionaries) = 1 ?>
+    <Feature Id="Dictionaries" Title="Spelling dictionaries" Description="Hunspell dictionaries and thesauri." Level="1000">
+      <Files Include="$(var.DictSource)\**" Directory="DictDir" />
+    </Feature>
+    <?endif?>
+    <Feature Id="PolicyTemplates" Title="Group Policy templates" Description="ADMX/ADML files for administrators." Level="1000">
+      <Files Include="policy\**" Directory="PolicyDir" />
+    </Feature>
+  </Package>
+</Wix>

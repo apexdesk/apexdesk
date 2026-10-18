@@ -1,0 +1,1577 @@
+# What the macro editor knows of the language and the object model: the
+# Object Browser (F2), completion, parameter info, case and F1 help.
+# Only what the interpreter runs. A class, then its members:
+#   class Name | help
+#   p Property: Type | help        (read and write)
+#   r Property: Type | help        (read only)
+#   m Method(Params): Type | help  (the type it returns, if any)
+#   e Event(Params) | help
+#   f Function(Params): Type | help
+#   c Constant = value | help
+#   k Keyword | help
+
+class Keywords | The words of the language.
+k Access | Open ... Access Read or Write: what the file is opened for.
+k And | Logical and (bitwise on numbers).
+k Append | Open ... For Append: writes at the end of a text file.
+k As | Gives the type in Dim, parameters and functions.
+k Binary | Open ... For Binary: reads and writes bytes with Get and Put.
+k Boolean | True or False.
+k ByRef | The argument is passed by reference (the default).
+k ByVal | The argument is passed by value: a copy.
+k Byte | Whole number from 0 to 255.
+k Call | Calls a procedure.
+k Case | A branch of Select Case.
+k Close | Closes files opened with Open (Close #1; alone: all).
+k Const | Declares a constant.
+k Currency | Fixed-point number with 4 decimals.
+k Date | A date and time.
+k Debug | The Debug object: Print and Assert.
+k Dim | Declares variables.
+k Do | Starts a Do...Loop.
+k Double | Floating-point number.
+k Each | For Each element In collection.
+k Else | The branch of If taken otherwise.
+k ElseIf | Another condition of an If block.
+k Empty | The value of an uninitialized Variant.
+k End | Ends a block (End If, End Sub...); alone, stops the macro.
+k Enum | Declares named whole-number constants.
+k Erase | Clears an array.
+k Error | On Error: what to do when an error happens.
+k Exit | Leaves a loop or procedure (Exit For, Exit Sub...).
+k Explicit | Option Explicit: every variable must be declared.
+k False | The Boolean value False.
+k For | Starts a For...Next loop.
+k Function | A procedure that returns a value.
+k Get | Property Get: reads a property; Get #1, [Position], variable reads from a Binary or Random file.
+k GoTo | Jumps to a label.
+k If | Runs statements when a condition is True.
+k In | For Each element In collection.
+k Integer | Whole number from -32,768 to 32,767.
+k Is | Compares object references; Case Is.
+k Let | Property Let: sets a property.
+k Like | Compares a string with a pattern.
+k Line | Line Input #1, text: reads a line of a file.
+k Lock | Accepted: files aren't locked.
+k Long | Whole number of 32 bits.
+k LongLong | Whole number of 64 bits.
+k LongPtr | A pointer-sized whole number.
+k Loop | Ends a Do...Loop.
+k Me | The object the code belongs to.
+k Mod | Remainder of a division.
+k Name | Name OldPath As NewPath: renames a file or folder.
+k New | Creates an object.
+k Next | Ends a For loop; Resume Next.
+k Not | Logical not.
+k Nothing | No object.
+k Null | No valid data.
+k Object | Any object.
+k On | On Error.
+k Open | Opens a file: Open path For Input As #1.
+k Option | Module options (Explicit, Base, Compare).
+k Optional | The parameter may be left out.
+k Or | Logical or (bitwise on numbers).
+k Output | Open ... For Output: writes a new text file.
+k ParamArray | Any number of arguments, as an array.
+k Preserve | ReDim Preserve keeps the values.
+k Print | Print #1, a; b: writes text to a file.
+k Private | Only this module sees it.
+k Property | A procedure that reads or sets a property.
+k Public | Every module sees it.
+k Put | Put #1, [Position], variable: writes to a Binary or Random file.
+k Random | Open ... For Random: records of a length (Len =).
+k ReDim | Changes the size of a dynamic array.
+k Resume | Goes on after an error.
+k Select | Select Case: branches by a value.
+k Set | Assigns an object.
+k Shared | Open ... Shared: accepted.
+k Single | Floating-point number of 32 bits.
+k Static | Keeps its value between calls.
+k Step | The increment of a For loop.
+k Stop | Pauses in the debugger.
+k String | Text.
+k Sub | A procedure.
+k Then | Ends the condition of an If.
+k To | The end of a For loop or of array bounds.
+k True | The Boolean value True.
+k Type | Declares a user-defined type.
+k TypeOf | TypeOf x Is Class.
+k Until | Do Until: loops until the condition is True.
+k Variant | Any kind of value.
+k Wend | Ends a While loop.
+k While | Loops while the condition is True.
+k With | Runs statements on one object.
+k Write | Write #1, a, b: writes values with quotes and commas.
+k Xor | Logical exclusive or.
+
+class VBA | Functions of the language.
+f Abs(Number): Double | The absolute value.
+f Array(ArgList): Variant | An array of the values given.
+f Asc(String): Integer | The character code of the first character.
+f AscW(String): Integer | The Unicode code of the first character.
+f Atn(Number): Double | The arctangent.
+f CBool(Expression): Boolean | Converts to Boolean.
+f CByte(Expression): Byte | Converts to Byte.
+f CCur(Expression): Currency | Converts to Currency.
+f CDate(Expression): Date | Converts to Date.
+f CDbl(Expression): Double | Converts to Double.
+f CDec(Expression): Variant | Converts to Decimal.
+f ChDir(Path) | Changes the folder relative paths start from.
+f ChDrive(Drive) | Accepted (no drives here).
+f Choose(Index, Choice1, [Choice2]...): Variant | The choice at a position.
+f Chr(CharCode): String | The character of a code.
+f ChrW(CharCode): String | The character of a Unicode code.
+f CInt(Expression): Integer | Converts to Integer (rounding).
+f CLng(Expression): Long | Converts to Long (rounding).
+f CLngLng(Expression): LongLong | Converts to LongLong.
+f CSng(Expression): Single | Converts to Single.
+f CStr(Expression): String | Converts to String.
+f CurDir([Drive]): String | The folder relative paths start from (the workbook's).
+f CVar(Expression): Variant | Converts to Variant.
+f CVErr(ErrorNumber): Variant | A cell error value.
+f Cos(Number): Double | The cosine.
+f CreateObject(Class): Object | Creates Scripting.Dictionary or Collection objects.
+f Date(): Date | Today's date.
+f DateAdd(Interval, Number, Date): Date | A date plus an interval ("d", "m", "yyyy"...).
+f DateDiff(Interval, Date1, Date2): Long | Intervals between two dates.
+f DatePart(Interval, Date): Integer | A part of a date.
+f DateSerial(Year, Month, Day): Date | The date of a year, month and day.
+f DateValue(Date): Date | The date in a text.
+f Day(Date): Integer | The day of the month.
+f Dir([PathName], [Attributes]): String | The first file that matches (* and ?); Dir() the next; "" when no more.
+f DoEvents(): Integer | Lets the program respond.
+f EOF(FileNumber): Boolean | Whether reading reached the end of the file.
+f Exp(Number): Double | e raised to a power.
+f FileAttr(FileNumber, [ReturnType]): Long | How a file was opened (1 Input, 2 Output, 4 Random, 8 Append, 32 Binary).
+f FileCopy(Source, Destination) | Copies a file.
+f FileDateTime(PathName): Date | When a file was last changed.
+f FileLen(PathName): Long | The size of a file in bytes.
+f Fix(Number): Variant | The whole part (towards zero).
+f Format(Expression, [Format]): String | A value as text with a format.
+f FormatCurrency(Expression, [NumDigitsAfterDecimal]): String | A value as money.
+f FormatDateTime(Date, [NamedFormat]): String | A date as text.
+f FormatNumber(Expression, [NumDigitsAfterDecimal]): String | A number as text.
+f FormatPercent(Expression, [NumDigitsAfterDecimal]): String | A number as a percentage.
+f FreeFile([RangeNumber]): Integer | A file number not in use.
+f GetAttr(PathName): VbFileAttribute | vbDirectory for folders, vbReadOnly...
+f Hex(Number): String | The number in hexadecimal.
+f Hour(Time): Integer | The hour.
+f IIf(Expression, TruePart, FalsePart): Variant | One of two values by a condition.
+f Input(Number, FileNumber): String | Characters read from a file.
+f InputBox(Prompt, [Title], [Default]): String | Asks for a text.
+f InStr([Start], String1, String2, [Compare]): Long | Where a text is found in another (0: not found).
+f InStrRev(StringCheck, StringMatch, [Start], [Compare]): Long | Where a text is found, from the end.
+f Int(Number): Variant | The whole part (downwards).
+f IsArray(VarName): Boolean | Whether it is an array.
+f IsDate(Expression): Boolean | Whether it can be a date.
+f IsEmpty(Expression): Boolean | Whether a variable is uninitialized.
+f IsError(Expression): Boolean | Whether it is an error value.
+f IsMissing(ArgName): Boolean | Whether an Optional argument was left out.
+f IsNull(Expression): Boolean | Whether it is Null.
+f IsNumeric(Expression): Boolean | Whether it can be a number.
+f IsObject(Expression): Boolean | Whether it is an object.
+f Join(SourceArray, [Delimiter]): String | The texts of an array joined.
+f Kill(PathName) | Deletes files (* and ? allowed).
+f LBound(ArrayName, [Dimension]): Long | The lower bound of an array.
+f LCase(String): String | Lower case.
+f Left(String, Length): String | The first characters.
+f Len(Expression): Long | The number of characters.
+f Loc(FileNumber): Long | Where reading or writing is in a file.
+f LOF(FileNumber): Long | The size of an open file in bytes.
+f Log(Number): Double | The natural logarithm.
+f LTrim(String): String | Without leading spaces.
+f Mid(String, Start, [Length]): String | Part of a text.
+f Minute(Time): Integer | The minute.
+f MkDir(Path) | Makes a folder.
+f Month(Date): Integer | The month.
+f MonthName(Month, [Abbreviate]): String | The name of a month.
+f MsgBox(Prompt, [Buttons], [Title]): VbMsgBoxResult | Shows a message; returns the button pressed.
+f Now(): Date | The date and time now.
+f Oct(Number): String | The number in octal.
+f Randomize([Number]) | Starts the random numbers.
+f Replace(Expression, Find, Replace, [Start], [Count], [Compare]): String | A text with a part replaced.
+f Reset() | Closes all files opened with Open.
+f RGB(Red, Green, Blue): Long | A color from red, green and blue (0 to 255).
+f Right(String, Length): String | The last characters.
+f RmDir(Path) | Deletes an empty folder.
+f Rnd([Number]): Single | A random number from 0 to 1.
+f Round(Number, [NumDigitsAfterDecimal]): Variant | Rounded (to even, like VBA).
+f RTrim(String): String | Without trailing spaces.
+f Second(Time): Integer | The second.
+f Seek(FileNumber): Long | The position the next read or write is at.
+f SetAttr(PathName, Attributes) | Makes a file read-only (vbReadOnly) or not.
+f Sgn(Number): Integer | The sign: -1, 0 or 1.
+f Sin(Number): Double | The sine.
+f Space(Number): String | That many spaces.
+f Split(Expression, [Delimiter], [Limit], [Compare]): Variant | A text split into an array.
+f Sqr(Number): Double | The square root.
+f StrComp(String1, String2, [Compare]): Integer | Compares two texts: -1, 0 or 1.
+f StrConv(String, Conversion): String | Converts case (vbUpperCase, vbProperCase...).
+f String(Number, Character): String | A character repeated.
+f StrReverse(Expression): String | The text backwards.
+f Switch(Expr1, Value1, [Expr2, Value2]...): Variant | The value of the first True expression.
+f Tan(Number): Double | The tangent.
+f Time(): Date | The time now.
+f Timer(): Single | Seconds since midnight.
+f TimeSerial(Hour, Minute, Second): Date | The time of an hour, minute and second.
+f TimeValue(Time): Date | The time in a text.
+f Trim(String): String | Without leading or trailing spaces.
+f TypeName(VarName): String | The name of the type of a value.
+f UBound(ArrayName, [Dimension]): Long | The upper bound of an array.
+f UCase(String): String | Upper case.
+f Val(String): Double | The number at the start of a text.
+f VarType(VarName): Integer | The type of a value (vbString, vbLong...).
+f Weekday(Date, [FirstDayOfWeek]): Integer | The day of the week (1: Sunday).
+f WeekdayName(Weekday, [Abbreviate], [FirstDayOfWeek]): String | The name of a day of the week.
+f Year(Date): Integer | The year.
+
+class Global | What macros of a workbook reach without naming an object.
+r ActiveCell: Range | The active cell.
+r ActiveChart: Chart | The chart selected or added last (Nothing when none).
+r ActiveSheet: Worksheet | The active sheet.
+r ActiveWindow: Window | The window: frozen panes.
+r ActiveWorkbook: Workbook | The active workbook: the macro's own, or the one it opened or activated last.
+r Application: Application | The application.
+m Calculate() | Recalculates the workbook.
+m Cells([RowIndex], [ColumnIndex]): Range | The cells of the active sheet, or one of them.
+m Columns([Index]): Range | Columns of the active sheet.
+r Debug: Debug | Debug.Print and Debug.Assert.
+r Err: ErrObject | The last error.
+m Evaluate(Name): Variant | The value of a formula or a reference.
+m Intersect(Arg1, Arg2): Range | The cells two ranges share.
+m Names([Index]): Names | The workbook's defined names.
+m Range(Cell1, [Cell2]): Range | Cells of the active sheet by address ("A1:B5") or corners.
+m Rows([Index]): Range | Rows of the active sheet.
+m Run(Macro, [Args]...): Variant | Runs a macro by name.
+r Selection: Range | The selected cells.
+m Sheets([Index]): Worksheets | The sheets, or one by name or number.
+r ThisWorkbook: Workbook | The workbook with this code.
+m Union(Arg1, Arg2): Range | Two ranges together.
+m Workbooks([Index]): Workbooks | The workbooks open, or one by name or number.
+m Worksheets([Index]): Worksheets | The worksheets, or one by name or number.
+r WorksheetFunction: WorksheetFunction | The worksheet functions (Sum, VLookup...).
+
+class Application | Excel itself.
+r ActiveCell: Range | The active cell.
+r ActiveChart: Chart | The chart selected or added last (Nothing when none).
+r ActiveSheet: Worksheet | The active sheet.
+r ActiveWindow: Window | The window: frozen panes.
+r ActiveWorkbook: Workbook | The active workbook: the macro's own, or the one it opened or activated last.
+r Application: Application | The application.
+p AskToUpdateLinks: Boolean | Accepted; links aren't updated by macros.
+m Calculate() | Recalculates the workbook.
+m CalculateFull() | Recalculates every formula.
+p Calculation: XlCalculation | Automatic or manual calculation.
+m Cells([RowIndex], [ColumnIndex]): Range | The cells of the active sheet.
+m CentimetersToPoints(Centimeters): Double | Centimeters as points.
+m Columns([Index]): Range | Columns of the active sheet.
+p Cursor: Long | Accepted; the mouse pointer doesn't change.
+p CutCopyMode: Boolean | Set to False to clear the copy marks.
+p DisplayAlerts: Boolean | Whether to ask before deleting sheets and the like.
+p DisplayFormulaBar: Boolean | Accepted.
+p DisplayStatusBar: Boolean | Accepted.
+m DoEvents() | Lets the program respond.
+p EnableCancelKey: Long | Accepted.
+p EnableEvents: Boolean | Whether events (Worksheet_Change...) run.
+m Evaluate(Name): Variant | The value of a formula or a reference.
+m FileDialog(FileDialogType): FileDialog | A file dialog (msoFileDialogFilePicker, msoFileDialogFolderPicker...) to set up and Show.
+m GetOpenFilename([FileFilter], [FilterIndex], [Title], [ButtonText], [MultiSelect]): Variant | Asks for files to open: the path (an array with MultiSelect), or False.
+m GetSaveAsFilename([InitialFilename], [FileFilter], [FilterIndex], [Title], [ButtonText]): Variant | Asks for a file to save to: the path, or False.
+m Goto(Reference) | Selects a range.
+m InchesToPoints(Inches): Double | Inches as points.
+m InputBox(Prompt, [Title], [Default], [Left], [Top], [HelpFile], [HelpContextID], [Type]): Variant | Asks for a value (Type: 1 number, 2 text, 8 range).
+p Interactive: Boolean | Accepted.
+m Intersect(Arg1, Arg2): Range | The cells two ranges share.
+p Iteration: Boolean | Iterative calculation.
+r Name: String | "Microsoft Excel", as macros expect.
+m Names([Index]): Names | The workbook's defined names.
+m OnKey(Key, [Procedure]) | Runs a macro on a key ("^+k": Ctrl+Shift+K, "{F5}"); no Procedure gives the key back, "" makes it do nothing.
+m OnTime(EarliestTime, Procedure, [LatestTime], [Schedule]) | Runs a macro at a time (Now + TimeValue("00:00:10")); Schedule False takes it away.
+r OperatingSystem: String | The system.
+r PathSeparator: String | "\" or "/".
+m Range(Cell1, [Cell2]): Range | Cells of the active sheet.
+m Rows([Index]): Range | Rows of the active sheet.
+m Run(Macro, [Args]...): Variant | Runs a macro by name.
+p ScreenUpdating: Boolean | Accepted: the sheet is shown when the macro ends.
+r Selection: Range | The selected cells.
+m Sheets([Index]): Worksheets | The sheets.
+p StatusBar: Variant | Text in the status bar (False: back to normal).
+r ThisWorkbook: Workbook | The workbook with this code.
+m Union(Arg1, Arg2): Range | Two ranges together.
+r UserName: String | The user's name.
+r Version: String | The version number Excel would give.
+p Visible: Boolean | Accepted.
+m Volatile([Volatile]) | Marks a function to recalculate always.
+m Wait(Time): Boolean | Waits until a time.
+m Workbooks([Index]): Workbooks | The workbooks open.
+r WorksheetFunction: WorksheetFunction | The worksheet functions.
+m Worksheets([Index]): Worksheets | The worksheets.
+
+class FileDialog | A file or folder dialog (Application.FileDialog).
+p AllowMultiSelect: Boolean | Whether several files can be picked.
+p ButtonName: String | Accepted.
+r DialogType: MsoFileDialogType | The kind of dialog.
+m Execute() | Not supported: open or save the file with Workbooks.Open or SaveAs.
+p FilterIndex: Long | The filter shown first.
+r Filters: FileDialogFilters | The file types offered.
+p InitialFileName: String | The file or folder offered first.
+p InitialView: Long | Accepted.
+r SelectedItems: FileDialogSelectedItems | The paths picked.
+m Show(): Long | Shows the dialog: -1 when something was picked, 0 when cancelled.
+p Title: String | The dialog's title.
+
+class FileDialogFilters | The file types of a FileDialog.
+m Add(Description, Extensions, [Position]): FileDialogFilter | Adds a file type ("*.txt; *.csv").
+m Clear() | Removes all file types.
+r Count: Long | How many there are.
+m Delete([filter]) | Removes one (all without an index).
+m Item(Index): FileDialogFilter | One of them.
+
+class FileDialogFilter | A file type of a FileDialog.
+r Description: String | The type's name.
+r Extensions: String | Its patterns ("*.txt; *.csv").
+
+class FileDialogSelectedItems | The paths picked in a FileDialog.
+r Count: Long | How many were picked.
+m Item(Index): String | A path picked (from 1).
+
+class Workbook | The workbook.
+m Activate() | Activates it.
+r ActiveSheet: Worksheet | Its active sheet.
+r Application: Application | The application.
+m Close([SaveChanges], [Filename]) | The macro's own: closes it when the macro ends (the macro ends here). One it opened: closes it now. SaveChanges False drops its changes, True saves them.
+r FullName: String | Path and name.
+m IconSets([Index]): IconSets | The icon sets of conditional formatting.
+r Name: String | The file name.
+m Names([Index]): Names | Its defined names, or one of them.
+r Parent: Application | The application.
+r Path: String | The folder.
+r ReadOnly: Boolean | Whether it is read-only.
+m PrintOut() | Opens the print dialog once the macro ends (the user prints). PrintPreview too.
+m RefreshAll() | Refreshes every pivot table.
+m Save() | Saves it.
+m SaveAs(Filename, [FileFormat]) | Saves it as another file (xlOpenXMLWorkbookMacroEnabled, xlCSV...), which it is from then on.
+m SaveCopyAs(Filename) | Saves a copy of it as it is now.
+p Saved: Boolean | Whether it has no unsaved changes.
+m Sheets([Index]): Worksheets | Its sheets.
+m Styles([Index]): Styles | Its cell styles, or one of them by name ("Good", "Heading 1").
+m Worksheets([Index]): Worksheets | Its worksheets.
+e Activate() | The workbook is activated.
+e AfterSave(ByVal Success As Boolean) | After it is saved.
+e BeforeClose(Cancel As Boolean) | Before it closes (Cancel = True keeps it open).
+e BeforePrint(Cancel As Boolean) | Before it prints.
+e BeforeSave(ByVal SaveAsUI As Boolean, Cancel As Boolean) | Before it is saved.
+e Deactivate() | Another workbook is activated.
+e NewSheet(ByVal Sh As Object) | A sheet is added.
+e Open() | The workbook opens.
+e SheetActivate(ByVal Sh As Object) | A sheet is activated.
+e SheetBeforeDoubleClick(ByVal Sh As Object, ByVal Target As Range, Cancel As Boolean) | A cell of any sheet is double-clicked.
+e SheetCalculate(ByVal Sh As Object) | A sheet recalculates.
+e SheetChange(ByVal Sh As Object, ByVal Target As Range) | Cells of any sheet change.
+e SheetDeactivate(ByVal Sh As Object) | A sheet stops being active.
+e SheetFollowHyperlink(ByVal Sh As Object, ByVal Target As Hyperlink) | A link in a cell is followed on any sheet.
+e SheetSelectionChange(ByVal Sh As Object, ByVal Target As Range) | The selection changes on any sheet.
+
+class Workbooks | The workbooks open: the macro's own and those it opened. Their code doesn't run; objects of one can't be passed to another's members (copy values, or Range.Copy).
+m Add(): Workbook | A new workbook, the active one.
+r Count: Long | How many.
+m Item(Index): Workbook | One by number (1: the macro's own) or file name.
+m Open(Filename, [UpdateLinks], [ReadOnly], [Format], [Password]): Workbook | Opens a workbook from a file macros reach, as the active one; open in its own tab if left open when the macro ends.
+
+class Worksheets | The sheets of a workbook.
+m Add([Before], [After], [Count]): Worksheet | Adds a sheet.
+r Application: Application | The application.
+r Count: Long | How many.
+m Item(Index): Worksheet | A sheet by name or number.
+r Parent: Workbook | The workbook.
+
+class Worksheet | A sheet.
+m Activate() | Makes it the active sheet.
+r Application: Application | The application.
+p AutoFilterMode: Boolean | Whether the sheet has an AutoFilter (False turns it off).
+m Calculate() | Recalculates it.
+m Cells([RowIndex], [ColumnIndex]): Range | Its cells, or one of them.
+m ChartObjects([Index]): ChartObjects | Its charts, or one of them.
+r CodeName: String | Its name in the code (Sheet1).
+m Columns([Index]): Range | Its columns.
+m Comments([Index]): Comments | Its notes.
+m Copy([Before], [After]) | Copies it within the workbook.
+m Delete() | Deletes it (asks unless DisplayAlerts = False).
+m Evaluate(Name): Variant | The value of a formula on this sheet.
+r FilterMode: Boolean | Whether rows are filtered out.
+m HPageBreaks([Index]): HPageBreaks | Manual page breaks between rows.
+m Hyperlinks([Index]): Hyperlinks | Its hyperlinks.
+r Index: Long | Its position.
+m ListObjects([Index]): ListObjects | Its tables.
+m Move([Before], [After]) | Moves it within the workbook.
+p Name: String | Its name on the tab.
+m Names([Index]): Names | The names local to it.
+r Next: Worksheet | The sheet after it.
+r PageSetup: PageSetup | How it prints.
+m PivotTables([Index]): PivotTables | Its pivot tables, or one (by number or "PivotTable1").
+m PrintOut() | Opens the print dialog for it once the macro ends (the user prints). PrintPreview too.
+r Parent: Workbook | The workbook.
+r Previous: Worksheet | The sheet before it.
+m Paste([Destination]) | Pastes what Copy or Cut put aside.
+m Protect([Password]) | Protects it.
+r ProtectContents: Boolean | Whether it is protected.
+m Range(Cell1, [Cell2]): Range | Its cells by address or corners.
+m ResetAllPageBreaks() | Removes the manual page breaks.
+m Rows([Index]): Range | Its rows.
+m Select() | Selects it.
+m Shapes([Index]): Shapes | Its shapes, pictures and charts, or one of them.
+m ShowAllData() | Clears the filters and shows every row.
+r Sort: Sort | Its Sort object (SortFields, SetRange, Header, Apply).
+r Tab: Tab | Its tab (Tab.Color).
+r Type: XlSheetType | xlWorksheet.
+m Unprotect([Password]) | Removes the protection.
+r UsedRange: Range | The cells in use.
+p Visible: XlSheetVisibility | Shown, hidden or very hidden.
+m VPageBreaks([Index]): HPageBreaks | Manual page breaks between columns.
+e Activate() | The sheet is activated.
+e BeforeDoubleClick(ByVal Target As Range, Cancel As Boolean) | A cell is double-clicked.
+e BeforeRightClick(ByVal Target As Range, Cancel As Boolean) | A cell is right-clicked.
+e Calculate() | The sheet recalculates.
+e Change(ByVal Target As Range) | Cells change.
+e Deactivate() | Another sheet is activated.
+e FollowHyperlink(ByVal Target As Hyperlink) | A link in a cell is followed.
+e SelectionChange(ByVal Target As Range) | The selection changes.
+
+class Range | A cell, a row, a column or a block of cells.
+m Activate() | Makes it the active cell.
+m AdvancedFilter(Action, [CriteriaRange], [CopyToRange], [Unique]) | Filters the list in place or copies the rows that pass.
+r Areas: Collection | Its areas (Range("A1:B2,D4") has two).
+m AddComment([Text]) | Adds a note to its first cell.
+m Address([RowAbsolute], [ColumnAbsolute], [ReferenceStyle], [External], [RelativeTo]): String | Its address ("$A$1").
+m AddressLocal([RowAbsolute], [ColumnAbsolute]): String | Its address.
+r Application: Application | The application.
+m AutoFilter([Field], [Criteria1], [Operator], [Criteria2]): Range | Without arguments turns the sheet's AutoFilter on or off; with Field, filters that column (">100", "a*", Array(...) with xlFilterValues, xlTop10Items...).
+m AutoFill(Destination, [Type]) | Fills the destination from it (series or copies).
+m AutoFit() | Fits the width of its columns or height of its rows.
+m BorderAround([LineStyle], [Weight], [ColorIndex], [Color]) | Draws a border around it.
+m Borders([Index]): Borders | Its borders, or one (xlEdgeTop...).
+m Calculate() | Recalculates it.
+m Cells([RowIndex], [ColumnIndex]): Range | Its cells, or one of them (from 1).
+m Characters([Start], [Length]): Characters | Part of its text, to read or format.
+m Clear() | Clears contents and formats.
+m ClearContents() | Clears the values and formulas.
+m ClearComments() | Removes its notes.
+m ClearFormats() | Clears the formats.
+r Column: Long | Number of its first column.
+m Columns([Index]): Range | Its columns.
+p ColumnWidth: Double | Width of its columns, in characters.
+r Comment: Comment | The note of its first cell (Nothing when none).
+m Copy([Destination]) | Copies it to a destination, or puts it aside for PasteSpecial.
+m Cut([Destination]) | Moves it to a destination, or puts it aside for Paste.
+r Count: Long | How many cells.
+r CountLarge: Variant | How many cells.
+r CurrentRegion: Range | The block of filled cells around it.
+m Delete([Shift]) | Deletes whole rows or columns.
+m End(Direction): Range | The edge of the data (xlUp, xlDown, xlToLeft, xlToRight).
+r EntireColumn: Range | Its whole columns.
+r EntireRow: Range | Its whole rows.
+m FillDown() | Copies its first row down.
+m FillLeft() | Copies its last column left.
+m FillRight() | Copies its first column right.
+m FillUp() | Copies its last row up.
+m Find(What, [After], [LookIn], [LookAt], [SearchOrder], [SearchDirection], [MatchCase]): Range | The next cell after After that matches (* and ? work), going around; Nothing if none.
+m FindNext([After]): Range | The next cell matching the last Find.
+m FindPrevious([After]): Range | The previous cell matching the last Find.
+r Font: Font | Its font.
+m FormatConditions([Index]): FormatConditions | Its conditional formatting.
+p Formula: Variant | The formula (A1 style, English).
+p Formula2: Variant | Its formula (as Formula).
+p FormulaLocal: Variant | The formula.
+p FormulaR1C1: Variant | The formula in R1C1 style.
+p FormulaR1C1Local: Variant | The formula in R1C1 style.
+p FormulaHidden: Variant | Whether its formulas are hidden when the sheet is protected.
+r HasFormula: Variant | Whether it has formulas.
+p Hidden: Boolean | Whether its rows or columns are hidden.
+p HorizontalAlignment: XlHAlign | Horizontal alignment.
+m Hyperlinks([Index]): Hyperlinks | Its hyperlinks.
+p IndentLevel: Variant | Indent of its text.
+m Insert([Shift]) | Inserts whole rows or columns.
+r Interior: Interior | Its fill.
+m Item(RowIndex, [ColumnIndex]): Range | One of its cells.
+r ListObject: ListObject | The table of its first cell (Nothing).
+p Locked: Variant | Whether it is locked when the sheet is protected.
+m Merge() | Merges its cells.
+r MergeCells: Variant | Whether its cells are merged.
+p NumberFormat: Variant | Number format ("0.00", "dd/mm/yyyy"...).
+p Style: Style | The cell style of the first cell; set it by name ("Good").
+p NumberFormatLocal: Variant | Number format.
+m NoteText([Text]): String | The note of its first cell, or sets it.
+p Name: Name | The name of the range (setting it defines a workbook name for it).
+m Offset([RowOffset], [ColumnOffset]): Range | The range moved by rows and columns.
+p PageBreak: Long | A manual break above it (xlPageBreakManual).
+m PasteSpecial([Paste], [Operation], [SkipBlanks], [Transpose]) | Pastes what Copy put aside (values, formats...).
+p Orientation: Variant | Text rotation (xlUpward, degrees...).
+r Parent: Worksheet | Its sheet.
+m Range(Cell1, [Cell2]): Range | Cells relative to it.
+m PrintOut() | Opens the print dialog for its sheet once the macro ends.
+r PivotTable: PivotTable | The pivot table its first cell is in.
+m RemoveDuplicates(Columns, [Header]) | Removes rows repeated in those columns.
+m Replace(What, Replacement, [LookAt], [SearchOrder], [MatchCase]): Boolean | Replaces text in its values and formulas.
+m Resize([RowSize], [ColumnSize]): Range | The range with another size.
+r Row: Long | Number of its first row.
+p RowHeight: Double | Height of its rows, in points.
+m Rows([Index]): Range | Its rows.
+m Select() | Selects it.
+m Show() | Scrolls to it.
+m SpecialCells(Type, [Value]): Range | Its cells of a kind (blanks, constants, formulas...).
+m Sort([Key1], [Order1], [Key2], [Type], [Order2], [Key3], [Order3], [Header], [OrderCustom], [MatchCase], [Orientation]) | Sorts it by up to three keys.
+r Text: String | The value as shown.
+m TextToColumns([Destination], [DataType], [TextQualifier], [ConsecutiveDelimiter], [Tab], [Semicolon], [Comma], [Space], [Other], [OtherChar], [FieldInfo]) | Splits the texts of one column into columns.
+m Unmerge() | Unmerges its cells.
+r Validation: Validation | Its data validation.
+p Value: Variant | The value (an array for several cells).
+p Value2: Variant | The value without Date or Currency.
+p VerticalAlignment: XlVAlign | Vertical alignment.
+r Worksheet: Worksheet | Its sheet.
+p WrapText: Variant | Whether text wraps.
+
+class Names | The defined names of the workbook or of a sheet.
+r Count: Long | How many there are.
+m Item(Index): Name | A name by position or by name ("Sheet1!Total" for a local one).
+m Add([Name], [RefersTo], [Visible]): Name | Defines a name (RefersTo: a Range or "=formula").
+
+class Name | A defined name.
+p Name: String | Its name ("Sheet1!x" when local to a sheet).
+p RefersTo: String | What it stands for ("=Sheet1!$A$1:$B$4").
+r RefersToRange: Range | The cells it stands for.
+p Value: String | What it stands for.
+p Visible: Boolean | Shown in the Name Manager.
+p Comment: String | Its comment.
+r Index: Long | Its position among the names.
+m Delete() | Deletes it.
+
+class PivotTables | The pivot tables of a sheet (made in Insert > Pivot Table).
+r Count: Long | How many there are.
+m Item(Index): PivotTable | One by number or by name ("PivotTable1").
+
+class PivotTable | A pivot table.
+r Name: String | PivotTable1, 2... in the sheet's order.
+m RefreshTable(): Boolean | Recomputes it from its source.
+r PivotCache: PivotCache | Its data: Refresh recomputes it.
+r TableRange1: Range | The cells it fills.
+r SourceData: String | Its source range.
+
+class PivotCache | The data of a pivot table.
+m Refresh() | Recomputes the pivot table from its source.
+r RecordCount: Long | How many records its source has.
+
+class Styles | The cell styles of the workbook.
+r Count: Long | How many there are.
+m Item(Index): Style | A style by position or by name.
+m Add(Name, [BasedOn]): Style | Adds a style with the format of BasedOn's first cell (else Normal's).
+
+class Style | A cell style: the cells that use it follow its changes.
+r Name: String | Its name (built-in styles by their English name).
+r BuiltIn: Boolean | Whether it is one of Excel's.
+r Font: Font | Its font.
+r Interior: Interior | Its fill.
+p NumberFormat: String | Its number format.
+p HorizontalAlignment: Long | Its alignment (xlLeft, xlCenter...).
+p WrapText: Boolean | Whether its text wraps.
+p IndentLevel: Long | Its indentation.
+p Locked: Boolean | Whether its cells are locked when the sheet is protected.
+p FormulaHidden: Boolean | Whether its formulas are hidden when the sheet is protected.
+p IncludeNumber: Boolean | Whether applying it sets the number format (also IncludeFont, IncludeAlignment, IncludeBorder, IncludePatterns, IncludeProtection).
+p IncludeFont: Boolean | Whether applying it sets the font.
+p IncludeAlignment: Boolean | Whether applying it sets the alignment.
+p IncludeBorder: Boolean | Whether applying it sets the borders.
+p IncludePatterns: Boolean | Whether applying it sets the fill.
+p IncludeProtection: Boolean | Whether applying it sets Locked and FormulaHidden.
+m Delete() | Deletes it (a built-in one gets its defaults back); its cells go back to Normal.
+
+class Sort | The sort of a sheet: set the keys and the range, then Apply.
+p Header: XlYesNoGuess | Whether the first row or column is a header (xlYes, xlNo, xlGuess).
+p MatchCase: Boolean | Whether upper and lower case are told apart.
+p Orientation: XlSortOrientation | xlTopToBottom or xlLeftToRight.
+r Rng: Range | The range to sort.
+r SortFields: SortFields | The keys.
+m SetRange(Rng) | Sets the range to sort.
+m Apply() | Sorts the range by the keys.
+
+class SortFields | The keys of a Sort.
+m Add(Key, [SortOn], [Order], [CustomOrder], [DataOption]): SortField | Adds a key.
+m Clear() | Removes the keys.
+r Count: Long | How many.
+m Item(Index): SortField | A key.
+
+class SortField | A key of a Sort.
+r Key: Range | The cells of the key.
+r Order: XlSortOrder | xlAscending or xlDescending.
+
+class Tab | The tab of a sheet.
+p Color: Variant | Its color (False: none).
+p ColorIndex: Variant | Its color from the palette (xlNone: none).
+
+class Hyperlinks | The hyperlinks of a sheet or range.
+r Count: Long | How many there are.
+m Item(Index): Hyperlink | One by position.
+m Add(Anchor, Address, [SubAddress], [ScreenTip], [TextToDisplay]): Hyperlink | Adds a link to the anchor's cell.
+m Delete() | Deletes them (the text stays).
+
+class Hyperlink | A hyperlink of a cell.
+p Address: String | The page or file it opens.
+p SubAddress: String | The place in the workbook ("Sheet2!A1").
+p ScreenTip: String | Its tip.
+p TextToDisplay: String | The cell's text.
+r Range: Range | Its cell.
+m Delete() | Deletes it (the text stays).
+
+class Comments | The notes of a sheet.
+r Count: Long | How many there are.
+m Item(Index): Comment | One by position.
+
+class Comment | The note of a cell.
+m Text([Text], [Start], [Overwrite]): String | Its text; sets it, or a part of it.
+p Author: String | Who wrote it.
+p Visible: Boolean | Always shown.
+r Parent: Range | Its cell.
+m Next(): Comment | The next note of the sheet.
+m Previous(): Comment | The previous note of the sheet.
+m Delete() | Deletes it.
+
+class Validation | The data validation of cells.
+m Add(Type, [AlertStyle], [Operator], [Formula1], [Formula2]) | Adds a rule (XlDVType).
+m Modify([Type], [AlertStyle], [Operator], [Formula1], [Formula2]) | Replaces the rule.
+m Delete() | Deletes the rule.
+r Type: Long | The kind of rule (XlDVType).
+r Operator: Long | How it compares (XlFormatConditionOperator).
+r AlertStyle: Long | Stop, warning or information.
+r Formula1: String | The first value, list or formula.
+r Formula2: String | The second value.
+p IgnoreBlank: Boolean | Empty cells are valid.
+p InCellDropdown: Boolean | A list shows its drop-down.
+p ShowInput: Boolean | Shows the input message.
+p ShowError: Boolean | Shows the error alert.
+p InputTitle: String | The input message's title.
+p InputMessage: String | The input message.
+p ErrorTitle: String | The error alert's title.
+p ErrorMessage: String | The error alert's text.
+r Value: Boolean | Every cell is valid.
+
+class FormatConditions | The conditional formatting rules of cells.
+r Count: Long | How many rules apply to the cells.
+m Item(Index): FormatCondition | A rule by position.
+m Add(Type, [Operator], [Formula1], [Formula2], [String], [TextOperator], [DateOperator]): FormatCondition | Adds a rule (XlFormatConditionType).
+m AddColorScale(ColorScaleType): FormatCondition | Adds a color scale of 2 or 3 colors.
+m AddDatabar(): FormatCondition | Adds data bars.
+m AddIconSetCondition(): FormatCondition | Adds icons.
+m AddTop10(): FormatCondition | Adds a rule for the top 10 values.
+m AddAboveAverage(): FormatCondition | Adds a rule for values above the average.
+m AddUniqueValues(): FormatCondition | Adds a rule for unique values.
+m Delete() | Deletes the rules from the cells.
+
+class FormatCondition | A conditional formatting rule.
+r Type: Long | The kind of rule (XlFormatConditionType).
+p Operator: Long | How the value compares.
+p Formula1: String | The first value or formula.
+p Formula2: String | The second value.
+p Text: String | The string of a text rule.
+p TextOperator: Long | Contains, begins with...
+p DateOperator: Long | The period of a date rule.
+p TopBottom: Long | Top or bottom values.
+p Rank: Long | How many top values.
+p Percent: Boolean | Rank is a percent.
+p AboveBelow: Long | Above or below the average.
+p DupeUnique: Long | Unique or duplicate values.
+r Font: Font | The font of matching cells.
+r Interior: Interior | The fill of matching cells.
+p StopIfTrue: Boolean | Lower rules don't apply to matching cells.
+r AppliesTo: Range | The cells of the rule.
+r Priority: Long | Its order among the sheet's rules.
+m ColorScaleCriteria([Index]): ColorScaleCriteria | The stops of a color scale.
+r MinPoint: ColorScaleCriterion | The shortest bar's threshold.
+r MaxPoint: ColorScaleCriterion | The longest bar's threshold.
+r BarColor: FormatColor | The color of data bars.
+m IconCriteria([Index]): IconCriteria | The thresholds of the icons.
+p IconSet: IconSet | The icons (Workbook.IconSets(xl3Arrows)).
+p ReverseOrder: Boolean | Icons in reverse order.
+p ShowIconOnly: Boolean | Hides the values.
+m Modify(Type, [Operator], [Formula1], [Formula2]) | Changes the rule.
+m ModifyAppliesToRange(Range) | Changes the cells of the rule.
+m SetFirstPriority() | Makes it the first rule.
+m SetLastPriority() | Makes it the last rule.
+m Delete() | Deletes the rule.
+
+class ColorScaleCriterion | A threshold of a color scale, data bar or icon set.
+p Type: Long | Lowest, number, percent... (XlConditionValueTypes).
+p Value: Variant | Its number or formula.
+r FormatColor: FormatColor | Its color (color scales).
+m Modify(NewType, [NewValue]) | Changes it (MinPoint, MaxPoint).
+
+class FormatColor | A color of a rule.
+p Color: Long | The color.
+
+class PageSetup | How a sheet prints.
+p Orientation: XlPageOrientation | xlPortrait or xlLandscape.
+p PaperSize: XlPaperSize | The paper.
+p Zoom: Variant | Scale in percent, or False to fit to pages.
+p FitToPagesWide: Variant | Pages wide when Zoom is False.
+p FitToPagesTall: Variant | Pages tall when Zoom is False (False: as many as needed).
+p LeftMargin: Double | In points (Application.InchesToPoints).
+p RightMargin: Double | In points.
+p TopMargin: Double | In points.
+p BottomMargin: Double | In points.
+p HeaderMargin: Double | In points.
+p FooterMargin: Double | In points.
+p PrintArea: String | The cells printed ("$A$1:$F$40"; "" for all).
+p PrintTitleRows: String | Rows repeated on each page ("$1:$2").
+p PrintTitleColumns: String | Columns repeated on each page ("$A:$A").
+p CenterHorizontally: Boolean | Centered across the page.
+p CenterVertically: Boolean | Centered down the page.
+p PrintGridlines: Boolean | Prints the gridlines.
+p PrintHeadings: Boolean | Prints the row and column headings.
+p Order: XlOrder | xlDownThenOver or xlOverThenDown.
+p FirstPageNumber: Long | The first page's number (xlAutomatic: 1).
+p LeftHeader: String | Header text (&P page, &N pages, &D date, &F file, &A sheet).
+p CenterHeader: String | Header text.
+p RightHeader: String | Header text.
+p LeftFooter: String | Footer text.
+p CenterFooter: String | Footer text.
+p RightFooter: String | Footer text.
+p DifferentFirstPageHeaderFooter: Boolean | The first page has its own.
+p OddAndEvenPagesHeaderFooter: Boolean | Even pages have their own.
+r EvenPage: Page | Even pages' headers and footers.
+r FirstPage: Page | The first page's headers and footers.
+
+class HPageBreaks | Manual page breaks between rows (VPageBreaks: columns).
+r Count: Long | How many.
+m Item(Index): HPageBreak | One by position.
+m Add(Before): HPageBreak | A break before a cell's row.
+
+class ListObjects | The tables of a sheet.
+r Count: Long | How many.
+m Item(Index): ListObject | A table by position or name.
+m Add([SourceType], [Source], [LinkSource], [XlListObjectHasHeaders], [Destination], [TableStyleName]): ListObject | Makes a table of cells.
+
+class ListObject | A table.
+p Name: String | Its name, as formulas use it.
+r Range: Range | Its cells.
+r DataBodyRange: Range | Its data (Nothing when empty).
+r HeaderRowRange: Range | Its header row.
+r TotalsRowRange: Range | Its totals row.
+p ShowTotals: Boolean | Shows the totals row.
+p ShowAutoFilter: Boolean | Filter buttons on the headers.
+p TableStyle: Variant | Its style ("TableStyleMedium2").
+p ShowTableStyleRowStripes: Boolean | Banded rows.
+p ShowTableStyleColumnStripes: Boolean | Banded columns.
+p ShowTableStyleFirstColumn: Boolean | First column in bold.
+p ShowTableStyleLastColumn: Boolean | Last column in bold.
+m ListColumns([Index]): ListColumns | Its columns.
+m ListRows([Index]): ListRows | Its data rows.
+m Resize(Range) | Changes its cells.
+m Unlist() | Makes it plain cells.
+m Delete() | Deletes the table and its cells.
+
+class ListColumns | The columns of a table.
+r Count: Long | How many.
+m Item(Index): ListColumn | A column by position or name.
+m Add([Position]): ListColumn | Inserts a column.
+
+class ListColumn | A column of a table.
+p Name: String | Its header.
+r Index: Long | Its position.
+r Range: Range | Its cells.
+r DataBodyRange: Range | Its data.
+p TotalsCalculation: XlTotalsCalculation | Its total.
+m Delete() | Deletes the column.
+
+class ListRows | The data rows of a table.
+r Count: Long | How many.
+m Item(Index): ListRow | A row by position.
+m Add([Position]): ListRow | Inserts a row (at the end without Position).
+
+class ListRow | A data row of a table.
+r Range: Range | Its cells.
+r Index: Long | Its position.
+m Delete() | Deletes the row.
+
+class Characters | Part of a cell's text.
+p Caption: String | The text.
+r Count: Long | How many characters.
+m Delete() | Removes them from the text.
+r Font: Font | Their font.
+m Insert(String) | Puts the text in their place.
+r Parent: Range | The cell.
+p Text: String | The text.
+
+class Shapes | The shapes, pictures and charts of a sheet.
+m AddChart([Type], [Left], [Top], [Width], [Height]): Shape | Adds a chart of the selected data.
+m AddChart2([Style], [XlChartType], [Left], [Top], [Width], [Height]): Shape | Adds a chart of the selected data.
+m AddConnector(Type, BeginX, BeginY, EndX, EndY): Shape | Adds a straight line.
+m AddLabel(Orientation, Left, Top, Width, Height): Shape | Adds a label (a text box without fill or line).
+m AddLine(BeginX, BeginY, EndX, EndY): Shape | Adds a line.
+m AddShape(Type, Left, Top, Width, Height): Shape | Adds a shape (msoShapeRectangle...).
+m AddTextbox(Orientation, Left, Top, Width, Height): Shape | Adds a text box.
+r Count: Long | How many.
+m Item(Index): Shape | One by number or name.
+
+class Shape | A shape, picture or chart over the cells.
+p AlternativeText: String | Its description for screen readers.
+r AutoShapeType: Long | The kind of shape (msoShapeRectangle...).
+r BottomRightCell: Range | The cell under its bottom-right corner.
+r Chart: Chart | The chart, when it is one.
+m Delete() | Deletes it.
+r Fill: FillFormat | Its fill.
+r HasChart: Long | msoTrue when it is a chart.
+p Height: Single | Height in points.
+r ID: Long | Its number in the sheet.
+m IncrementLeft(Increment) | Moves it right (points).
+m IncrementRotation(Increment) | Turns it (degrees).
+m IncrementTop(Increment) | Moves it down (points).
+p Left: Single | Distance from the sheet's left edge, in points.
+r Line: LineFormat | Its outline.
+p Name: String | Its name.
+p OnAction: String | The macro a click runs.
+p Rotation: Single | Rotation in degrees.
+m Select() | Selects it (a chart becomes ActiveChart).
+r TextFrame: TextFrame | Its text.
+r TextFrame2: TextFrame | Its text.
+p Top: Single | Distance from the sheet's top, in points.
+r TopLeftCell: Range | The cell under its top-left corner.
+r Type: Long | msoAutoShape, msoChart, msoPicture, msoTextBox...
+p Visible: Long | Shown (msoTrue) or hidden.
+p Width: Single | Width in points.
+m ZOrder(ZOrderCmd) | Brings it forward or sends it back.
+
+class TextFrame | The text of a shape.
+m Characters(): Characters | Its text, to read or change.
+r HasText: Long | msoTrue when it has text.
+r TextRange: Characters | Its text, to read or change.
+
+class FillFormat | The fill (or LineFormat: the outline) of a shape.
+r ForeColor: ColorFormat | Its color.
+p Visible: Long | Filled (msoTrue) or not.
+p Weight: Single | Line width in points (LineFormat).
+
+class ColorFormat | A color of a shape.
+p RGB: Long | The color.
+
+class ChartObjects | The charts of a sheet.
+m Add(Left, Top, Width, Height): ChartObject | Adds an empty chart.
+r Count: Long | How many.
+m Delete() | Deletes them all.
+m Item(Index): ChartObject | One by number or name.
+
+class ChartObject | A chart on a sheet.
+r Chart: Chart | The chart.
+m Delete() | Deletes it.
+p Height: Single | Height in points.
+r Index: Long | Its number among the sheet's charts.
+p Left: Single | Distance from the sheet's left edge, in points.
+p Name: String | Its name.
+m Select() | Makes it ActiveChart.
+p Top: Single | Distance from the sheet's top, in points.
+p Width: Single | Width in points.
+
+class Chart | A chart.
+m Activate() | Makes it ActiveChart.
+m Axes(Type, [AxisGroup]): Axis | The category (xlCategory) or value (xlValue) axis.
+r ChartTitle: ChartTitle | Its title.
+p ChartType: Long | Its type (xlColumnClustered, xlLine, xlPie...).
+p HasLegend: Boolean | Whether it shows a legend.
+p HasTitle: Boolean | Whether it shows a title.
+r Legend: Legend | Its legend.
+r Parent: ChartObject | The chart object holding it.
+m SeriesCollection([Index]): SeriesCollection | Its series, or one of them.
+m SetSourceData(Source, [PlotBy]) | Plots a range (series in xlColumns or xlRows).
+
+class ChartTitle | The title of a chart (AxisTitle: of an axis).
+p Caption: String | The text.
+m Delete() | Hides it.
+p Text: String | The text.
+
+class Axis | An axis of a chart.
+r AxisTitle: ChartTitle | Its title.
+m Delete() | Hides it.
+p HasMajorGridlines: Boolean | Major gridlines.
+p HasMinorGridlines: Boolean | Minor gridlines.
+p HasTitle: Boolean | Whether it has a title.
+p LogBase: Double | Base of a logarithmic scale.
+p MajorUnit: Double | Step between labels (value axis).
+p MajorUnitIsAuto: Boolean | The step is automatic.
+p MaximumScale: Double | Highest value (value axis).
+p MaximumScaleIsAuto: Boolean | The highest value is automatic.
+p MinimumScale: Double | Lowest value (value axis).
+p MinimumScaleIsAuto: Boolean | The lowest value is automatic.
+p MinorUnit: Double | Step between minor ticks (value axis).
+p MinorUnitIsAuto: Boolean | The minor step is automatic.
+p ReversePlotOrder: Boolean | In reverse order.
+p ScaleType: Long | xlScaleLinear or xlScaleLogarithmic.
+r TickLabels: TickLabels | Its labels.
+
+class TickLabels | The labels of an axis.
+p NumberFormat: String | Their number format.
+
+class Legend | The legend of a chart.
+m Delete() | Hides it.
+p Position: Long | xlLegendPositionBottom, Top, Left or Right.
+
+class SeriesCollection | The series of a chart.
+m Add(Source, [Rowcol]) | Adds the series of a range.
+r Count: Long | How many.
+m Item(Index): Series | One by number or name.
+m NewSeries(): Series | Adds an empty series.
+
+class Series | A series of a chart.
+p AxisGroup: Long | xlPrimary or xlSecondary axis.
+p ChartType: Long | Drawn as columns, lines or areas (combo charts).
+m Delete() | Removes it.
+r Formula: String | Its SERIES formula.
+p Name: String | Its name (text or a cell reference).
+r PlotOrder: Long | Its number.
+p Values: Variant | Its values (a range, a reference or an array).
+p XValues: Variant | Its categories.
+
+class Font | The font of cells.
+p Bold: Variant | Bold.
+p Color: Variant | Color (RGB).
+p ColorIndex: Variant | Color from the palette.
+p Italic: Variant | Italic.
+p Name: Variant | The font name.
+p Size: Variant | Size in points.
+p Strikethrough: Variant | Struck through.
+p Subscript: Variant | Subscript (characters of a text).
+p Superscript: Variant | Superscript (characters of a text).
+p Underline: Variant | Underline (xlUnderlineStyleSingle...).
+
+class Interior | The fill of cells.
+p Color: Variant | Color (RGB).
+p ColorIndex: Variant | Color from the palette (xlNone: no fill).
+p Pattern: Variant | Fill pattern.
+p PatternColor: Variant | Pattern color.
+p PatternColorIndex: Variant | Pattern color from the palette.
+p ThemeColor: Variant | Accepted.
+p TintAndShade: Variant | Accepted.
+
+class Borders | The borders of cells: all of them, or one by index.
+p Color: Variant | Color (RGB).
+p ColorIndex: Variant | Color from the palette.
+r Count: Long | 6.
+m Item(Index): Border | One border (xlEdgeTop...).
+p LineStyle: Variant | Line style (xlContinuous, xlDash, xlLineStyleNone...).
+p Weight: Variant | Line weight (xlThin, xlMedium...).
+
+class Border | One border of cells.
+p Color: Variant | Color (RGB).
+p ColorIndex: Variant | Color from the palette.
+p LineStyle: Variant | Line style (xlContinuous, xlDash, xlLineStyleNone...).
+p Weight: Variant | Line weight (xlThin, xlMedium...).
+
+class Window | The workbook's window.
+r ActiveCell: Range | The active cell.
+r ActiveSheet: Worksheet | The active sheet.
+p FreezePanes: Boolean | Freezes the panes at the split or above and left of the active cell.
+r Selection: Range | The selected cells.
+p SplitColumn: Long | Columns left of the split.
+p SplitRow: Long | Rows above the split.
+p Zoom: Variant | Accepted.
+
+class Collection | An ordered list of items, by position or key.
+m Add(Item, [Key], [Before], [After]) | Adds an item.
+r Count: Long | How many.
+m Item(Index): Variant | An item by position (from 1) or key.
+m Remove(Index) | Removes an item.
+
+class Dictionary | Scripting.Dictionary: values by key.
+m Add(Key, Item) | Adds a key and its value.
+p CompareMode: Long | vbTextCompare: keys ignore case.
+r Count: Long | How many.
+m Exists(Key): Boolean | Whether a key is there.
+p Item(Key): Variant | The value of a key.
+m Items(): Variant | The values, as an array.
+m Keys(): Variant | The keys, as an array.
+m Remove(Key) | Removes a key.
+m RemoveAll() | Removes every key.
+
+class FileSystemObject | Scripting.FileSystemObject: files and folders (those macros reach).
+m BuildPath(Path, Name): String | The path with a name added.
+m CopyFile(Source, Destination, [OverwriteFiles]) | Copies files (wildcards allowed; a destination ending in a separator is a folder).
+m CopyFolder(Source, Destination, [OverwriteFiles]) | Copies a folder with what is in it.
+m CreateFolder(Path): Folder | Makes a folder.
+m CreateTextFile(FileName, [Overwrite], [Unicode]): TextStream | Makes a text file to write.
+m DeleteFile(FileSpec, [Force]) | Deletes files (Force: read-only ones too).
+m DeleteFolder(FolderSpec, [Force]) | Deletes a folder with what is in it.
+m DriveExists(DriveSpec): Boolean | False: there are no drive letters.
+m FileExists(FileSpec): Boolean | Whether the file exists (among those macros reach).
+m FolderExists(FolderSpec): Boolean | Whether the folder exists (among those macros reach).
+m GetAbsolutePathName(Path): String | The full path.
+m GetBaseName(Path): String | The name without its extension.
+m GetDriveName(Path): String | Empty: there are no drive letters.
+m GetExtensionName(Path): String | The extension.
+m GetFile(FilePath): File | A file.
+m GetFileName(Path): String | The last part of the path.
+m GetFolder(FolderPath): Folder | A folder.
+m GetParentFolderName(Path): String | The folder of the path.
+m GetTempName(): String | A name for a temporary file.
+m MoveFile(Source, Destination) | Moves or renames files.
+m MoveFolder(Source, Destination) | Moves or renames a folder.
+m OpenTextFile(FileName, [IOMode], [Create], [Format]): TextStream | Opens a text file (ForReading, ForWriting, ForAppending).
+
+class TextStream | A text file open with OpenTextFile or CreateTextFile.
+r AtEndOfLine: Boolean | Whether reading is at the end of a line.
+r AtEndOfStream: Boolean | Whether reading is at the end.
+m Close() | Closes it.
+r Column: Long | The column (from 1).
+r Line: Long | The line (from 1).
+m Read(Characters): String | The next characters.
+m ReadAll(): String | The rest of the text.
+m ReadLine(): String | The next line.
+m Skip(Characters) | Skips characters.
+m SkipLine() | Skips a line.
+m Write(Text) | Writes text.
+m WriteBlankLines(Lines) | Writes empty lines.
+m WriteLine([Text]) | Writes a line.
+
+class File | A file of FileSystemObject.
+p Attributes: Long | vbReadOnly when read-only.
+m Copy(Destination, [OverwriteFiles]) | Copies it.
+r DateCreated: Date | When it was made.
+r DateLastAccessed: Date | When it was last read.
+r DateLastModified: Date | When it was last changed.
+m Delete([Force]) | Deletes it.
+r Drive: String | Empty: there are no drive letters.
+m Move(Destination) | Moves it.
+p Name: String | Its name (setting it renames it).
+m OpenAsTextStream([IOMode], [Format]): TextStream | Opens it as text.
+r ParentFolder: Folder | Its folder.
+r Path: String | Its full path (the default).
+r ShortName: String | Its name.
+r ShortPath: String | Its path.
+r Size: Double | Its size in bytes.
+r Type: String | What it is.
+
+class Folder | A folder of FileSystemObject.
+r Attributes: Long | vbDirectory.
+m Copy(Destination, [OverwriteFiles]) | Copies it.
+m CreateTextFile(FileName, [Overwrite], [Unicode]): TextStream | Makes a text file in it.
+r DateCreated: Date | When it was made.
+r DateLastAccessed: Date | When it was last read.
+r DateLastModified: Date | When it was last changed.
+m Delete([Force]) | Deletes it.
+r Drive: String | Empty: there are no drive letters.
+r Files: Files | Its files.
+r IsRootFolder: Boolean | Whether it is the root.
+m Move(Destination) | Moves it.
+p Name: String | Its name (setting it renames it).
+r ParentFolder: Folder | Its folder.
+r Path: String | Its full path (the default).
+r ShortName: String | Its name.
+r ShortPath: String | Its path.
+r Size: Double | The size of what is in it.
+r SubFolders: Folders | Its folders.
+r Type: String | What it is.
+
+class Files | The files of a Folder.
+r Count: Long | How many.
+m Item(Key): File | A file by name.
+
+class Folders | The folders in a Folder.
+m Add(Name): Folder | Makes a folder in it.
+r Count: Long | How many.
+m Item(Key): Folder | A folder by name.
+
+class ErrObject | Err: the last error.
+m Clear() | Clears it.
+p Description: String | What happened.
+p Number: Long | The error number (0: none).
+m Raise(Number, [Source], [Description]) | Raises an error.
+p Source: String | Where it happened.
+
+class Debug | Output for the Immediate window.
+m Assert(BooleanExpression) | Pauses in the debugger when False.
+m Print([OutputList]) | Writes in the Immediate window.
+
+class WorksheetFunction | The worksheet's functions, called from code.
+m And(Arg1, [Arg2]...): Boolean | Whether every argument is True.
+m Average(Arg1, [Arg2]...): Double | The average.
+m AverageIf(Range, Criteria, [AverageRange]): Double | The average of cells meeting a criterion.
+m Ceiling(Number, Significance): Double | Rounded up to a multiple.
+m Count(Arg1, [Arg2]...): Double | How many numbers.
+m CountA(Arg1, [Arg2]...): Double | How many cells aren't empty.
+m CountBlank(Range): Double | How many cells are empty.
+m CountIf(Range, Criteria): Double | How many cells meet a criterion.
+m CountIfs(CriteriaRange1, Criteria1, [CriteriaRange2, Criteria2]...): Double | How many cells meet several criteria.
+m EDate(StartDate, Months): Double | A date some months later.
+m EoMonth(StartDate, Months): Double | The last day of a month.
+m Floor(Number, Significance): Double | Rounded down to a multiple.
+m HLookup(Arg1, Arg2, Arg3, [Arg4]): Variant | Looks up a value in the top row.
+m Index(Arg1, Arg2, [Arg3]): Variant | The value at a row and column.
+m IsNumber(Arg1): Boolean | Whether it is a number.
+m Large(Arg1, Arg2): Double | The k-th largest value.
+m Match(Arg1, Arg2, [Arg3]): Double | The position of a value.
+m Max(Arg1, [Arg2]...): Double | The largest value.
+m Median(Arg1, [Arg2]...): Double | The median.
+m Min(Arg1, [Arg2]...): Double | The smallest value.
+m NetworkDays(StartDate, EndDate, [Holidays]): Double | Working days between dates.
+m Or(Arg1, [Arg2]...): Boolean | Whether any argument is True.
+m Power(Number, Power): Double | A number raised to a power.
+m Product(Arg1, [Arg2]...): Double | The product.
+m Rank(Number, Ref, [Order]): Double | The rank of a number.
+m Round(Number, NumDigits): Double | Rounded (half away from zero).
+m RoundDown(Number, NumDigits): Double | Rounded down.
+m RoundUp(Number, NumDigits): Double | Rounded up.
+m Small(Arg1, Arg2): Double | The k-th smallest value.
+m StDev(Arg1, [Arg2]...): Double | The standard deviation of a sample.
+m Sum(Arg1, [Arg2]...): Double | The sum.
+m SumIf(Range, Criteria, [SumRange]): Double | The sum of cells meeting a criterion.
+m SumIfs(SumRange, CriteriaRange1, Criteria1, [CriteriaRange2, Criteria2]...): Double | The sum of cells meeting several criteria.
+m SumProduct(Arg1, [Arg2]...): Double | The sum of products.
+m Text(Arg1, Arg2): String | A value as text with a format.
+m Transpose(Arg1): Variant | Rows as columns.
+m Trim(Arg1): String | Without extra spaces.
+m VLookup(Arg1, Arg2, Arg3, [Arg4]): Variant | Looks up a value in the first column.
+m WeekDay(Arg1, [Arg2]): Double | The day of the week.
+m WorkDay(StartDate, Days, [Holidays]): Double | A date some working days later.
+
+class Document | A Word document (ThisDocument).
+e Close() | The document closes.
+e New() | A document is made from the template.
+e Open() | The document opens.
+
+class Class | A class module.
+e Initialize() | An object of the class is created.
+e Terminate() | The object goes.
+
+class Constants | Constants of VBA and Excel.
+c ForAppending = 8 | OpenTextFile: write at the end.
+c ForReading = 1 | OpenTextFile: read.
+c ForWriting = 2 | OpenTextFile: write it anew.
+c msoFileDialogFilePicker = 3 | FileDialog: pick files.
+c msoFileDialogFolderPicker = 4 | FileDialog: pick a folder.
+c msoFileDialogOpen = 1 | FileDialog: pick files to open.
+c msoFileDialogSaveAs = 2 | FileDialog: pick a file to save to.
+c TristateFalse = 0 | OpenTextFile: plain text.
+c TristateMixed = -2 | OpenTextFile: the default text.
+c TristateTrue = -1 | OpenTextFile: Unicode text.
+c TristateUseDefault = -2 | OpenTextFile: the default text.
+c vbArchive = 32 | GetAttr: changed since the last backup.
+c vbCrLf = Chr(13) & Chr(10) | Line break (Windows).
+c vbDirectory = 16 | Dir and GetAttr: a folder.
+c vbHidden = 2 | Dir and GetAttr: hidden.
+c vbNewLine = Chr(13) & Chr(10) | Line break.
+c vbCr = Chr(13) | Carriage return.
+c vbLf = Chr(10) | Line feed.
+c vbNormal = 0 | Dir and GetAttr: a plain file.
+c vbReadOnly = 1 | GetAttr and SetAttr: read-only.
+c vbSystem = 4 | Dir and GetAttr: a system file.
+c vbTab = Chr(9) | Tab.
+c vbNullString = "" | Empty text.
+c vbNullChar = Chr(0) | The character 0.
+c vbBack = Chr(8) | Backspace.
+c vbFormFeed = Chr(12) | Form feed.
+c vbVerticalTab = Chr(11) | Vertical tab.
+c vbOKOnly = 0 | MsgBox: OK button.
+c vbOKCancel = 1 | MsgBox: OK and Cancel.
+c vbAbortRetryIgnore = 2 | MsgBox: Abort, Retry and Ignore.
+c vbVolume = 8 | Dir: the volume label.
+c vbYesNoCancel = 3 | MsgBox: Yes, No and Cancel.
+c vbYesNo = 4 | MsgBox: Yes and No.
+c vbRetryCancel = 5 | MsgBox: Retry and Cancel.
+c vbCritical = 16 | MsgBox: error icon.
+c vbQuestion = 32 | MsgBox: question icon.
+c vbExclamation = 48 | MsgBox: warning icon.
+c vbInformation = 64 | MsgBox: information icon.
+c vbDefaultButton1 = 0 | MsgBox: the first button is the default.
+c vbDefaultButton2 = 256 | MsgBox: the second button is the default.
+c vbDefaultButton3 = 512 | MsgBox: the third button is the default.
+c vbApplicationModal = 0 | MsgBox: modal.
+c vbSystemModal = 4096 | MsgBox: modal.
+c vbMsgBoxSetForeground = 65536 | MsgBox: in front.
+c vbOK = 1 | MsgBox answer: OK.
+c vbCancel = 2 | MsgBox answer: Cancel.
+c vbAbort = 3 | MsgBox answer: Abort.
+c vbRetry = 4 | MsgBox answer: Retry.
+c vbIgnore = 5 | MsgBox answer: Ignore.
+c vbYes = 6 | MsgBox answer: Yes.
+c vbNo = 7 | MsgBox answer: No.
+c vbBinaryCompare = 0 | Compare texts exactly.
+c vbTextCompare = 1 | Compare texts ignoring case.
+c vbUseSystemDayOfWeek = 0 | The system's first day of the week.
+c vbSunday = 1 | Sunday.
+c vbMonday = 2 | Monday.
+c vbTuesday = 3 | Tuesday.
+c vbWednesday = 4 | Wednesday.
+c vbThursday = 5 | Thursday.
+c vbFriday = 6 | Friday.
+c vbSaturday = 7 | Saturday.
+c vbEmpty = 0 | VarType: Empty.
+c vbNull = 1 | VarType: Null.
+c vbInteger = 2 | VarType: Integer.
+c vbLong = 3 | VarType: Long.
+c vbSingle = 4 | VarType: Single.
+c vbDouble = 5 | VarType: Double.
+c vbCurrency = 6 | VarType: Currency.
+c vbDate = 7 | VarType: Date.
+c vbString = 8 | VarType: String.
+c vbObject = 9 | VarType: Object.
+c vbError = 10 | VarType: Error.
+c vbBoolean = 11 | VarType: Boolean.
+c vbVariant = 12 | VarType: Variant.
+c vbByte = 17 | VarType: Byte.
+c vbArray = 8192 | VarType: an array.
+c vbUpperCase = 1 | StrConv: upper case.
+c vbLowerCase = 2 | StrConv: lower case.
+c vbProperCase = 3 | StrConv: first letters in capitals.
+c vbObjectError = -2147221504 | The base of errors of objects.
+c vbTrue = -1 | True.
+c vbFalse = 0 | False.
+c vbUseDefault = -2 | The default.
+c vbBlack = 0 | Black.
+c vbRed = 255 | Red.
+c vbGreen = 65280 | Green.
+c vbYellow = 65535 | Yellow.
+c vbBlue = 16711680 | Blue.
+c vbMagenta = 16711935 | Magenta.
+c vbCyan = 16776960 | Cyan.
+c vbWhite = 16777215 | White.
+c xlCSV = 6 | SaveAs: the active sheet as CSV.
+c xlCSVMac = 22 | SaveAs: the active sheet as CSV.
+c xlCSVMSDOS = 24 | SaveAs: the active sheet as CSV.
+c xlCSVUTF8 = 62 | SaveAs: the active sheet as CSV.
+c xlCSVWindows = 23 | SaveAs: the active sheet as CSV.
+c xlCurrentPlatformText = -4158 | SaveAs: the active sheet as tab-separated text.
+c xlOpenDocumentSpreadsheet = 60 | SaveAs: .ods.
+c xlOpenXMLTemplate = 54 | SaveAs: .xltx.
+c xlOpenXMLTemplateMacroEnabled = 53 | SaveAs: .xltm.
+c xlOpenXMLWorkbook = 51 | SaveAs: .xlsx.
+c xlOpenXMLWorkbookMacroEnabled = 52 | SaveAs: .xlsm, with its macros.
+c xlTextMSDOS = 21 | SaveAs: the active sheet as tab-separated text.
+c xlTextWindows = 20 | SaveAs: the active sheet as tab-separated text.
+c xlUnicodeText = 42 | SaveAs: the active sheet as tab-separated text.
+c xlUp = -4162 | End: upwards.
+c xlDown = -4121 | End: downwards.
+c xlToLeft = -4159 | End: to the left.
+c xlToRight = -4161 | End: to the right.
+c xlShiftUp = -4162 | Delete: move cells up.
+c xlShiftDown = -4121 | Insert: move cells down.
+c xlShiftToLeft = -4159 | Delete: move cells left.
+c xlShiftToRight = -4161 | Insert: move cells right.
+c xlLeft = -4131 | Aligned left.
+c xlRight = -4152 | Aligned right.
+c xlCenter = -4108 | Centered.
+c xlJustify = -4130 | Justified.
+c xlGeneral = 1 | General alignment.
+c xlTop = -4160 | Aligned top.
+c xlBottom = -4107 | Aligned bottom.
+c xlNone = -4142 | None.
+c xlAutomatic = -4105 | Automatic.
+c xlSolid = 1 | Solid fill.
+c xlCalculationAutomatic = -4105 | Automatic calculation.
+c xlCalculationManual = -4135 | Manual calculation.
+c xlCalculationSemiautomatic = 2 | Automatic except tables.
+c xlSheetVisible = -1 | The sheet is shown.
+c xlSheetHidden = 0 | The sheet is hidden.
+c xlSheetVeryHidden = 2 | Hidden; only code shows it again.
+c xlCellValue = 1 | Rule: the cell's value compares with Formula1.
+c xlExpression = 2 | Rule: a formula that is true.
+c xlColorScale = 3 | Rule: a color scale.
+c xlDatabar = 4 | Rule: data bars.
+c xlTop10 = 5 | Rule: top or bottom values.
+c xlIconSets = 6 | Rule: icons.
+c xlUniqueValues = 8 | Rule: unique or duplicate values.
+c xlTextString = 9 | Rule: the text contains a string.
+c xlBlanksCondition = 10 | Rule: empty cells.
+c xlTimePeriod = 11 | Rule: dates in a period.
+c xlAboveAverageCondition = 12 | Rule: above or below the average.
+c xlNoBlanksCondition = 13 | Rule: cells that aren't empty.
+c xlErrorsCondition = 16 | Rule: errors.
+c xlNoErrorsCondition = 17 | Rule: cells without errors.
+c xlContains = 0 | The text contains the string.
+c xlDoesNotContain = 1 | The text doesn't contain the string.
+c xlBeginsWith = 2 | The text begins with the string.
+c xlEndsWith = 3 | The text ends with the string.
+c xlToday = 0 | Period: today.
+c xlWorkbookDefault = 51 | SaveAs: .xlsx.
+c xlWorkbookNormal = -4143 | SaveAs: the format of its extension.
+c xlYesterday = 1 | Period: yesterday.
+c xlLast7Days = 2 | Period: the last 7 days.
+c xlThisWeek = 3 | Period: this week.
+c xlLastWeek = 4 | Period: last week.
+c xlLastMonth = 5 | Period: last month.
+c xlTomorrow = 6 | Period: tomorrow.
+c xlNextWeek = 7 | Period: next week.
+c xlNextMonth = 8 | Period: next month.
+c xlThisMonth = 9 | Period: this month.
+c xlTop10Top = 1 | The highest values.
+c xlTop10Bottom = 0 | The lowest values.
+c xlAboveAverage = 0 | Above the average.
+c xlBelowAverage = 1 | Below the average.
+c xlEqualAboveAverage = 2 | Equal to or above the average.
+c xlEqualBelowAverage = 3 | Equal to or below the average.
+c xlUnique = 0 | Values that appear once.
+c xlDuplicate = 1 | Values that appear more than once.
+c xlConditionValueNone = -1 | No threshold.
+c xlConditionValueNumber = 0 | Threshold: a number.
+c xlConditionValueLowestValue = 1 | Threshold: the lowest value.
+c xlConditionValueHighestValue = 2 | Threshold: the highest value.
+c xlConditionValuePercent = 3 | Threshold: a percent.
+c xlConditionValueFormula = 4 | Threshold: a formula.
+c xlConditionValuePercentile = 5 | Threshold: a percentile.
+c xlConditionValueAutomaticMin = 7 | Threshold: the lowest value.
+c xlConditionValueAutomaticMax = 8 | Threshold: the highest value.
+c xl3Arrows = 1 | Icons: 3 arrows.
+c xl3ArrowsGray = 2 | Icons: 3 gray arrows.
+c xl3Flags = 3 | Icons: 3 flags.
+c xl3TrafficLights1 = 4 | Icons: 3 traffic lights.
+c xl3TrafficLights2 = 5 | Icons: 3 traffic lights with rims.
+c xl3Signs = 6 | Icons: 3 signs.
+c xl3Symbols = 7 | Icons: 3 circled symbols.
+c xl3Symbols2 = 8 | Icons: 3 symbols.
+c xl4Arrows = 9 | Icons: 4 arrows.
+c xl4ArrowsGray = 10 | Icons: 4 gray arrows.
+c xl4RedToBlack = 11 | Icons: red to black.
+c xl4CRV = 12 | Icons: 4 ratings.
+c xl4TrafficLights = 13 | Icons: 4 traffic lights.
+c xl5Arrows = 14 | Icons: 5 arrows.
+c xl5CRV = 16 | Icons: 5 ratings.
+c xl3Stars = 18 | Icons: 3 stars.
+c xl3Triangles = 19 | Icons: 3 triangles.
+c xlPortrait = 1 | Pages upright.
+c xlLandscape = 2 | Pages sideways.
+c xlPaperLetter = 1 | Letter paper.
+c xlPaperTabloid = 3 | Tabloid paper.
+c xlPaperLegal = 5 | Legal paper.
+c xlPaperExecutive = 7 | Executive paper.
+c xlPaperA3 = 8 | A3 paper.
+c xlPaperA4 = 9 | A4 paper.
+c xlPaperA5 = 11 | A5 paper.
+c xlPaperB5 = 13 | B5 paper.
+c xlDownThenOver = 1 | Pages: down, then across.
+c xlOverThenDown = 2 | Pages: across, then down.
+c xlPageBreakManual = -4135 | A manual page break.
+c xlPageBreakNone = -4142 | No page break.
+c xlPrintNoComments = -4142 | Notes aren't printed.
+c xlPrintErrorsDisplayed = 0 | Errors print as shown.
+c xlSrcRange = 1 | A table made from cells.
+c xlTotalsCalculationNone = 0 | No total.
+c xlTotalsCalculationSum = 1 | Total: sum.
+c xlTotalsCalculationAverage = 2 | Total: average.
+c xlTotalsCalculationCount = 3 | Total: count of values.
+c xlTotalsCalculationCountNums = 4 | Total: count of numbers.
+c xlTotalsCalculationMin = 5 | Total: minimum.
+c xlTotalsCalculationMax = 6 | Total: maximum.
+c xlTotalsCalculationStdDev = 7 | Total: standard deviation.
+c xlTotalsCalculationVar = 8 | Total: variance.
+c xlValidateInputOnly = 0 | Validation: any value (only the input message).
+c xlValidateWholeNumber = 1 | Validation: whole numbers.
+c xlValidateDecimal = 2 | Validation: numbers.
+c xlValidateList = 3 | Validation: a value of a list.
+c xlValidateDate = 4 | Validation: dates.
+c xlValidateTime = 5 | Validation: times.
+c xlValidateTextLength = 6 | Validation: the length of the text.
+c xlValidateCustom = 7 | Validation: a formula that must be true.
+c xlValidAlertStop = 1 | Validation: refuse the value.
+c xlValidAlertWarning = 2 | Validation: warn and ask.
+c xlValidAlertInformation = 3 | Validation: inform and accept.
+c xlBetween = 1 | Between Formula1 and Formula2.
+c xlNotBetween = 2 | Not between Formula1 and Formula2.
+c xlEqual = 3 | Equal to Formula1.
+c xlNotEqual = 4 | Not equal to Formula1.
+c xlGreater = 5 | Greater than Formula1.
+c xlLess = 6 | Less than Formula1.
+c xlGreaterEqual = 7 | Greater than or equal to Formula1.
+c xlLessEqual = 8 | Less than or equal to Formula1.
+c xlValues = -4163 | Find in values.
+c xlFormulas = -4123 | Find in formulas.
+c xlComments = -4144 | Find in comments.
+c xlWhole = 1 | Find: whole cell.
+c xlPart = 2 | Find: part of the cell.
+c xlByRows = 1 | Find: by rows.
+c xlByColumns = 2 | Find: by columns.
+c xlNext = 1 | Find: forwards.
+c xlPrevious = 2 | Find: backwards.
+c xlAscending = 1 | Sort ascending.
+c xlDescending = 2 | Sort descending.
+c xlYes = 1 | Yes.
+c xlNo = 2 | No.
+c xlGuess = 0 | Guess.
+c xlContinuous = 1 | Continuous line.
+c xlThin = 2 | Thin line.
+c xlMedium = -4138 | Medium line.
+c xlThick = 4 | Thick line.
+c xlNumbers = 1 | SpecialCells: numbers.
+c xlTextValues = 2 | SpecialCells: texts.
+c xlLogical = 4 | SpecialCells: True and False.
+c xlErrors = 16 | SpecialCells: errors.
+c xlFillDefault = 0 | AutoFill: series where it looks like one.
+c xlFillCopy = 1 | AutoFill: copies.
+c xlFillSeries = 2 | AutoFill: a series.
+c xlFillFormats = 3 | AutoFill: only the formats.
+c xlFillValues = 4 | AutoFill: without the formats.
+c xlFillDays = 5 | AutoFill: days.
+c xlFillWeekdays = 6 | AutoFill: weekdays.
+c xlFillMonths = 7 | AutoFill: months.
+c xlFillYears = 8 | AutoFill: years.
+c xlPasteAllExceptBorders = 7 | PasteSpecial: all but borders.
+c xlPasteFormulas = -4123 | PasteSpecial: formulas.
+c xlPasteComments = -4144 | PasteSpecial: notes.
+c xlPasteSpecialOperationNone = -4142 | PasteSpecial: no operation.
+c xlPasteSpecialOperationAdd = 2 | PasteSpecial: add.
+c xlPasteSpecialOperationSubtract = 3 | PasteSpecial: subtract.
+c xlPasteSpecialOperationMultiply = 4 | PasteSpecial: multiply.
+c xlPasteSpecialOperationDivide = 5 | PasteSpecial: divide.
+c xlCopy = 1 | CutCopyMode: copying.
+c xlCut = 2 | CutCopyMode: cutting.
+c xlCellTypeComments = -4144 | SpecialCells: cells with notes.
+c xlCellTypeAllFormatConditions = -4172 | SpecialCells: cells with conditional formats.
+c xlCellTypeSameFormatConditions = -4173 | SpecialCells: the same conditional formats.
+c xlCellTypeAllValidation = -4174 | SpecialCells: cells with validation.
+c xlCellTypeSameValidation = -4175 | SpecialCells: the same validation.
+c xlUnderlineStyleDouble = -4119 | Double underline.
+c xlDiagonalDown = 5 | Diagonal border from top left (not drawn).
+c xlDiagonalUp = 6 | Diagonal border from bottom left (not drawn).
+c xlEdgeLeft = 7 | Left edge of a range.
+c xlEdgeTop = 8 | Top edge of a range.
+c xlEdgeBottom = 9 | Bottom edge of a range.
+c xlEdgeRight = 10 | Right edge of a range.
+c xlInsideVertical = 11 | Vertical lines inside a range.
+c xlInsideHorizontal = 12 | Horizontal lines inside a range.
+c xlLineStyleNone = -4142 | No line.
+c xlDash = -4115 | Dashed line.
+c xlDot = -4118 | Dotted line.
+c xlDouble = -4119 | Double line.
+c xlDashDot = 4 | Dash-dot line.
+c xlDashDotDot = 5 | Dash-dot-dot line.
+c xlSlantDashDot = 13 | Slanted dash-dot line.
+c xlHairline = 1 | Hairline border weight.
+c xlTopToBottom = 1 | Sort rows (top to bottom).
+c xlLeftToRight = 2 | Sort columns (left to right).
+c xlSortOnValues = 0 | Sort on cell values.
+c xlSortNormal = 0 | Sort text and numbers apart.
+c xlSortTextAsNumbers = 1 | Sort text as numbers.
+c xlHorizontal = -4128 | Horizontal text.
+c xlVertical = -4166 | Vertical (stacked) text.
+c xlUpward = -4171 | Text rotated upward.
+c xlDownward = -4170 | Text rotated downward.
+c xlPasteAll = -4104 | Paste everything.
+c xlPasteValues = -4163 | Paste values.
+c xlPasteFormats = -4122 | Paste formats.
+c xlErrDiv0 = 2007 | #DIV/0!
+c xlErrNA = 2042 | #N/A
+c xlErrName = 2029 | #NAME?
+c xlErrNull = 2000 | #NULL!
+c xlErrNum = 2036 | #NUM!
+c xlErrRef = 2023 | #REF!
+c xlErrValue = 2015 | #VALUE!
+c xlWorksheet = -4167 | A worksheet.
+c xlCellTypeBlanks = 4 | Empty cells.
+c xlCellTypeConstants = 2 | Cells with values.
+c xlCellTypeFormulas = -4123 | Cells with formulas.
+c xlCellTypeLastCell = 11 | The last cell used.
+c xlCellTypeVisible = 12 | Visible cells.
+c xlA1 = 1 | A1 references.
+c xlR1C1 = -4150 | R1C1 references.
+c xlUnderlineStyleSingle = 2 | Single underline.
+c xlUnderlineStyleNone = -4142 | No underline.
+c xlDelimited = 1 | Text to Columns: delimited.
+c xlFixedWidth = 2 | Text to Columns: fixed width.
+c xlTextQualifierDoubleQuote = 1 | Text qualifier: ".
+c xlTextQualifierSingleQuote = 2 | Text qualifier: '.
+c xlTextQualifierNone = -4142 | No text qualifier.
+c xlGeneralFormat = 1 | Column data type: General.
+c xlSkipColumn = 9 | Column data type: skip it.
+c xlFilterInPlace = 1 | Advanced Filter: in place.
+c xlAnd = 1 | AutoFilter: both criteria.
+c xlOr = 2 | AutoFilter: either criterion.
+c xlTop10Items = 3 | AutoFilter: the top items (Criteria1 is how many).
+c xlBottom10Items = 4 | AutoFilter: the bottom items.
+c xlTop10Percent = 5 | AutoFilter: the top percent.
+c xlBottom10Percent = 6 | AutoFilter: the bottom percent.
+c xlFilterValues = 7 | AutoFilter: Criteria1 is an Array of values to show.
+c xlFilterCellColor = 8 | AutoFilter: by fill color.
+c xlFilterFontColor = 9 | AutoFilter: by font color.
+c xlFilterDynamic = 11 | AutoFilter: a dynamic criterion (above or below average).
+c xlFilterAboveAverage = 33 | AutoFilter dynamic criterion: above the average.
+c xlFilterBelowAverage = 34 | AutoFilter dynamic criterion: below the average.
+c xlFilterCopy = 2 | Advanced Filter: copy elsewhere.
+c xlColumnClustered = 51 | Chart: clustered columns.
+c xlColumnStacked = 52 | Chart: stacked columns.
+c xlColumnStacked100 = 53 | Chart: 100% stacked columns.
+c xl3DColumnClustered = 54 | Chart: 3-D clustered columns.
+c xl3DColumnStacked = 55 | Chart: 3-D stacked columns.
+c xl3DColumnStacked100 = 56 | Chart: 3-D 100% stacked columns.
+c xl3DColumn = -4100 | Chart: 3-D columns.
+c xlBarClustered = 57 | Chart: clustered bars.
+c xlBarStacked = 58 | Chart: stacked bars.
+c xlBarStacked100 = 59 | Chart: 100% stacked bars.
+c xl3DBarClustered = 60 | Chart: 3-D clustered bars.
+c xl3DBarStacked = 61 | Chart: 3-D stacked bars.
+c xl3DBarStacked100 = 62 | Chart: 3-D 100% stacked bars.
+c xlLine = 4 | Chart: line.
+c xlLineStacked = 63 | Chart: stacked line.
+c xlLineStacked100 = 64 | Chart: 100% stacked line.
+c xlLineMarkers = 65 | Chart: line with markers.
+c xlLineMarkersStacked = 66 | Chart: stacked line with markers.
+c xlLineMarkersStacked100 = 67 | Chart: 100% stacked line with markers.
+c xl3DLine = -4101 | Chart: 3-D line.
+c xlPie = 5 | Chart: pie.
+c xl3DPie = -4102 | Chart: 3-D pie.
+c xlDoughnut = -4120 | Chart: doughnut.
+c xlArea = 1 | Chart: area.
+c xlAreaStacked = 76 | Chart: stacked area.
+c xlAreaStacked100 = 77 | Chart: 100% stacked area.
+c xl3DArea = -4098 | Chart: 3-D area.
+c xlXYScatter = -4169 | Chart: scatter.
+c xlXYScatterLines = 74 | Chart: scatter with lines.
+c xlXYScatterLinesNoMarkers = 75 | Chart: scatter with lines, no markers.
+c xlXYScatterSmooth = 72 | Chart: scatter with smooth lines.
+c xlXYScatterSmoothNoMarkers = 73 | Chart: scatter with smooth lines, no markers.
+c xlRadar = -4151 | Chart: radar.
+c xlRadarMarkers = 81 | Chart: radar with markers.
+c xlRadarFilled = 82 | Chart: filled radar.
+c xlBubble = 15 | Chart: bubble.
+c xlStockHLC = 88 | Chart: high-low-close.
+c xlStockOHLC = 89 | Chart: open-high-low-close.
+c xlSurface = 83 | Chart: 3-D surface.
+c xlSurfaceTopView = 85 | Chart: contour.
+c xlTreemap = 117 | Chart: treemap.
+c xlHistogram = 118 | Chart: histogram.
+c xlWaterfall = 119 | Chart: waterfall.
+c xlSunburst = 120 | Chart: sunburst.
+c xlBoxwhisker = 121 | Chart: box and whisker.
+c xlPareto = 122 | Chart: Pareto.
+c xlFunnel = 123 | Chart: funnel.
+c xlCategory = 1 | Axis: categories.
+c xlValue = 2 | Axis: values.
+c xlPrimary = 1 | Axis group: primary.
+c xlSecondary = 2 | Axis group: secondary.
+c xlRows = 1 | Series in rows.
+c xlColumns = 2 | Series in columns.
+c xlLegendPositionBottom = -4107 | Legend at the bottom.
+c xlLegendPositionTop = -4160 | Legend at the top.
+c xlLegendPositionLeft = -4131 | Legend on the left.
+c xlLegendPositionRight = -4152 | Legend on the right.
+c xlScaleLinear = -4132 | Linear axis scale.
+c xlScaleLogarithmic = -4133 | Logarithmic axis scale.
+c msoTrue = -1 | Office: true.
+c msoFalse = 0 | Office: false.
+c msoShapeRectangle = 1 | Shape: rectangle.
+c msoShapeRoundedRectangle = 5 | Shape: rounded rectangle.
+c msoShapeOval = 9 | Shape: oval.
+c msoShapeIsoscelesTriangle = 7 | Shape: triangle.
+c msoShapeRightTriangle = 8 | Shape: right triangle.
+c msoShapeDiamond = 4 | Shape: diamond.
+c msoShapeRegularPentagon = 12 | Shape: pentagon.
+c msoShapeHexagon = 10 | Shape: hexagon.
+c msoShapeRightArrow = 33 | Shape: right arrow.
+c msoShapeLeftArrow = 34 | Shape: left arrow.
+c msoShapeUpArrow = 35 | Shape: up arrow.
+c msoShapeDownArrow = 36 | Shape: down arrow.
+c msoShape5pointStar = 92 | Shape: five-point star.
+c msoShapeRectangularCallout = 105 | Shape: callout.
+c msoTextOrientationHorizontal = 1 | Text box: horizontal text.
+c msoBringToFront = 0 | ZOrder: to the front.
+c msoSendToBack = 1 | ZOrder: to the back.
+c msoBringForward = 2 | ZOrder: one forward.
+c msoSendBackward = 3 | ZOrder: one back.
+c msoAutoShape = 1 | Shape type: a shape.
+c msoChart = 3 | Shape type: a chart.
+c msoFormControl = 8 | Shape type: a form control.
+c msoLine = 9 | Shape type: a line.
+c msoPicture = 13 | Shape type: a picture.
+c msoTextBox = 17 | Shape type: a text box.

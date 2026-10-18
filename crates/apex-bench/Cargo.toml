@@ -1,0 +1,24 @@
+[package]
+name = "apex-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Test battery for ApexDesk: real-world files opened, saved and compared"
+publish = false
+
+[dependencies]
+apex-sheet.workspace = true
+apex-doc.workspace = true
+apex-io.workspace = true
+apex-slides.workspace = true
+# results.jsonl and the messages of the worker processes.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Fuzzing: compound files (xls, doc, VBA) taken apart and written again.
+cfb = "0.10"
+# `big`: large packages deflated as they are written.
+miniz_oxide = "0.9"
+
+# Limits, peak memory and exit status of the fuzzer's child processes.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

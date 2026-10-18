@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>ApexDesk</title>
+<link rel="icon" href="icon.png">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #f3f3f3; font-family: system-ui, sans-serif; }
+  @media (prefers-color-scheme: dark) { html, body { background: #1e1e1e; color: #ddd; } }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; outline: none; }
+  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
+  #loading progress { width: 240px; }
+  #error { display: none; position: absolute; inset: 0; padding: 24px; white-space: pre-wrap; font-family: monospace; }
+</style>
+</head>
+<body>
+<canvas id="apexdesk"></canvas>
+<div id="loading"><div id="loading-text">ApexDesk…</div><progress></progress></div>
+<div id="error"></div>
+<script type="module" src="start.js"></script>
+</body>
+</html>

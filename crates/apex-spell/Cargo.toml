@@ -1,0 +1,10 @@
+[package]
+name = "apex-spell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+apex-fs.workspace = true
+web-time.workspace = true

@@ -1,0 +1,43 @@
+[package]
+name = "apex-query"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Get Data for ApexDesk: sources and transformation steps of queries"
+
+[features]
+# Every source is on by default; the network and database clients can be
+# left out of a build (their sources then say they're not available).
+default = ["web", "sqlite", "postgres", "mysql", "sqlserver"]
+# HTTP(S) for web pages, JSON APIs and files by URL (ureq + rustls/ring).
+web = ["dep:ureq"]
+# SQLite files (the SQLite C library, compiled in).
+sqlite = ["dep:rusqlite"]
+# PostgreSQL servers: the heaviest client (it runs on tokio).
+postgres = ["dep:postgres", "dep:tokio-postgres-rustls", "dep:rustls", "dep:webpki-roots"]
+# MySQL and MariaDB servers.
+mysql = ["dep:mysql"]
+# Microsoft SQL Server: tiberius, a TDS client in Rust, on tokio (already
+# there for PostgreSQL), with TLS through rustls and ring (patched in
+# vendor/tiberius); on Windows it can sign in with the Windows session.
+sqlserver = ["dep:tiberius", "dep:tokio", "dep:tokio-util", "dep:futures-util"]
+
+[dependencies]
+apex-fs.workspace = true
+web-time.workspace = true
+apex-sheet.workspace = true
+apex-io.workspace = true
+apex-db.workspace = true
+encoding_rs = "0.8"
+ureq = { version = "3.4", optional = true }
+rusqlite = { version = "0.40", features = ["bundled", "column_decltype", "hooks", "limits"], optional = true }
+postgres = { version = "0.19", optional = true }
+tokio-postgres-rustls = { version = "0.14", features = ["ring"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+webpki-roots = { version = "1", optional = true }
+mysql = { version = "28", default-features = false, features = ["minimal-rust", "rustls-tls-ring"], optional = true }
+tiberius = { version = "0.13", default-features = false, features = ["tds73", "winauth", "rustls"], optional = true }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time"], optional = true }
+tokio-util = { version = "0.7", default-features = false, features = ["compat"], optional = true }
+futures-util = { version = "0.3", default-features = false, optional = true }

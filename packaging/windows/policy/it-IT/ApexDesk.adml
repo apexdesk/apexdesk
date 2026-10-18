@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made by the apexdesk policy command: edit the program, not this file. -->
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>ApexDesk</displayName>
+  <description>Criteri dell'organizzazione</description>
+  <resources>
+    <stringTable>
+      <string id="ApexDesk">ApexDesk</string>
+      <string id="SUPPORTED_ApexDesk">ApexDesk 0.1 o successivo</string>
+      <string id="MacroSecurity">Sicurezza delle macro</string>
+      <string id="MacroSecurity_Help">Se le macro VBA possono essere eseguite: mai, chiedendo prima all'utente, o solo se il progetto è firmato con un certificato attendibile.</string>
+      <string id="MacroSecurity_disabled">Disattiva tutte le macro</string>
+      <string id="MacroSecurity_ask">Chiedi prima di attivare le macro</string>
+      <string id="MacroSecurity_signed">Solo macro firmate con un certificato attendibile</string>
+      <string id="TrustedLocations">Percorsi attendibili</string>
+      <string id="TrustedLocations_Help">Cartelle i cui file si aprono con le macro attivate. Sostituiscono quelle aggiunte dagli utenti.</string>
+      <string id="TrustedPublishers">Autori di macro attendibili</string>
+      <string id="TrustedPublishers_Help">Certificati (impronte SHA-256 o SHA-1, in esadecimale) le cui macro firmate vengono eseguite con «Solo macro firmate». Se impostato, vengono eseguite solo le macro firmate da questi e gli utenti non possono aggiungerne altri.</string>
+      <string id="MacroRevocation">Revoca dei certificati delle macro</string>
+      <string id="MacroRevocation_Help">Se chiedere all’autorità di un certificato se è revocato prima di attivare le macro firmate con esso (solo con «Solo macro firmate»). Un certificato revocato non viene mai eseguito.</string>
+      <string id="MacroRevocation_check">Chiedere; eseguire senza risposta</string>
+      <string id="MacroRevocation_off">Non chiedere (reti isolate)</string>
+      <string id="MacroRevocation_require">Chiedere; non eseguire senza risposta</string>
+      <string id="DisableMacroEditor">Disattiva l'editor delle macro</string>
+      <string id="DisableMacroEditor_Help">1: l'editor delle macro (Alt+F11) non può essere aperto. Le macro vengono comunque eseguite secondo i criteri di sicurezza delle macro.</string>
+      <string id="TemplatesFolder">Cartella dei modelli condivisi</string>
+      <string id="TemplatesFolder_Help">Una cartella di modelli (docx, dotx, odt, xlsx, xltx, ods...) elencati in Nuovo da modello accanto a quelli dell'utente.</string>
+      <string id="BuildingBlocksFolder">Cartella condivisa dei blocchi predefiniti</string>
+      <string id="BuildingBlocksFolder_Help">Una cartella di glossari (.docx, .dotx, .dotm come Normal.dotm o Building Blocks.dotx) i cui blocchi sono offerti accanto a quelli dell'utente (sola lettura).</string>
+      <string id="LibraryFolder">Cartella condivisa della raccolta di immagini</string>
+      <string id="LibraryFolder_Help">Una cartella di immagini (PNG, JPEG, GIF, BMP) offerte in Inserisci &gt; Raccolta in documenti, fogli di calcolo e presentazioni; le sue sottocartelle sono categorie.</string>
+      <string id="SeatsFolder">Cartella del registro postazioni</string>
+      <string id="SeatsFolder_Help">Una cartella condivisa in cui ogni computer con la licenza aziendale lascia un piccolo file (nome, utente, versione e ultimo giorno di utilizzo). Informazioni &gt; Licenza mostra quindi quanti computer hanno usato ApexDesk negli ultimi 30 giorni rispetto alle postazioni in licenza. Nulla viene bloccato e non serve alcun server.</string>
+      <string id="OnlySharedTemplates">Solo modelli condivisi</string>
+      <string id="OnlySharedTemplates_Help">Nuovo da modello mostra solo i modelli della cartella condivisa (né quelli integrati né quelli personali) e Salva come modello non viene offerto.</string>
+      <string id="DefaultSheetFormat">Formato predefinito dei fogli di calcolo</string>
+      <string id="DefaultSheetFormat_Help">Il formato che Salva con nome propone per primo per i nuovi fogli di calcolo.</string>
+      <string id="DefaultSheetFormat_xlsx">xlsx</string>
+      <string id="DefaultSheetFormat_xlsm">xlsm</string>
+      <string id="DefaultSheetFormat_ods">ods</string>
+      <string id="DefaultSheetFormat_csv">csv</string>
+      <string id="DefaultDocFormat">Formato predefinito dei documenti</string>
+      <string id="DefaultDocFormat_Help">Il formato che Salva con nome propone per primo per i nuovi documenti.</string>
+      <string id="DefaultDocFormat_docx">docx</string>
+      <string id="DefaultDocFormat_docm">docm</string>
+      <string id="DefaultDocFormat_odt">odt</string>
+      <string id="DefaultDocFormat_rtf">rtf</string>
+      <string id="UILanguage">Lingua dell'interfaccia</string>
+      <string id="UILanguage_Help">La lingua di menu e finestre di dialogo: en, es, de, fr, it, pt, ja, ko, zh o zh-Hant.</string>
+      <string id="SpellingLanguage">Lingua del controllo ortografico</string>
+      <string id="SpellingLanguage_Help">Il dizionario usato dal controllo ortografico, con il suo codice (es_ES, en_US...).</string>
+      <string id="DictionariesFolder">Cartella dei dizionari condivisi</string>
+      <string id="DictionariesFolder_Help">Una cartella di dizionari Hunspell (.aff e .dic) e thesaurus cercata prima di quelli installati.</string>
+      <string id="DisableGetData">Disattiva Recupera dati da origini esterne</string>
+      <string id="DisableGetData_Help">Le query di Recupera dati non possono leggere file, pagine web o database; quelle sulle tabelle della cartella di lavoro funzionano ancora.</string>
+      <string id="Proxy">Proxy</string>
+      <string id="Proxy_Help">Il proxy per le richieste web (Recupera dati, revoca, marche temporali): vuoto per quello di sistema, &quot;direct&quot; per nessuno, o un URL come http://utente@proxy:3128.</string>
+      <string id="ProxyBypass">Server raggiunti senza proxy</string>
+      <string id="ProxyBypass_Help">Nomi o terminazioni (.azienda.example), separati da virgole, raggiunti direttamente; si aggiungono alle eccezioni del sistema.</string>
+      <string id="SignInSites">Server con l'accesso di Windows</string>
+      <string id="SignInSites_Help">Nomi o terminazioni, separati da virgole, in cui le richieste web accedono con la sessione (Kerberos o NTLM, tramite Negotiate).</string>
+      <string id="SupportEmail">Indirizzo per i rapporti di arresto anomalo</string>
+      <string id="SupportEmail_Help">L'indirizzo e-mail a cui va un rapporto quando l'utente lo invia. I rapporti non vengono mai inviati da soli.</string>
+      <string id="FontSubstitutes">Sostituzione dei tipi di carattere</string>
+      <string id="FontSubstitutes_Help">Tipi di carattere mostrati con un altro quando non sono installati, come &quot;Corporate Sans=Liberation Sans; Old Serif=Liberation Serif&quot;.</string>
+      <string id="CertificateRoots">Certificati radice dell'organizzazione</string>
+      <string id="CertificateRoots_Help">Una cartella di certificati radice (.cer, .crt, .der, .pem) attendibili per le firme oltre a quelli di sistema.</string>
+      <string id="SignatureLevel">Livello di firma</string>
+      <string id="SignatureLevel_Help">Il livello a lungo termine delle nuove firme: B, T (marca temporale), LT (con dati di revoca) o LTA (archivio).</string>
+      <string id="SignatureLevel_b">B</string>
+      <string id="SignatureLevel_t">T</string>
+      <string id="SignatureLevel_lt">LT</string>
+      <string id="SignatureLevel_lta">LTA</string>
+      <string id="TimestampURL">Autorità di marcatura temporale</string>
+      <string id="TimestampURL_Help">L'URL del server di marcatura temporale (TSA) usato dalle firme.</string>
+      <string id="Renderer">Motore grafico</string>
+      <string id="Renderer_Help">Come viene disegnata la finestra: OpenGL, che si avvia prima, o wgpu (Direct3D, Metal o Vulkan). Ha effetto al prossimo avvio.</string>
+      <string id="Renderer_glow">OpenGL</string>
+      <string id="Renderer_wgpu">wgpu</string>
+      <string id="LockFiles">File di blocco</string>
+      <string id="LockFiles_Help">Contrassegna i file aperti con un file di blocco (come Office e LibreOffice) e avvisa quando qualcun altro ha aperto un file.</string>
+      <string id="LinkSecurity">Collegamenti nei documenti</string>
+      <string id="LinkSecurity_Help">Cosa fare con i collegamenti dei documenti a file, cartelle di rete e altri programmi. I collegamenti web e e-mail si aprono sempre; programmi, script e tipi di collegamento pericolosi mai.</string>
+      <string id="LinkSecurity_ask">Chiedi prima di aprire</string>
+      <string id="LinkSecurity_allow">Apri senza chiedere</string>
+      <string id="LinkSecurity_block">Non aprire mai</string>
+      <string id="ProtectedView">Visualizzazione protetta per i file scaricati</string>
+      <string id="ProtectedView_Help">1: i file contrassegnati come scaricati da Internet si aprono in sola lettura, senza macro, finché l'utente non abilita la modifica (esclusi quelli nei percorsi attendibili). 0: si aprono come gli altri.</string>
+      <string id="AllowAIAssistants">Consenti assistenti IA (MCP)</string>
+      <string id="AllowAIAssistants_Help">Se gli assistenti IA collegati con «apexdesk mcp» possono leggere e modificare i file aperti in ApexDesk. 0 lo disattiva e gli utenti non possono attivarlo.</string>
+      <string id="AllowAutomationAPI">Consenti l'API di automazione</string>
+      <string id="AllowAutomationAPI_Help">Se gli script possono convertire, leggere e scrivere file con «apexdesk api» (licenza aziendale). 0 la disattiva e gli utenti non possono attivarla; 1 la attiva per tutti.</string>
+      <string id="AutosaveMinutes">Minuti tra le copie di ripristino</string>
+      <string id="AutosaveMinutes_Help">Ogni quanto vengono salvate le copie di ripristino dei file aperti (0 le disattiva).</string>
+      <string id="RequiredProperties">Proprietà obbligatorie</string>
+      <string id="RequiredProperties_Help">Proprietà (predefinite come Titolo, o personalizzate come Cliente) che una cartella di lavoro, un documento o una presentazione deve avere prima di essere salvato. Al salvataggio vengono chieste quelle vuote.</string>
+      <string id="CheckBeforeSharing">Controlla prima di condividere</string>
+      <string id="CheckBeforeSharing_Help">Prima di esportare un file in PDF o inviarlo per e-mail, cercare dati personali (indirizzi e-mail, numeri di identità, IBAN, numeri di carta e di telefono), proprietà obbligatorie vuote, errori nelle formule, commenti e revisioni. Avvisa lascia continuare; Blocca no, finché si trova qualcosa.</string>
+      <string id="CheckBeforeSharing_off">Disattivato</string>
+      <string id="CheckBeforeSharing_warn">Avvisa</string>
+      <string id="CheckBeforeSharing_block">Blocca</string>
+      <string id="BrandFonts">Tipi di carattere del marchio</string>
+      <string id="BrandFonts_Help">I tipi di carattere dell'organizzazione, uno per voce: elencati per primi nella casella del carattere e controllati prima della condivisione. Il primo sostituisce gli altri quando l'utente applica il marchio.</string>
+      <string id="BrandColors">Colori del marchio</string>
+      <string id="BrandColors_Help">I colori dell'organizzazione come #RRGGBB, uno per voce: mostrati per primi nei menu dei colori e controllati prima della condivisione (nero, bianco e grigi sono sempre ammessi).</string>
+      <string id="ForbiddenTerms">Termini vietati</string>
+      <string id="ForbiddenTerms_Help">Parole o frasi che i documenti non devono contenere (vecchi nomi dell'azienda, nomi in codice interni...), una per voce: trovate da Controlla prima di condividere.</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="MacroSecurity">
+        <dropdownList refId="MacroSecurity" noSort="true">Sicurezza delle macro</dropdownList>
+      </presentation>
+      <presentation id="TrustedLocations">
+        <listBox refId="TrustedLocations">Percorsi attendibili</listBox>
+      </presentation>
+      <presentation id="TrustedPublishers">
+        <listBox refId="TrustedPublishers">Autori di macro attendibili</listBox>
+      </presentation>
+      <presentation id="MacroRevocation">
+        <dropdownList refId="MacroRevocation" noSort="true">Revoca dei certificati delle macro</dropdownList>
+      </presentation>
+      <presentation id="TemplatesFolder">
+        <textBox refId="TemplatesFolder"><label>Cartella dei modelli condivisi</label></textBox>
+      </presentation>
+      <presentation id="BuildingBlocksFolder">
+        <textBox refId="BuildingBlocksFolder"><label>Cartella condivisa dei blocchi predefiniti</label></textBox>
+      </presentation>
+      <presentation id="LibraryFolder">
+        <textBox refId="LibraryFolder"><label>Cartella condivisa della raccolta di immagini</label></textBox>
+      </presentation>
+      <presentation id="SeatsFolder">
+        <textBox refId="SeatsFolder"><label>Cartella del registro postazioni</label></textBox>
+      </presentation>
+      <presentation id="DefaultSheetFormat">
+        <dropdownList refId="DefaultSheetFormat" noSort="true">Formato predefinito dei fogli di calcolo</dropdownList>
+      </presentation>
+      <presentation id="DefaultDocFormat">
+        <dropdownList refId="DefaultDocFormat" noSort="true">Formato predefinito dei documenti</dropdownList>
+      </presentation>
+      <presentation id="UILanguage">
+        <textBox refId="UILanguage"><label>Lingua dell'interfaccia</label></textBox>
+      </presentation>
+      <presentation id="SpellingLanguage">
+        <textBox refId="SpellingLanguage"><label>Lingua del controllo ortografico</label></textBox>
+      </presentation>
+      <presentation id="DictionariesFolder">
+        <textBox refId="DictionariesFolder"><label>Cartella dei dizionari condivisi</label></textBox>
+      </presentation>
+      <presentation id="Proxy">
+        <textBox refId="Proxy"><label>Proxy</label></textBox>
+      </presentation>
+      <presentation id="ProxyBypass">
+        <textBox refId="ProxyBypass"><label>Server raggiunti senza proxy</label></textBox>
+      </presentation>
+      <presentation id="SignInSites">
+        <textBox refId="SignInSites"><label>Server con l'accesso di Windows</label></textBox>
+      </presentation>
+      <presentation id="SupportEmail">
+        <textBox refId="SupportEmail"><label>Indirizzo per i rapporti di arresto anomalo</label></textBox>
+      </presentation>
+      <presentation id="FontSubstitutes">
+        <textBox refId="FontSubstitutes"><label>Sostituzione dei tipi di carattere</label></textBox>
+      </presentation>
+      <presentation id="CertificateRoots">
+        <textBox refId="CertificateRoots"><label>Certificati radice dell'organizzazione</label></textBox>
+      </presentation>
+      <presentation id="SignatureLevel">
+        <dropdownList refId="SignatureLevel" noSort="true">Livello di firma</dropdownList>
+      </presentation>
+      <presentation id="TimestampURL">
+        <textBox refId="TimestampURL"><label>Autorità di marcatura temporale</label></textBox>
+      </presentation>
+      <presentation id="Renderer">
+        <dropdownList refId="Renderer" noSort="true">Motore grafico</dropdownList>
+      </presentation>
+      <presentation id="LinkSecurity">
+        <dropdownList refId="LinkSecurity" noSort="true">Collegamenti nei documenti</dropdownList>
+      </presentation>
+      <presentation id="AutosaveMinutes">
+        <decimalTextBox refId="AutosaveMinutes">Minuti tra le copie di ripristino</decimalTextBox>
+      </presentation>
+      <presentation id="RequiredProperties">
+        <listBox refId="RequiredProperties">Proprietà obbligatorie</listBox>
+      </presentation>
+      <presentation id="CheckBeforeSharing">
+        <dropdownList refId="CheckBeforeSharing" noSort="true">Controlla prima di condividere</dropdownList>
+      </presentation>
+      <presentation id="BrandFonts">
+        <listBox refId="BrandFonts">Tipi di carattere del marchio</listBox>
+      </presentation>
+      <presentation id="BrandColors">
+        <listBox refId="BrandColors">Colori del marchio</listBox>
+      </presentation>
+      <presentation id="ForbiddenTerms">
+        <listBox refId="ForbiddenTerms">Termini vietati</listBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

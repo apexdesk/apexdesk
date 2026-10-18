@@ -1,0 +1,13 @@
+# cargo audit: advisories that don't apply to ApexDesk.
+[advisories]
+ignore = [
+    # rsa, Marvin: timing of RSA private-key operations. ApexDesk only
+    # signs with a local key and never decrypts with RSA (see deny.toml).
+    "RUSTSEC-2023-0071",
+    # rustls-pemfile is unmaintained; it comes with mysql (apex-query).
+    # Drop this when mysql moves off it.
+    "RUSTSEC-2025-0134",
+    # rand 0.7 (through winauth, tiberius' Windows sign-in) is unsound only
+    # with a custom logger that calls thread_rng; ApexDesk has none.
+    "RUSTSEC-2026-0097",
+]

@@ -1,0 +1,63 @@
+[workspace]
+resolver = "3"
+members = ["crates/apex-sheet", "crates/apex-doc", "crates/apex-slides","crates/apex-io", "crates/apex-pdf", "crates/apex-sign", "crates/apex-spell", "crates/apex-i18n", "crates/apex-tui", "crates/apex-query", "crates/apex-db", "crates/apex-vba", "crates/apex-app", "crates/apex-android", "crates/apex-web", "crates/apex-fs", "crates/apex-bench"]
+
+[workspace.package]
+version = "1.1.0"
+edition = "2024"
+# Not open source: PolyForm Strict, see LICENSE and NOTICE.
+license = "LicenseRef-PolyForm-Strict-1.0.0"
+publish = false
+
+[workspace.dependencies]
+apex-sheet = { path = "crates/apex-sheet" }
+apex-doc = { path = "crates/apex-doc" }
+apex-slides = { path = "crates/apex-slides" }
+apex-io = { path = "crates/apex-io" }
+apex-pdf = { path = "crates/apex-pdf" }
+apex-sign = { path = "crates/apex-sign" }
+apex-spell = { path = "crates/apex-spell" }
+apex-i18n = { path = "crates/apex-i18n" }
+apex-tui = { path = "crates/apex-tui" }
+apex-query = { path = "crates/apex-query" }
+apex-db = { path = "crates/apex-db" }
+apex-vba = { path = "crates/apex-vba" }
+apex-fs = { path = "crates/apex-fs" }
+# The clock, also in the browser (std's own elsewhere).
+web-time = "1.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# Unwinding: a reader or the PDF renderer that panics on a broken file is
+# caught (catch_unwind) instead of taking the whole program down.
+panic = "unwind"
+strip = true
+
+# Fast iteration while keeping the UI responsive in debug builds.
+# Only line tables: panics and backtraces keep file and line, and test
+# binaries shrink several times (full debug info filled the disk).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+# The spell checker's suggestions take ~0.5 s unoptimized against ~40 ms
+# optimized (F7 waited on them); it is a small leaf crate, cheap to build so.
+[profile.dev.package.apex-spell]
+opt-level = 2
+
+# epaint with a shaping cache (vendor/epaint, see vendor/README.md): text
+# laid out again at a new size (zoom) reuses its shaping.
+[patch.crates-io]
+epaint = { path = "vendor/epaint" }
+egui-winit = { path = "vendor/egui-winit" }
+# The clipboard in several formats at once (rich text, cells, ApexDesk's own).
+arboard = { path = "vendor/arboard" }
+smithay-clipboard = { path = "vendor/smithay-clipboard" }
+# SQL Server over TLS with ring rather than aws-lc, a C library.
+tiberius = { path = "vendor/tiberius" }
+# CFF glyphs held to a budget of operators (vendor/README.md).
+read-fonts = { path = "vendor/read-fonts" }

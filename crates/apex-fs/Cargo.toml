@@ -1,0 +1,11 @@
+[package]
+name = "apex-fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Files and threads for ApexDesk: std's, or in the browser a file system kept in memory and work done on the spot"
+
+[dependencies]
+# The clock of file times, also in the browser.
+web-time = "1.1"

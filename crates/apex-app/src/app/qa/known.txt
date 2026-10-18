@@ -1,0 +1,31 @@
+# Failures of the QA accepted for now: counted apart, not listed as new.
+# One a line: <section>|<id of the failure, as the report shows it>|<why>
+# Lines starting with # are comments. See docs/qa.md.
+invariants|Doc / undo / Button "Review" → Button "Track Changes"|Turning track changes on or off is a document setting, not an edit: Word leaves it out of undo too.
+invariants|DocSel / undo / Button "Review" → Button "Track Changes"|Turning track changes on or off is a document setting, not an edit: Word leaves it out of undo too.
+invariants|Code / undo / Button "Review" → Button "Track Changes"|Turning track changes on or off is a document setting, not an edit: Word leaves it out of undo too.
+a11y|DocSel / Doc/home / disabled / Button "Undo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|DocSel / Doc/home / disabled / Button "Redo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|DocSel / Doc/home / disabled / ComboBox "Undo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|DocSel / Doc/home / disabled / ComboBox "Redo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|SheetSel / Sheet/home / disabled / Button "Undo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|SheetSel / Sheet/home / disabled / Button "Redo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|SheetSel / Sheet/home / disabled / ComboBox "Undo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|SheetSel / Sheet/home / disabled / ComboBox "Redo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|SlidesSel / Slides/home / disabled / Button "Undo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|SlidesSel / Slides/home / disabled / Button "Redo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|SlidesSel / Slides/home / disabled / ComboBox "Undo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+a11y|SlidesSel / Slides/home / disabled / ComboBox "Redo"|Off because nothing has been done yet in the sample (a selection is not an edit): Word, Excel and PowerPoint grey them out too.
+invariants|Doc / persist / Button "Insert" → Button "Legacy forms" → Button "Drop-down form field"|Markdown has no form fields: the field and its blank or first choice are left out rather than given a made-up syntax.
+invariants|Doc / persist / Button "Insert" → Button "Legacy forms" → Button "Text form field"|Markdown has no form fields: the field and its blank or first choice are left out rather than given a made-up syntax.
+invariants|Doc / persist / Button "References" → Button "Style: APA" → RadioButton "MLA"|ODF's bibliography configuration only tells numbered (IEEE) from author-date citations, with no style name: MLA and Chicago open again as APA.
+invariants|Doc / persist / Button "References" → Button "Style: APA" → RadioButton "Chicago (author-date)"|ODF's bibliography configuration only tells numbered (IEEE) from author-date citations, with no style name: MLA and Chicago open again as APA.
+invariants|Doc / persist / Button "References" → Button "Style: APA" → RadioButton "Chicago (notes and bibliography)"|ODF's bibliography configuration only tells numbered (IEEE) from author-date citations, with no style name: MLA and Chicago open again as APA.
+invariants|Doc / undo / Button "Review" → Button "Changes" → CheckBox "Track Changes"|Turning track changes on or off is a document setting, not an edit: Word leaves it out of undo too.
+invariants|DocSel / undo / Button "Review" → Button "Changes" → CheckBox "Track Changes"|Turning track changes on or off is a document setting, not an edit: Word leaves it out of undo too.
+invariants|Code / undo / Button "Review" → Button "Changes" → CheckBox "Track Changes"|Turning track changes on or off is a document setting, not an edit: Word leaves it out of undo too.
+invariants|DocSel / persist / Button "Insert" → Button "Legacy forms" → Button "Drop-down form field"|Markdown has no form fields: the field and its blank or first choice are left out rather than given a made-up syntax.
+invariants|DocSel / persist / Button "Insert" → Button "Legacy forms" → Button "Text form field"|Markdown has no form fields: the field and its blank or first choice are left out rather than given a made-up syntax.
+invariants|SlidesSel / persist / Button "Center"|ODP keeps a placeholder's own alignment from its layout, not one set on the frame.
+invariants|Slides / toggle / Button "File" → Button "Print" → RadioButton "Notes pages" in Print|A radio button clicked again stays chosen: notes pages are still what's printed.
+invariants|SlidesSel / toggle / Button "File" → Button "Print" → RadioButton "Notes pages" in Print|A radio button clicked again stays chosen: notes pages are still what's printed.

@@ -1,0 +1,21 @@
+[package]
+name = "apex-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "ApexDesk in the terminal: spreadsheets and documents with ratatui"
+
+[dependencies]
+apex-sheet.workspace = true
+apex-doc.workspace = true
+apex-io.workspace = true
+apex-i18n.workspace = true
+# Terminal drawing, with its crossterm backend (re-exported as
+# `ratatui::crossterm`) for Windows, macOS and Linux terminals.
+ratatui = { version = "0.30", default-features = false }
+unicode-width = "0.2"
+
+# The terminal itself; the browser build keeps only the text layout.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }

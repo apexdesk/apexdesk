@@ -1,0 +1,10 @@
+[package]
+name = "apex-pdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+web-time.workspace = true
+miniz_oxide = "0.9"
