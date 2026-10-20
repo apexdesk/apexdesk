@@ -39,6 +39,12 @@ pub(super) fn header(d: &[u8]) -> Option<Header> {
         }
     }
     // No size given: the first window, in twips.
+    let r = window(d)?;
+    Some(Header { frame: r, size_pt: (r.width() / 20.0, r.height() / 20.0), px_per_mm: (96.0 / 25.4, 96.0 / 25.4) })
+}
+
+/// The first window the records set, in logical units.
+fn window(d: &[u8]) -> Option<Rect> {
     let (mut org, mut ext) = (Vec2::ZERO, None);
     let mut p = records_at(d);
     let mut n = 0;
@@ -62,10 +68,26 @@ pub(super) fn header(d: &[u8]) -> Option<Header> {
     }
     let e = ext?;
     let r = Rect::from_origin_size(org.to_point(), (e.x, e.y)).abs();
-    if r.width() <= 0.0 || r.height() <= 0.0 {
+    (r.width() > 0.0 && r.height() > 0.0).then_some(r)
+}
+
+/// A WMF without the placeable header (what RTF and the clipboard hold)
+/// with one saying its size, `wpt` points wide: its window alone doesn't.
+pub(super) fn placeable(d: &[u8], wpt: f64) -> Option<Vec<u8>> {
+    if d.starts_with(&PLACEABLE) || !is_wmf(d) || !(wpt > 0.0) {
         return None;
     }
-    Some(Header { frame: r, size_pt: (r.width() / 20.0, r.height() / 20.0), px_per_mm: (96.0 / 25.4, 96.0 / 25.4) })
+    let r = window(d)?;
+    let inch = (r.width() / (wpt / 72.0)).round();
+    let fits = |v: f64| (i16::MIN as f64..=i16::MAX as f64).contains(&v);
+    if !(1.0..=u16::MAX as f64).contains(&inch) || ![r.x0, r.y0, r.x1, r.y1].into_iter().all(fits) {
+        return None;
+    }
+    let mut words = [0x9AC6CDD7u32 as u16, (0x9AC6CDD7u32 >> 16) as u16, 0, r.x0 as i16 as u16, r.y0 as i16 as u16, r.x1 as i16 as u16, r.y1 as i16 as u16, inch as u16, 0, 0, 0];
+    words[10] = words[..10].iter().fold(0, |a, w| a ^ w);
+    let mut out: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    out.extend_from_slice(d);
+    Some(out)
 }
 
 pub(super) fn play(d: &[u8], g: &mut Gdi) {

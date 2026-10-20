@@ -345,6 +345,11 @@ pub fn read(doc: &Path) -> Option<Found> {
 /// Whether `doc` is locked, and by whom, as seen by `me`.
 pub fn check(doc: &Path, me: &Owner) -> State {
     let Some(f) = read(doc) else { return State::Free };
+    // Office holds its lock open while the file is: one nobody holds was
+    // left behind (Office closed unexpectedly), and Office replaces it.
+    if f.office && mso_path(doc).is_some_and(|p| !held_open(&p)) {
+        return State::Orphan;
+    }
     let o = &f.owner;
     let ours = !f.office && o.sys_user == me.sys_user && o.host == me.host && o.profile() == me.profile();
     match o.pid() {
@@ -352,6 +357,44 @@ pub fn check(doc: &Path, me: &Owner) -> State {
         Some(pid) if ours && !running(pid) => State::Orphan,
         _ => State::Other(f),
     }
+}
+
+/// Whether some program has `p` open (Windows: it can't be opened
+/// without sharing it). Elsewhere locks are not held open: always true.
+#[cfg(windows)]
+fn held_open(p: &Path) -> bool {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut o = apex_fs::OpenOptions::new();
+    o.read(true).share_mode(0);
+    match o.open(p) {
+        Ok(_) => false,
+        // ERROR_SHARING_VIOLATION; anything else (no access) says nothing.
+        Err(e) => e.raw_os_error() == Some(32) || e.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+
+#[cfg(not(windows))]
+fn held_open(_p: &Path) -> bool {
+    true
+}
+
+/// Whether a lock was written by `me`'s own account on this computer (or,
+/// for Office's locks, which only keep a name, under `me`'s name): most
+/// likely left behind by a program that closed unexpectedly.
+pub fn left_by_me(f: &Found, me: &Owner) -> bool {
+    let o = &f.owner;
+    if f.office {
+        let name = o.user.trim();
+        !name.is_empty() && (name.eq_ignore_ascii_case(me.user.trim()) || name.eq_ignore_ascii_case(&me.sys_user))
+    } else {
+        !o.sys_user.is_empty() && o.sys_user.eq_ignore_ascii_case(&me.sys_user) && o.host.eq_ignore_ascii_case(&me.host)
+    }
+}
+
+/// Removes the locks of `doc`, whoever wrote them (the user said they
+/// were left behind).
+pub fn remove(doc: &Path) {
+    remove_all(doc);
 }
 
 // --- holding a lock -----------------------------------------------------------------------

@@ -230,6 +230,19 @@ impl App {
         }
     }
 
+    /// The open file at `old` was renamed to `new`: its lock goes (taken
+    /// again for the new name), and how it was opened stays.
+    pub(super) fn renamed_file(&mut self, old: &Path, new: &Path) {
+        if let Some(e) = self.locks.files.remove(old) {
+            self.locks.files.insert(new.to_path_buf(), Entry { lock: None, tried: false, ..e });
+        }
+    }
+
+    /// Whether someone else has the file at `path` open.
+    pub(super) fn locked_by_other(&self, path: &Path) -> bool {
+        self.settings.lock_files && matches!(lockfile::check(path, &self.lock_owner()), lockfile::State::Other(_))
+    }
+
     /// Takes and releases locks as tabs open, close and change files, and
     /// applies the read-only mode to the views; call once a frame.
     pub(super) fn sync_locks(&mut self) {
@@ -284,7 +297,9 @@ impl App {
         let name = file_name(&p.path);
         let who = p.found.owner.display_name().to_string();
         let since = when(&p.found);
+        let mine = lockfile::left_by_me(&p.found, &self.lock_owner());
         let mut choice = None;
+        let mut remove = false;
         egui::Modal::new(egui::Id::new("file_locked")).show(ctx, |ui| {
             ui.set_max_width(440.0);
             ui.heading(tr("lock.title"));
@@ -296,8 +311,16 @@ impl App {
             };
             ui.label(body);
             ui.add_space(4.0);
-            ui.label(RichText::new(tr("lock.hint")).weak());
+            ui.label(RichText::new(tr(if mine { "lock.hint_mine" } else { "lock.hint" })).weak());
             ui.add_space(10.0);
+            // Left by this user here: the lock can go for good.
+            if mine {
+                let b = egui::Button::new(RichText::new(tr("lock.remove")).strong()).min_size(egui::vec2(ui.available_width(), 0.0));
+                if ui.add(b).on_hover_text(tr("lock.remove_tip")).clicked() {
+                    remove = true;
+                    choice = Some((Some(OpenMode::Normal), true));
+                }
+            }
             for (mode, key, tip) in [
                 (Some(OpenMode::ReadOnly), "lock.read_only_open", "lock.read_only_tip"),
                 (Some(OpenMode::Copy), "lock.copy", "lock.copy_tip"),
@@ -320,6 +343,9 @@ impl App {
         let Some(p) = self.locks.prompt.take() else { return };
         if !go {
             return;
+        }
+        if remove {
+            lockfile::remove(&p.path);
         }
         // Notify: open read-only now, and say when it's free.
         let mode = mode.unwrap_or_else(|| {

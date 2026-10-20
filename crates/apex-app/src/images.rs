@@ -774,11 +774,12 @@ pub fn pixel_hash(rgba: &[u8]) -> u64 {
 }
 
 /// Reads a picture from the system clipboard, as PNG. `None` when it holds
-/// text (a text paste handles it) or no picture.
+/// text (a text paste handles it) or no picture. The text of a picture
+/// copied in Word is the object mark: no text.
 #[cfg(any(windows, target_os = "macos"))]
 pub fn read_clipboard_image() -> Option<Vec<u8>> {
     let mut cb = arboard::Clipboard::new().ok()?;
-    if cb.get_text().is_ok_and(|t| !t.is_empty()) {
+    if cb.get_text().is_ok_and(|t| t.chars().any(|c| !c.is_whitespace() && c != apex_doc::OBJECT)) {
         return None;
     }
     let Ok(img) = cb.get_image() else {

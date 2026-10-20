@@ -59,6 +59,13 @@ pub fn size(data: &[u8]) -> Option<(f64, f64)> {
     Some(h.size_pt)
 }
 
+/// A WMF without the placeable header (as RTF and the clipboard keep
+/// them) with one that gives it its size, `width` points wide; `None`
+/// when it isn't one or already has it.
+pub fn wmf_placeable(data: &[u8], width: f64) -> Option<Vec<u8>> {
+    wmf::placeable(data, width)
+}
+
 /// Draws a metafile `scale` pixels to the point (at most 4000 pixels a
 /// side). `fallback` gives the system fonts for its text. `None` when it
 /// isn't one, is broken or draws by EMF+ records only.

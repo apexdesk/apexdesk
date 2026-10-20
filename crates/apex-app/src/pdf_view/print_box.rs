@@ -104,8 +104,8 @@ impl PdfView {
                     b.bad_pages = true;
                     return;
                 };
-                // Printing hands the file to another program (on Windows,
-                // the system's PDF reader), which would run what this one
+                // Printing hands the file to another program (CUPS on Linux
+                // and macOS), which could run what this one
                 // never does: scripts, launch and open actions, attachments; and it
                 // prints what is shown here, not annotations or layers hidden.
                 let r = apex_io::pdf::edit::PdfDoc::open(bytes, self.password.as_deref())

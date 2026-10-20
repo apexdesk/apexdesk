@@ -1035,6 +1035,15 @@ impl Glyph {
     pub fn logical_rect(&self) -> Rect {
         Rect::from_min_size(self.pos - vec2(0.0, self.font_ascent), self.size())
     }
+
+    /// ApexDesk patch: where an underline goes, a little under the
+    /// baseline (Word's and the fonts' own place), not at the bottom of
+    /// the line: with more line spacing that was far below the text, and
+    /// on the line's edge, where the next line could hide it.
+    pub fn underline_y(&self) -> f32 {
+        let below = (self.font_height - self.font_ascent).max(0.0);
+        (self.pos.y + below * 0.4).min(self.logical_rect().bottom())
+    }
 }
 
 // ----------------------------------------------------------------------------

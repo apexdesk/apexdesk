@@ -28,6 +28,9 @@ pub(super) struct Found {
     pub(super) name: String,
     time: Option<SystemTime>,
     keep: bool,
+    /// The encoding a text file is saved in, and whether it came from the Internet.
+    encoding: Option<apex_io::Encoding>,
+    downloaded: bool,
 }
 
 impl Found {
@@ -50,6 +53,10 @@ pub(super) struct Recovery {
     /// Copies of an earlier session, offered at start.
     pub found: Vec<Found>,
 }
+
+/// Set for a window of its own made from a tab of another one: the
+/// description of the copy of that tab it opens (see [`App::hand_off`]).
+pub(super) const HANDOFF: &str = "APEXDESK_HANDOFF";
 
 fn dir() -> Option<PathBuf> {
     crate::settings::config_dir().map(|d| d.join("recovery"))
@@ -107,6 +114,7 @@ impl Recovery {
     /// Removes this session's copies (a normal exit).
     pub fn clear(&mut self) {
         let keys: Vec<u64> = self.saved.keys().copied().collect();
+        // (The copies handed to new windows aren't this session's.)
         for k in keys {
             self.forget(k);
         }
@@ -130,19 +138,75 @@ fn scan(dir: &Path) -> Vec<Found> {
         if alive(pid, &dir.join(format!("{pid}.alive"))) {
             continue;
         }
-        let Ok(text) = apex_fs::read_to_string(&info) else { continue };
-        let kv = read_info(&text);
-        let Some(file) = kv.get("file").map(|f| dir.join(f)).filter(|f| f.fs_exists()) else {
-            let _ = apex_fs::remove_file(&info);
-            continue;
-        };
-        let original = kv.get("path").filter(|p| !p.is_empty()).zip(kv.get("format").and_then(|f| Format::from_path(Path::new(&format!("x.{f}"))))).map(|(p, f)| (PathBuf::from(p), f));
-        let name = kv.get("name").map_or_else(|| stem.clone(), |n| n.to_string());
-        let time = apex_fs::metadata(&file).and_then(|m| m.modified()).ok();
-        out.push(Found { file, info, original, name, time, keep: true });
+        match read_found(dir, &info) {
+            Some(f) => out.push(f),
+            // A description without its copy is dropped.
+            None => {
+                let _ = apex_fs::remove_file(&info);
+            }
+        }
     }
     out.sort_by_key(|f| std::cmp::Reverse(f.time));
     out
+}
+
+/// The copy described by `info` (in `dir`), when it's there.
+fn read_found(dir: &Path, info: &Path) -> Option<Found> {
+    let stem = info.file_stem()?.to_string_lossy().into_owned();
+    let text = apex_fs::read_to_string(info).ok()?;
+    let kv = read_info(&text);
+    let file = kv.get("file").map(|f| dir.join(f)).filter(|f| f.fs_exists())?;
+    let original = kv.get("path").filter(|p| !p.is_empty()).zip(kv.get("format").and_then(|f| Format::from_path(Path::new(&format!("x.{f}"))))).map(|(p, f)| (PathBuf::from(p), f));
+    let name = kv.get("name").map_or_else(|| stem.clone(), |n| n.to_string());
+    let time = apex_fs::metadata(&file).and_then(|m| m.modified()).ok();
+    let encoding = kv.get("encoding").and_then(|e| apex_io::Encoding::ALL.into_iter().find(|x| x.name() == *e));
+    let downloaded = kv.get("downloaded") == Some(&"1");
+    Some(Found { file, info: info.to_path_buf(), original, name, time, keep: true, encoding, downloaded })
+}
+
+/// The job that writes a copy of tab `t` named `stem` (with the
+/// extension its contents need, also returned); None for tabs whose
+/// changes go to their file at once.
+fn copy_job(t: &Tab, stem: &Path) -> Option<(PathBuf, Box<dyn FnOnce(&Path) -> bool + Send>)> {
+    // Copies of encrypted files are encrypted too.
+    let pw = t.password.clone();
+    Some(match &t.view {
+        View::Sheet(v) => {
+            let wb = v.wb.clone();
+            // Macro-enabled when there are macros, so they are kept.
+            let ext = if wb.macros.project.is_some() { "xlsm" } else { "xlsx" };
+            (stem.with_extension(ext), Box::new(move |p: &Path| apex_io::save_sheet_with(&wb, p, Format::Xlsx, pw.as_deref()).is_ok()))
+        }
+        View::Doc(v) => {
+            let doc = v.backup_doc();
+            let ext = if doc.macros.project.is_some() { "docm" } else { "docx" };
+            (stem.with_extension(ext), Box::new(move |p: &Path| apex_io::save_doc_with(&doc, p, Format::Docx, pw.as_deref()).is_ok()))
+        }
+        View::Slides(v) => {
+            let deck = v.pres.deck.clone();
+            let ext = if deck.macros.project.is_some() { "pptm" } else { "pptx" };
+            (stem.with_extension(ext), Box::new(move |p: &Path| apex_io::save_slides_with(&deck, p, Format::Pptx, pw.as_deref()).is_ok()))
+        }
+        View::Db(_) | View::Note(_) => return None,
+        View::Pdf(v) => {
+            // The file with the changes added, as saving writes it.
+            let bytes = v.doc.to_bytes();
+            (stem.with_extension("pdf"), Box::new(move |p: &Path| apex_fs::write(p, bytes).is_ok()))
+        }
+    })
+}
+
+/// The description of `file`, a copy of tab `t`.
+fn describe(t: &Tab, file: &Path) -> String {
+    format!(
+        "file={}\nname={}\npath={}\nformat={}\nencoding={}\ndownloaded={}\n",
+        file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        t.name().replace('\n', " "),
+        t.path.as_ref().map(|p| p.to_string_lossy().replace('\n', " ")).unwrap_or_default(),
+        t.format.map(|f| f.extension()).unwrap_or_default(),
+        t.encoding.map(|e| e.name()).unwrap_or_default(),
+        u8::from(t.downloaded()),
+    )
 }
 
 /// "5 min ago" style age of a copy.
@@ -207,39 +271,8 @@ impl App {
                 continue;
             }
             let Some((stem, info)) = self.recovery.paths(key) else { continue };
-            // Copies of encrypted files are encrypted too.
-            let pw = t.password.clone();
-            let (file, job): (PathBuf, Box<dyn FnOnce(&Path) -> bool + Send>) = match &t.view {
-                View::Sheet(v) => {
-                    let wb = v.wb.clone();
-                    // Macro-enabled when there are macros, so they are kept.
-                    let ext = if wb.macros.project.is_some() { "xlsm" } else { "xlsx" };
-                    (stem.with_extension(ext), Box::new(move |p: &Path| apex_io::save_sheet_with(&wb, p, Format::Xlsx, pw.as_deref()).is_ok()))
-                }
-                View::Doc(v) => {
-                    let doc = v.backup_doc();
-                    let ext = if doc.macros.project.is_some() { "docm" } else { "docx" };
-                    (stem.with_extension(ext), Box::new(move |p: &Path| apex_io::save_doc_with(&doc, p, Format::Docx, pw.as_deref()).is_ok()))
-                }
-                View::Slides(v) => {
-                    let deck = v.pres.deck.clone();
-                    let ext = if deck.macros.project.is_some() { "pptm" } else { "pptx" };
-                    (stem.with_extension(ext), Box::new(move |p: &Path| apex_io::save_slides_with(&deck, p, Format::Pptx, pw.as_deref()).is_ok()))
-                }
-                View::Db(_) | View::Note(_) => continue,
-                View::Pdf(v) => {
-                    // The file with the changes added, as saving writes it.
-                    let bytes = v.doc.to_bytes();
-                    (stem.with_extension("pdf"), Box::new(move |p: &Path| apex_fs::write(p, bytes).is_ok()))
-                }
-            };
-            let desc = format!(
-                "file={}\nname={}\npath={}\nformat={}\n",
-                file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                t.name().replace('\n', " "),
-                t.path.as_ref().map(|p| p.to_string_lossy().replace('\n', " ")).unwrap_or_default(),
-                t.format.map(|f| f.extension()).unwrap_or_default()
-            );
+            let Some((file, job)) = copy_job(t, &stem) else { continue };
+            let desc = describe(t, &file);
             self.recovery.saved.insert(key, rev);
             let dir = dir.clone();
             // Written aside and renamed, so a crash while writing keeps the
@@ -263,6 +296,49 @@ impl App {
     /// Opens a copy as a changed tab of the file it came from.
     fn restore(&mut self, f: &Found) -> bool {
         self.restore_with(f, None)
+    }
+
+    /// Tab `idx` changed its file or name: its copy is written again (the
+    /// description says them).
+    pub(super) fn copy_renamed(&mut self, idx: usize) {
+        if let Some(key) = self.tabs.get(idx).map(Tab::backup_key) {
+            self.recovery.saved.remove(&key);
+        }
+    }
+
+    /// Writes a copy of tab `idx` as it is now, for a new window to open
+    /// (with its changes, as a recovery copy); returns its description.
+    /// The copy is left by this process, so if the new window never
+    /// takes it, it is offered at the next start once this one ends.
+    pub(super) fn hand_off(&mut self, idx: usize) -> Option<PathBuf> {
+        let dir = self.recovery.dir.clone()?;
+        if let Some(id) = self.tabs.get(idx).map(|t| t.id) {
+            self.flush_macros(id);
+        }
+        self.hold(idx);
+        let t = self.tabs.get(idx)?;
+        if let Some(parent) = dir.parent() {
+            crate::settings::make_private_dir(parent);
+        }
+        crate::settings::make_private_dir(&dir);
+        let stem = dir.join(format!("{}-move{}", apex_fs::process_id(), t.id));
+        let (file, job) = copy_job(t, &stem)?;
+        let info = stem.with_extension("info");
+        if !job(&file) || apex_fs::write(&info, describe(t, &file)).is_err() {
+            let _ = apex_fs::remove_file(&file);
+            return None;
+        }
+        Some(info)
+    }
+
+    /// Opens the copy a window handed over (its description `info`), as a
+    /// changed tab, and removes it.
+    pub(super) fn adopt_handoff(&mut self, info: &Path) {
+        let Some(f) = info.parent().and_then(|d| read_found(d, info)) else { return };
+        // Waiting for its password, the copy is removed once opened.
+        if self.restore(&f) {
+            f.discard();
+        }
     }
 
     /// Opens a copy (encrypted ones with `password`); false when it
@@ -306,6 +382,8 @@ impl App {
                         t.untitled.clone_from(&f.name);
                     }
                     t.password = password.map(str::to_string);
+                    t.encoding = f.encoding;
+                    t.downloaded = f.downloaded;
                 }
                 // A source code file shows as code again.
                 if let Some((p, _)) = &f.original {

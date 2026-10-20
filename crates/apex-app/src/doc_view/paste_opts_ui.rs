@@ -300,4 +300,55 @@ mod tests {
         e.paste("Title\nitem", false);
         assert_eq!(e.doc.paragraphs[0].style.kind, ParaKind::Normal);
     }
+
+    #[test]
+    fn a_web_page_pastes_its_lists_and_spacing() {
+        use crate::sysclip::{HTML, TEXT};
+        // A browser on Windows: the header, the context, the fragment.
+        let html = "Version:0.9\r\nStartHTML:0000000097\r\n<html><body>\r\n<!--StartFragment--><p style=\"line-height: 1.5; margin: 0px 0px 12px;\">Intro</p><ul style=\"list-style-type: '- ';\"><li>one</li><li>two</li></ul><!--EndFragment-->\r\n</body></html>";
+        let text = "Intro\n- one\n- two";
+        crate::sysclip::write(&[(TEXT, text.as_bytes()), (HTML, html.as_bytes())]);
+        let mut v = DocView::new(Document::default());
+        v.paste_from(text, false, true);
+        let look = |v: &DocView| -> Vec<(String, ParaKind, u8)> { v.doc.paragraphs.iter().map(|p| (p.text.clone(), p.style.kind, p.style.list_format)).collect() };
+        let kept = vec![("Intro".to_string(), ParaKind::Normal, 0), ("one".to_string(), ParaKind::Bullet, 4), ("two".to_string(), ParaKind::Bullet, 4)];
+        assert_eq!(look(&v), kept);
+        let spacing = |v: &DocView| (v.doc.paragraphs[0].style.line_spacing, v.doc.paragraphs[0].style.space_after);
+        assert_eq!(spacing(&v), (1.5, Some(9.0)));
+        // Taking the formatting where it goes keeps the list marks; keeping
+        // the source's brings the spacing back.
+        v.repaste(PasteMode::Merge);
+        assert_eq!(look(&v), kept);
+        assert_eq!(spacing(&v), (0.0, None));
+        v.repaste(PasteMode::Keep);
+        assert_eq!(spacing(&v), (1.5, Some(9.0)));
+    }
+
+    #[test]
+    fn a_picture_copied_in_word_is_no_object_mark() {
+        use crate::sysclip::{RTF, TEXT};
+        const PNG: &[u8] = &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
+            0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF, 0x89, 0x99, 0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        let hex: String = PNG.iter().map(|b| format!("{b:02x}")).collect();
+        let mark = apex_doc::OBJECT.to_string();
+        // Word's RTF: the picture comes in, once.
+        let rtf = format!(r"{{\rtf1\ansi{{\*\shppict{{\pict\picwgoal300\pichgoal300\pngblip {hex}}}}}{{\nonshppict{{\pict\wmetafile8 0100090000}}}}\par}}");
+        crate::sysclip::write(&[(TEXT, mark.as_bytes()), (RTF, rtf.as_bytes())]);
+        let mut v = DocView::new(Document::default());
+        v.paste_from(&mark, false, true);
+        let pics: Vec<_> = v.doc.paragraphs.iter().flat_map(|p| p.runs.iter().filter_map(|r| r.attrs.image.clone())).collect();
+        assert_eq!(pics.len(), 1);
+        assert_eq!(&pics[0].data[..], PNG);
+        // Without formatted text the mark is no text: nothing goes in (the
+        // clipboard's picture does), and around text it goes.
+        crate::sysclip::write(&[(TEXT, mark.as_bytes())]);
+        let mut w = DocView::new(Document::default());
+        w.paste_from(&mark, false, true);
+        assert_eq!(w.doc.paragraphs[0].text, "");
+        assert!(w.paste_opts.is_none());
+        w.paste_from(&format!("a{mark}b"), false, true);
+        assert_eq!(w.doc.paragraphs[0].text, "ab");
+    }
 }

@@ -72,6 +72,7 @@ mod phone;
 #[cfg(target_os = "android")]
 pub(crate) use phone::phone_width;
 mod signatures_ui;
+mod tab_ops;
 mod vba_code;
 mod view_tab;
 mod windows;
@@ -283,6 +284,8 @@ pub struct App {
     template_gallery: Option<crate::templates::Gallery>,
     save_template: Option<(u64, crate::templates::SaveDialog)>,
     side: Option<windows::SideBySide>,
+    /// The tab being renamed (by id) and the name typed.
+    tab_rename: Option<(u64, String)>,
     options: Option<options::OptionsDlg>,
     /// Selected toolstrip tab of spreadsheets and of documents.
     toolstrip_tab: [&'static str; 6],
@@ -373,6 +376,10 @@ impl App {
         for f in files {
             app.open_arg(&f);
         }
+        // A tab of another window, taken out with its changes.
+        if let Some(info) = std::env::var_os(recovery::HANDOFF) {
+            app.adopt_handoff(Path::new(&info));
+        }
         app
     }
 
@@ -422,6 +429,7 @@ impl App {
             mcp_dlg: false,
             started: Some(started),
             side: None,
+            tab_rename: None,
             options: None,
             toolstrip_tab: ["home"; 6],
             palette: None,
@@ -1586,6 +1594,9 @@ impl App {
         let drag_id = egui::Id::new("tab_drag");
         let mut dragged: Option<u64> = ui.ctx().data(|d| d.get_temp(drag_id));
         let mut rects: Vec<egui::Rect> = Vec::with_capacity(self.tabs.len());
+        let mut rename = None;
+        // The name being typed: confirmed, cancelled or still typed.
+        let mut renamed: Option<Option<String>> = None;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             for (i, t) in self.tabs.iter().enumerate() {
@@ -1596,32 +1607,45 @@ impl App {
                     .corner_radius(egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 })
                     .fill(if selected { ui.visuals().extreme_bg_color } else { Color32::TRANSPARENT });
                 let mut cross = egui::Rect::NOTHING;
+                let modified = self.tab_modified(i);
+                let editing = self.tab_rename.as_mut().filter(|r| r.0 == t.id).map(|r| &mut r.1);
                 let resp = frame
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
                             icons::paint(ui.painter(), r, badge, color);
-                            let mut name = t.name();
-                            if self.tab_modified(i) {
-                                name.push_str(" •");
+                            if let Some(text) = editing {
+                                renamed = tab_ops::rename_field(ui, text);
+                            } else {
+                                let mut name = t.name();
+                                if modified {
+                                    name.push_str(" •");
+                                }
+                                ui.add(egui::Label::new(if selected { RichText::new(name).strong() } else { RichText::new(name) }).selectable(false));
                             }
-                            ui.add(egui::Label::new(if selected { RichText::new(name).strong() } else { RichText::new(name) }).selectable(false));
                             // The tab's own click area is registered on top of this
                             // button, so the click is resolved below by position.
                             cross = ui.add(egui::Button::new("×").frame(false).small()).on_hover_text(tr("tab.close")).rect;
                         });
                     })
                     .response;
-                let resp = ui.interact(resp.rect, ui.id().with(("tab", t.id)), egui::Sense::click_and_drag());
+                // While renamed, the name field takes the clicks.
+                let editing = self.tab_rename.as_ref().is_some_and(|r| r.0 == t.id);
+                let sense = if editing { egui::Sense::hover() } else { egui::Sense::click_and_drag() };
+                let resp = ui.interact(resp.rect, ui.id().with(("tab", t.id)), sense);
                 rects.push(resp.rect);
                 crate::widgets::name(&resp, egui::WidgetType::SelectableLabel, &t.name(), Some(selected));
                 if resp.drag_started() {
                     dragged = Some(t.id);
                 }
-                let movable = t.path.is_some() && !self.tab_modified(i) && !self.edits_object(i);
+                let movable = self.can_move_out(i);
                 resp.context_menu(|ui| {
+                    if ui.add_enabled(self.can_rename(i), egui::Button::new(format!("{}…", tr("tab.rename")))).clicked() {
+                        rename = Some(i);
+                        ui.close();
+                    }
                     let r = ui.add_enabled(movable, egui::Button::new(tr("tab.new_window")));
-                    let r = if movable { r } else { r.on_disabled_hover_text(tr("tab.new_window_saved")) };
+                    let r = if movable { r } else { r.on_disabled_hover_text(tr("tab.new_window_here")) };
                     if r.clicked() {
                         new_window = Some(i);
                         ui.close();
@@ -1639,6 +1663,9 @@ impl App {
                 }
                 if resp.middle_clicked() {
                     close = Some(i);
+                }
+                if resp.double_clicked() && !on_cross {
+                    rename = Some(i);
                 }
                 if let Some(p) = &t.path {
                     resp.on_hover_text(p.to_string_lossy());
@@ -1669,22 +1696,56 @@ impl App {
                 }
             });
         });
+        match renamed {
+            Some(Some(name)) => {
+                if let Some(i) = self.tab_rename.take().and_then(|r| self.tab_index(r.0)) {
+                    self.rename_tab(i, &name);
+                }
+            }
+            Some(None) => self.tab_rename = None,
+            None => {}
+        }
+        if let Some(i) = rename {
+            self.start_rename(ui.ctx(), i);
+        }
         // Dragged: a line where it would go; dropped: it goes there.
+        // Dragged out of the bar (well below it, or out of the window), it
+        // goes to a window of its own.
         if let Some(id) = dragged
             && let Some(from) = self.tabs.iter().position(|t| t.id == id)
         {
-            let (x, down) = ui.input(|i| (i.pointer.interact_pos().map(|p| p.x), i.pointer.primary_down()));
+            let (pos, down) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.primary_down()));
+            // Where it was last seen: the pointer may leave the window.
+            let seen_id = drag_id.with("pos");
+            let pos = pos.or_else(|| ui.ctx().data(|d| d.get_temp::<egui::Pos2>(seen_id)));
+            let x = pos.map(|p| p.x);
             let to = x.map_or(from, |x| rects.iter().filter(|r| r.center().x < x).count());
+            let bar = rects.iter().fold(Rect::NOTHING, |a, r| a.union(*r));
+            // (A window of its own is a new process: not on Android or the web.)
+            let windows = cfg!(not(any(target_os = "android", target_arch = "wasm32")));
+            let out = windows && self.can_move_out(from) && pos.is_some_and(|p| !ui.ctx().content_rect().contains(p) || p.y > bar.max.y + tab_ops::TEAR_OFF);
             if down {
-                if to != from && to != from + 1 {
+                if let Some(p) = pos {
+                    ui.ctx().data_mut(|d| d.insert_temp(seen_id, p));
+                }
+                if out {
+                    tab_ops::paint_torn_tab(ui, pos.unwrap_or_default(), &self.tabs[from].name());
+                } else if to != from && to != from + 1 {
                     let lx = rects.get(to).map_or_else(|| rects.last().map_or(0.0, |r| r.max.x + 1.0), |r| r.min.x - 1.0);
                     let y = rects.first().map_or(egui::Rangef::new(0.0, 0.0), |r| r.y_range());
                     ui.painter().vline(lx, y, egui::Stroke::new(2.0, ui.visuals().selection.stroke.color));
                 }
                 ui.ctx().data_mut(|d| d.insert_temp(drag_id, id));
             } else {
-                ui.ctx().data_mut(|d| d.remove::<u64>(drag_id));
-                self.move_tab(from, to);
+                ui.ctx().data_mut(|d| {
+                    d.remove::<u64>(drag_id);
+                    d.remove::<egui::Pos2>(seen_id);
+                });
+                if out {
+                    new_window = Some(from);
+                } else {
+                    self.move_tab(from, to);
+                }
             }
         }
         if let Some(i) = close {
@@ -1706,22 +1767,6 @@ impl App {
         self.tabs.insert(to, t);
         if let Some(a) = active.and_then(|a| self.tabs.iter().position(|t| t.id == a)) {
             self.active = a;
-        }
-    }
-
-    /// Takes a saved tab to a window of its own: closes it here and opens
-    /// its file in a new ApexDesk (which doesn't hand it back to this one).
-    fn open_in_new_window(&mut self, idx: usize) {
-        let Some(path) = self.tabs.get(idx).and_then(|t| t.path.clone()) else { return };
-        if self.tab_modified(idx) {
-            return;
-        }
-        // Closed first: a notebook is open in one place only.
-        self.remove_tab(idx);
-        let spawned = std::env::current_exe().and_then(|exe| std::process::Command::new(exe).arg(&path).env(crate::instance::NEW_WINDOW, "1").spawn());
-        if let Err(e) = spawned {
-            self.notify(Notice::error(format!("{}: {e}", tr("tab.new_window"))));
-            self.open_path(&path);
         }
     }
 

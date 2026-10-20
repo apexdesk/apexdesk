@@ -244,6 +244,9 @@ pub(super) struct PicState {
     props: Option<Props>,
     /// A picture being read from the system clipboard.
     incoming: Option<std::sync::mpsc::Receiver<Option<Vec<u8>>>>,
+    /// When formatted text with pictures came from the system clipboard:
+    /// the picture looked for after it is one of those.
+    pasted_picture: Option<web_time::Instant>,
     /// Insert > Object, and what the application is asked to do with an
     /// object.
     insert_object: crate::objects::InsertDlg,
@@ -853,9 +856,18 @@ impl DocView {
         }
     }
 
+    /// Formatted text with pictures came from the system clipboard: the
+    /// picture it also holds is not inserted again, whether it is being
+    /// read or looked for next (Ctrl+V looks once the key is up).
+    pub(super) fn picture_pasted(&mut self) {
+        if self.pics.incoming.take().is_none() {
+            self.pics.pasted_picture = Some(web_time::Instant::now());
+        }
+    }
+
     /// Looks for a picture on the system clipboard in the background.
     pub(super) fn paste_clipboard_picture(&mut self, ctx: &egui::Context) {
-        if self.pics.incoming.is_some() {
+        if self.pics.pasted_picture.take().is_some_and(|t| t.elapsed() < web_time::Duration::from_secs(2)) || self.pics.incoming.is_some() {
             return;
         }
         let (tx, rx) = std::sync::mpsc::channel();

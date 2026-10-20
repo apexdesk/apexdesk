@@ -1,6 +1,6 @@
 //! Printing and PDF export. Views paint their pages with egui into a
 //! capture layer; the shapes are then written as PDF, sent to the printer
-//! (as PDF through CUPS' `lp`, or on Windows through the PDF viewer) or
+//! (as PDF through CUPS' `lp`, or on Windows drawn for the printer's driver) or
 //! shown in the print preview.
 
 use std::sync::mpsc::Receiver;
@@ -214,21 +214,6 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// A PowerShell string literal.
-#[cfg(windows)]
-fn ps_quote(s: &str) -> String {
-    // PowerShell also ends a literal at the typographic single quotes.
-    let mut out = String::from("'");
-    for c in s.chars() {
-        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
-            out.push(c);
-        }
-        out.push(c);
-    }
-    out.push('\'');
-    out
-}
-
 /// Installed printers and the default one.
 #[cfg(windows)]
 pub(crate) fn list_printers() -> (Vec<String>, Option<String>) {
@@ -238,24 +223,165 @@ pub(crate) fn list_printers() -> (Vec<String>, Option<String>) {
     (names, default)
 }
 
-/// Sends a PDF file to a printer, through the PDF viewer registered for
-/// printing (Windows has no PDF printing of its own).
+/// Sends a PDF file to a printer: ApexDesk draws its pages and hands them
+/// to the printer's driver (GDI), so no PDF reader is needed (asking the
+/// one registered for printing failed where none was, as with Edge).
 #[cfg(windows)]
-fn send_to_printer(printer: &str, copies: u32, _sides: Sides, path: &std::path::Path) -> Result<(), String> {
+fn send_to_printer(printer: &str, copies: u32, sides: Sides, path: &std::path::Path) -> Result<(), String> {
     // Tests print nothing.
     if cfg!(test) {
         return Ok(());
     }
-    // The viewer prints with the printer's own settings: both sides are
-    // set in its preferences (or printed by hand, see Sides::Manual).
-    let script = format!(
-        "$ErrorActionPreference = 'Stop'; 1..{} | ForEach-Object {{ Start-Process -FilePath {} -Verb PrintTo -ArgumentList {} -WindowStyle Hidden }}",
-        copies.max(1),
-        ps_quote(&path.to_string_lossy()),
-        ps_quote(&format!("\"{printer}\"")),
-    );
-    let out = command(&apex_io::safe_path::windows_program(r"System32\WindowsPowerShell\v1.0\powershell.exe").to_string_lossy()).args(["-NoProfile", "-NonInteractive", "-Command", &script]).stdin(std::process::Stdio::null()).output().map_err(|e| e.to_string())?;
-    if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
+    let bytes: std::sync::Arc<[u8]> = apex_fs::read(path).map_err(|e| e.to_string())?.into();
+    let sizes = apex_io::pdf::render::page_sizes(&bytes, None).filter(|s| !s.is_empty()).ok_or_else(|| "the document has no pages".to_string())?;
+    let devmode = gdi::settings(printer, copies, sides, sizes[0])?;
+    // Drawing the pages takes a while: the window goes on meanwhile.
+    let printer = printer.to_string();
+    let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    apex_fs::thread::Builder::new()
+        .name("apex-print".into())
+        .spawn(move || {
+            if let Err(e) = gdi::print_pages(&printer, &devmode, &name, &bytes, &sizes) {
+                crate::diag::error(&format!("printing to {printer}: {e}"));
+            }
+        })
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(windows)]
+mod gdi {
+    use windows::Win32::Graphics::Gdi::*;
+    use windows::Win32::Graphics::Printing::{ClosePrinter, DocumentPropertiesW, OpenPrinterW, PRINTER_HANDLE};
+    use windows::Win32::Storage::Xps::{AbortDoc, DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
+    use windows::core::PCWSTR;
+
+    use crate::imposition::Sides;
+
+    /// Highest resolution pages are drawn at: enough for text, and an A4
+    /// page stays at 35 MB.
+    const MAX_DPI: i32 = 300;
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// The printer's settings (its DEVMODE, as bytes: drivers add their own
+    /// part after the structure) with the copies, sides and the first
+    /// page's orientation.
+    pub fn settings(printer: &str, copies: u32, sides: Sides, first: (f64, f64)) -> Result<Vec<u8>, String> {
+        let name = wide(printer);
+        let mut h = PRINTER_HANDLE::default();
+        unsafe { OpenPrinterW(PCWSTR(name.as_ptr()), &mut h, None) }.map_err(|e| e.message())?;
+        let r = (|| {
+            let size = unsafe { DocumentPropertiesW(None, h, PCWSTR(name.as_ptr()), None, None, 0) };
+            if size < std::mem::size_of::<DEVMODEW>() as i32 {
+                return Err(format!("{printer}: no settings"));
+            }
+            let mut buf = vec![0u8; size as usize];
+            let dm = buf.as_mut_ptr().cast::<DEVMODEW>();
+            if unsafe { DocumentPropertiesW(None, h, PCWSTR(name.as_ptr()), Some(dm), None, DM_OUT_BUFFER.0) } < 0 {
+                return Err(format!("{printer}: no settings"));
+            }
+            // SAFETY: the buffer is as large as the driver asked, and holds a DEVMODEW.
+            let d = unsafe { &mut *dm };
+            let mut fields = DM_COPIES.0 | DM_ORIENTATION.0;
+            d.Anonymous1.Anonymous1.dmCopies = copies.clamp(1, i16::MAX as u32) as i16;
+            d.Anonymous1.Anonymous1.dmOrientation = if first.0 > first.1 { DMORIENT_LANDSCAPE } else { DMORIENT_PORTRAIT } as i16;
+            // A manual pass prints one side at a time.
+            let duplex = match sides {
+                Sides::LongEdge => Some(DMDUP_VERTICAL),
+                Sides::ShortEdge => Some(DMDUP_HORIZONTAL),
+                Sides::One | Sides::Manual => Some(DMDUP_SIMPLEX),
+            };
+            if let Some(x) = duplex.filter(|_| d.dmFields.0 & DM_DUPLEX.0 != 0) {
+                d.dmDuplex = x;
+                fields |= DM_DUPLEX.0;
+            }
+            d.dmFields = DEVMODE_FIELD_FLAGS(d.dmFields.0 | fields);
+            // The driver checks the changes and fills in what follows from them.
+            if unsafe { DocumentPropertiesW(None, h, PCWSTR(name.as_ptr()), Some(dm), Some(dm), DM_IN_BUFFER.0 | DM_OUT_BUFFER.0) } < 0 {
+                return Err(format!("{printer}: settings refused"));
+            }
+            Ok(buf)
+        })();
+        unsafe {
+            let _ = ClosePrinter(h);
+        }
+        r
+    }
+
+    /// Draws the pages of `pdf` and prints them on `printer`, each page at
+    /// its size from the paper's corner, made smaller when it doesn't fit.
+    pub fn print_pages(printer: &str, devmode: &[u8], doc_name: &str, pdf: &std::sync::Arc<[u8]>, sizes: &[(f64, f64)]) -> Result<(), String> {
+        let (dev, name) = (wide(printer), wide(doc_name));
+        let dc = unsafe { CreateDCW(PCWSTR::null(), PCWSTR(dev.as_ptr()), PCWSTR::null(), Some(devmode.as_ptr().cast())) };
+        if dc.is_invalid() {
+            return Err(format!("{printer}: can't be opened"));
+        }
+        let cap = |i| unsafe { GetDeviceCaps(Some(dc), i) };
+        let (dpi_x, dpi_y) = (cap(LOGPIXELSX).max(1), cap(LOGPIXELSY).max(1));
+        let (paper_w, paper_h) = (cap(PHYSICALWIDTH), cap(PHYSICALHEIGHT));
+        let (off_x, off_y) = (cap(PHYSICALOFFSETX), cap(PHYSICALOFFSETY));
+        let info = DOCINFOW { cbSize: std::mem::size_of::<DOCINFOW>() as i32, lpszDocName: PCWSTR(name.as_ptr()), ..Default::default() };
+        if unsafe { StartDocW(dc, &info) } <= 0 {
+            let _ = unsafe { DeleteDC(dc) };
+            return Err(format!("{printer}: the printer refused the document"));
+        }
+        let mut result = Ok(());
+        for (i, &(w_pt, h_pt)) in sizes.iter().enumerate() {
+            // The page on the paper, in device pixels.
+            let (mut w, mut h) = (w_pt / 72.0 * dpi_x as f64, h_pt / 72.0 * dpi_y as f64);
+            if paper_w > 0 && paper_h > 0 {
+                let k = (paper_w as f64 / w).min(paper_h as f64 / h).min(1.0);
+                (w, h) = (w * k, h * k);
+            }
+            let width = (w_pt / 72.0 * dpi_x.min(MAX_DPI) as f64).round().max(1.0) as u32;
+            let Some(page) = crate::pdf_view::engine::render_now(pdf.clone(), None, i, width) else {
+                result = Err(format!("page {} could not be drawn", i + 1));
+                break;
+            };
+            let [pw, ph] = page.size;
+            // GDI takes blue, green, red.
+            let mut bgra = page.rgba;
+            for px in bgra.chunks_exact_mut(4) {
+                px.swap(0, 2);
+            }
+            let bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: pw as i32,
+                    // Negative: rows from the top.
+                    biHeight: -(ph as i32),
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let ok = unsafe {
+                StartPage(dc) > 0 && {
+                    SetStretchBltMode(dc, HALFTONE);
+                    let drawn = StretchDIBits(dc, -off_x, -off_y, w.round() as i32, h.round() as i32, 0, 0, pw as i32, ph as i32, Some(bgra.as_ptr().cast()), &bmi, DIB_RGB_COLORS, SRCCOPY);
+                    EndPage(dc) > 0 && drawn != 0
+                }
+            };
+            if !ok {
+                result = Err(format!("page {} could not be printed", i + 1));
+                break;
+            }
+        }
+        unsafe {
+            if result.is_ok() {
+                EndDoc(dc);
+            } else {
+                AbortDoc(dc);
+            }
+            let _ = DeleteDC(dc);
+        }
+        result
+    }
 }
 
 /// In the browser, one printer: the browser's own printing, of the PDF.
@@ -760,11 +886,9 @@ pub fn print(bytes: Vec<u8>, printer: &str, copies: u32, sides: Sides) -> Result
     let path = apex_io::safe_path::private_temp_dir("apexdesk-print", 0).map_err(|e| e.to_string())?.join("document").with_extension("pdf");
     apex_fs::write(&path, bytes).map_err(|e| e.to_string())?;
     let r = send_to_printer(printer, copies, sides, &path);
-    // lp copies the file into the spool before returning; on Windows the
-    // viewer opens it later, and the next print overwrites it.
-    if !cfg!(windows) {
-        apex_fs::remove_file(&path).ok();
-    }
+    // lp copies the file into the spool before returning, and on Windows
+    // its pages were read before.
+    apex_fs::remove_file(&path).ok();
     r
 }
 

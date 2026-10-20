@@ -2019,6 +2019,18 @@ impl DocView {
         if self.paste_cells(&text, clip.as_deref()) {
             return;
         }
+        // The text of a picture copied in another program is the object
+        // mark, no text: a picture alone leaves nothing here and comes
+        // from the clipboard's picture instead.
+        let text = if clip.is_none() && text.contains(apex_doc::OBJECT) { text.replace(apex_doc::OBJECT, "") } else { text };
+        if clip.is_none() && text.is_empty() {
+            return;
+        }
+        // Formatted text with its pictures: the clipboard's picture is
+        // one of them, not another to insert.
+        if system && clip.as_ref().is_some_and(|ps| ps.iter().any(|p| p.runs.iter().any(|r| r.attrs.image.is_some()))) {
+            self.picture_pasted();
+        }
         // Into a content control: as typed text, on one line.
         if self.caret_control().is_some_and(|c| c.control.is_form() && c.control.kind.typed()) {
             self.insert(&text.replace('\n', " "));

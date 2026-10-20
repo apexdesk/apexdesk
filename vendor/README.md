@@ -58,6 +58,12 @@ the first that far in and wraps it that much sooner (`line_break()` and
 `fonts.rs` sets `TextWrapping::indent_all` on the later paragraphs of a
 job laid out one by one, so their first rows are taken in too.
 
+**Underline position.** Underlines were drawn at the bottom of the line
+box, far below the text with more line spacing, and on the line's edge,
+where rounding or the next line could hide them at some zoom levels.
+`Glyph::underline_y()` puts them a little under the baseline, where Word
+draws them; `tessellate_row()` and ApexDesk's PDF output use it.
+
 **Vertical text and text kept together.** `LayoutJob::vertical` marks a
 galley that is drawn turned a quarter clockwise as vertical East Asian
 text: `tessellate_glyphs()` turns the quads of Chinese, Japanese and Korean

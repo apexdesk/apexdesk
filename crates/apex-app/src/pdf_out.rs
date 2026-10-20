@@ -630,7 +630,7 @@ impl Out {
                     continue;
                 }
                 let r = glyph.logical_rect().translate(origin.to_vec2());
-                for (stroke, y) in [(f.underline, r.bottom()), (f.strikethrough, r.center().y)] {
+                for (stroke, y) in [(f.underline, glyph.underline_y() + origin.y), (f.strikethrough, r.center().y)] {
                     if stroke.width > 0.0 {
                         let stroke = Stroke::new(stroke.width, color_of(stroke.color));
                         match lines.last_mut() {

@@ -161,3 +161,56 @@ fn tracked_changes_stay_tracked() {
     assert_eq!(again.changes().len(), 2);
     assert_eq!(again.resolved(true).paragraphs[0].text, "Price 200 euros.");
 }
+
+/// A WMF without the placeable header, as RTF holds them: a window
+/// 2000×1000 units, then the end.
+fn wmf() -> Vec<u8> {
+    let words: [u16; 22] = [1, 9, 0x300, 22, 0, 0, 5, 0, 0, 5, 0, 0x020B, 0, 0, 5, 0, 0x020C, 1000, 2000, 3, 0, 0];
+    words.iter().flat_map(|w| w.to_le_bytes()).collect()
+}
+
+fn hex(d: &[u8]) -> String {
+    d.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn pictures(d: &Document) -> Vec<Arc<Image>> {
+    d.paragraphs.iter().flat_map(|p| p.runs.iter().filter_map(|r| r.attrs.image.clone())).collect()
+}
+
+#[test]
+fn pictures_word_puts_on_the_clipboard() {
+    // Word 365's inline picture: PNG for readers of shapes, a WMF for
+    // the rest.
+    let rtf = format!(
+        r"{{\rtf1\ansi\ansicpg1252\deff0{{\fonttbl{{\f0\froman Times New Roman;}}}}\pard\plain\f0\fs24 Before {{\*\shppict{{\pict{{\*\picprop\shplid1025{{\sp{{\sn shapeType}}{{\sv 75}}}}{{\sp{{\sn fLayoutInCell}}{{\sv 1}}}}}}\picscalex100\picscaley100\piccropl0\piccropr0\piccropt0\piccropb0\picw26\pich26\picwgoal300\pichgoal300\pngblip\bliptag255{{\*\blipuid 0123456789abcdef0123456789abcdef}}{png}}}}}{{\nonshppict{{\pict\picscalex100\picscaley100\piccropl0\picw26\pich26\picwgoal300\pichgoal300\wmetafile8\bliptag255\blipupw15\blipuph15 {wmf}}}}} after\par}}",
+        png = hex(PNG),
+        wmf = hex(&wmf())
+    );
+    let d = apex_io::rtf::read(rtf.as_bytes()).unwrap();
+    assert_eq!(d.paragraphs[0].text, format!("Before {OBJECT} after"));
+    let pics = pictures(&d);
+    assert_eq!(pics.len(), 1);
+    assert_eq!((&pics[0].data[..], pics[0].width), (PNG, 15.0));
+
+    // An embedded object: its picture, not its data.
+    let rtf = format!(
+        r"{{\rtf1\ansi{{\fonttbl{{\f0 Calibri;}}}}\pard\f0 {{\object\objemb\objw2000\objh1000{{\*\objclass Excel.Sheet.12}}{{\*\objdata 01050000020000000b000000457863656c2e53686565742e313200}}{{\result{{\pict\picscalex100\picscaley100\picw3528\pich1764\picwgoal2000\pichgoal1000\wmetafile8 {wmf}}}}}}}\par}}",
+        wmf = hex(&wmf())
+    );
+    let d = apex_io::rtf::read(rtf.as_bytes()).unwrap();
+    assert_eq!(d.paragraphs[0].text, OBJECT.to_string());
+    let pics = pictures(&d);
+    assert_eq!(pics.len(), 1);
+    assert_eq!((pics[0].width, pics[0].height), (100.0, 50.0));
+    // With the header that gives a metafile its size.
+    assert!(pics[0].data.starts_with(&[0xD7, 0xCD, 0xC6, 0x9A]));
+    let (w, h) = apex_io::metafile::size(&pics[0].data).unwrap();
+    assert!((w - 100.0).abs() < 0.01 && (h - 50.0).abs() < 0.01, "{w}×{h}");
+
+    // EMF, sized by \picw (hundredths of a millimetre) without a goal.
+    let rtf = r"{\rtf1\ansi{\pict\emfblip\picw2540\pich1270 0100000064000000}\par}";
+    let d = apex_io::rtf::read(rtf.as_bytes()).unwrap();
+    let pics = pictures(&d);
+    assert_eq!(pics.len(), 1);
+    assert_eq!((&pics[0].data[..], pics[0].width, pics[0].height), (&[1, 0, 0, 0, 0x64, 0, 0, 0][..], 72.0, 36.0));
+}

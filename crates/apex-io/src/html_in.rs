@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use apex_doc::{Align, Attrs, Document, Image, LINE_BREAK, OBJECT, ParaKind, ParaStyle, Paragraph, Table};
+use apex_doc::{Align, Attrs, Document, Image, LINE_BREAK, LineRule, OBJECT, ParaKind, ParaStyle, Paragraph, Table};
 
 /// Width of tables read from HTML, in points.
 const TABLE_WIDTH: f32 = 450.0;
@@ -19,18 +19,21 @@ const MAX_OPEN: usize = 256;
 const MAX_TABLE_DEPTH: usize = 64;
 
 /// Reads an HTML page or fragment. On Windows' clipboard the fragment
-/// comes after a header of offsets; only what lies between the
-/// `StartFragment` and `EndFragment` marks is read when they are there.
+/// comes after a header of offsets; only the text between the
+/// `StartFragment` and `EndFragment` marks is read when they are there,
+/// in the lists, tables and formatting the tags before it open.
 pub fn read(html: &str) -> Document {
     let html = match html.find('<') {
         Some(i) if html.starts_with("Version:") => &html[i..],
         _ => html,
     };
-    let html = match (html.find("<!--StartFragment-->"), html.find("<!--EndFragment-->")) {
-        (Some(a), Some(b)) if a < b => &html[a + 20..b],
-        _ => html,
+    let (context, html) = match (html.find("<!--StartFragment-->"), html.find("<!--EndFragment-->")) {
+        (Some(a), Some(b)) if a < b => (&html[..a], &html[a + 20..b]),
+        _ => ("", html),
     };
-    let mut r = Reader::default();
+    let mut r = Reader { context: true, ..Default::default() };
+    r.run(context);
+    (r.context, r.para, r.space) = (false, None, true);
     r.run(html);
     r.end_para();
     while !r.tables.is_empty() {
@@ -60,8 +63,8 @@ struct Reader {
     inline: Vec<(String, Attrs)>,
     /// Paragraph formatting of the open block tags.
     blocks: Vec<(String, ParaStyle)>,
-    /// The open lists, `true` when numbered.
-    lists: Vec<bool>,
+    /// The open lists.
+    lists: Vec<ListB>,
     tables: Vec<TableB>,
     /// Tables left out, nested too deep.
     tables_skipped: usize,
@@ -71,6 +74,20 @@ struct Reader {
     space: bool,
     pre: usize,
     tables_made: u32,
+    /// Reading the tags before the fragment: their text is left out.
+    context: bool,
+}
+
+/// A list being read.
+#[derive(Clone, Copy, Default)]
+struct ListB {
+    numbered: bool,
+    /// Bullet glyph or numbering style (`ParaStyle::list_format`).
+    format: u8,
+    /// `list-style-type: none`: items without a mark.
+    unmarked: bool,
+    /// The number of the next item, when the list says one.
+    start: u16,
 }
 
 impl Reader {
@@ -80,6 +97,11 @@ impl Reader {
 
     fn block_style(&self) -> ParaStyle {
         self.blocks.last().map(|(_, s)| s.clone()).unwrap_or_default()
+    }
+
+    /// The size of the text being read, in points (for `em` lengths).
+    fn size_pt(&self) -> f32 {
+        self.attrs().size.map_or(BASE_SIZE, |s| s as f32 / 2.0)
     }
 
     fn sink(&mut self) -> &mut Vec<Paragraph> {
@@ -115,7 +137,7 @@ impl Reader {
     }
 
     fn push_run(&mut self, s: String, attrs: Attrs) {
-        if s.is_empty() {
+        if s.is_empty() || self.context {
             return;
         }
         // Spaces at the start of a paragraph go.
@@ -354,22 +376,52 @@ impl Reader {
             }
             "ul" | "ol" | "dl" => {
                 self.end_para();
-                self.lists.push(name == "ol");
-                let st = self.block_style();
+                let mut l = ListB { numbered: name == "ol", ..Default::default() };
+                if let Some(t) = attr("type") {
+                    list_type(&mut l, t);
+                }
+                list_css(&mut l, css);
+                l.start = attr("start").and_then(|s| s.trim().parse::<u16>().ok()).filter(|&n| n != 1).unwrap_or(0);
+                self.lists.push(l);
+                // The list's line height goes to its items; its margins don't.
+                let mut st = self.block_style();
+                para_css(&mut st, css, self.size_pt(), false);
                 self.push_block((name.to_string(), st));
+                // The look browsers give the list is its text's.
+                let mut a = self.attrs();
+                inline_css(&mut a, css);
+                self.push_inline((name.to_string(), a));
             }
             "li" => {
                 // An item ends the one before it, closed or not.
                 self.close_block("li");
-                let numbered = self.lists.last().copied().unwrap_or(false);
+                self.close_inline("li");
+                let mut a = self.attrs();
+                inline_css(&mut a, css);
+                self.push_inline((name.to_string(), a));
+                let mut l = self.lists.last().copied().unwrap_or_default();
+                if let Some(t) = attr("type") {
+                    list_type(&mut l, t);
+                }
+                list_css(&mut l, css);
                 let level = self.lists.len().saturating_sub(1).min(8) as u8;
-                let kind = if numbered { ParaKind::Numbered } else { ParaKind::Bullet };
-                let mut st = ParaStyle { kind, level, ..self.block_style() };
+                let mut st = self.block_style();
+                (st.space_before, st.space_after, st.first_line) = (None, None, 0.0);
+                if l.unmarked {
+                    st.indent_left += 18.0 * (level + 1) as f32;
+                } else {
+                    st.kind = if l.numbered { ParaKind::Numbered } else { ParaKind::Bullet };
+                    (st.level, st.list_format) = (level, l.format);
+                    st.start_at = self.lists.last_mut().map_or(0, |l| std::mem::take(&mut l.start));
+                }
                 st.align = block_align(css).unwrap_or(st.align);
+                para_css(&mut st, css, self.size_pt(), true);
                 self.open_block("li", st);
             }
             _ if is_block(name) => {
                 let mut st = self.block_style();
+                // Margins belong to the block that names them.
+                (st.space_before, st.space_after, st.first_line) = (None, None, 0.0);
                 match name {
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => st.kind = ParaKind::Heading(name.as_bytes()[1] - b'0'),
                     "blockquote" => st.kind = ParaKind::Quote,
@@ -380,6 +432,7 @@ impl Reader {
                 if let Some(a) = block_align(css).or(attr("align").and_then(align_word)) {
                     st.align = a;
                 }
+                para_css(&mut st, css, self.size_pt(), !matches!(name, "body" | "html"));
                 self.open_block(name, st);
                 if name == "pre" {
                     self.pre += 1;
@@ -449,9 +502,13 @@ impl Reader {
             "ul" | "ol" | "dl" => {
                 self.close_block("li");
                 self.close_block(name);
+                self.close_inline(name);
                 self.lists.pop();
             }
-            "li" => self.close_block("li"),
+            "li" => {
+                self.close_block("li");
+                self.close_inline("li");
+            }
             _ if is_block(name) => {
                 if name == "pre" {
                     self.pre = self.pre.saturating_sub(1);
@@ -547,6 +604,125 @@ pub(crate) fn align_word(v: &str) -> Option<Align> {
         "right" | "end" => Some(Align::Right),
         "justify" => Some(Align::Justify),
         _ => None,
+    }
+}
+
+/// The list style a `type` attribute names.
+fn list_type(l: &mut ListB, t: &str) {
+    let format = match t.trim() {
+        "1" => 1,
+        "a" => 3,
+        "A" => 4,
+        "i" => 5,
+        "I" => 6,
+        t => {
+            list_css(l, &format!("list-style-type:{t}"));
+            return;
+        }
+    };
+    (l.numbered, l.format, l.unmarked) = (true, format, false);
+}
+
+/// The list style of a `style` attribute: `list-style-type`, or the type
+/// in `list-style`. A string mark is a bullet of that glyph, the dash
+/// when it is one.
+fn list_css(l: &mut ListB, css: &str) {
+    for (k, v) in declarations(css) {
+        let words: Vec<&str> = match k.as_str() {
+            "list-style-type" => vec![v],
+            "list-style" => v.split_whitespace().collect(),
+            _ => continue,
+        };
+        for w in words {
+            let (numbered, format) = match w.to_ascii_lowercase().as_str() {
+                "disc" => (false, 1),
+                "circle" => (false, 2),
+                "square" => (false, 3),
+                "decimal" | "decimal-leading-zero" => (true, 1),
+                "lower-alpha" | "lower-latin" => (true, 3),
+                "upper-alpha" | "upper-latin" => (true, 4),
+                "lower-roman" => (true, 5),
+                "upper-roman" => (true, 6),
+                "none" => {
+                    l.unmarked = true;
+                    continue;
+                }
+                s if s.starts_with(['\'', '"']) => {
+                    let format = match s.trim_matches(['\'', '"', ' ']).chars().next() {
+                        Some('-' | '–' | '—' | '‐' | '−') => 4,
+                        Some('◦') => 2,
+                        Some('■' | '▪') => 3,
+                        Some('✓' | '✔') => 5,
+                        Some('➢' | '►' | '▶' | '>') => 6,
+                        _ => 1,
+                    };
+                    (false, format)
+                }
+                _ => continue,
+            };
+            (l.numbered, l.format, l.unmarked) = (numbered, format, false);
+        }
+    }
+}
+
+/// A CSS length in points; `size` is the text's (for `em`). Plain numbers
+/// are pixels.
+fn length_pt(v: &str, size: f32) -> Option<f32> {
+    let v = v.trim().to_ascii_lowercase();
+    let num = |s: &str| s.trim().parse::<f32>().ok().filter(|n| n.is_finite());
+    let pt = if let Some(n) = v.strip_suffix("pt") {
+        num(n)?
+    } else if let Some(n) = v.strip_suffix("px") {
+        num(n)? * 0.75
+    } else if let Some(n) = v.strip_suffix("rem") {
+        num(n)? * BASE_SIZE
+    } else if let Some(n) = v.strip_suffix("em") {
+        num(n)? * size
+    } else if let Some(n) = v.strip_suffix("cm") {
+        num(n)? * 72.0 / 2.54
+    } else if let Some(n) = v.strip_suffix("mm") {
+        num(n)? * 72.0 / 25.4
+    } else if let Some(n) = v.strip_suffix("in") {
+        num(n)? * 72.0
+    } else {
+        num(&v)? * 0.75
+    };
+    Some(pt.clamp(-1000.0, 1000.0))
+}
+
+/// Paragraph formatting of a `style` attribute: the line height and, with
+/// `margins`, the space before and after and the first line's indent.
+/// `size` is the text's, in points.
+fn para_css(st: &mut ParaStyle, css: &str, size: f32, margins: bool) {
+    let space = |v: &str| length_pt(v, size).map(|p| p.clamp(0.0, 200.0));
+    for (k, v) in declarations(css) {
+        let lv = v.to_ascii_lowercase();
+        match k.as_str() {
+            "line-height" => {
+                let num = |s: &str| s.trim().parse::<f32>().ok().filter(|n| n.is_finite() && *n > 0.0);
+                if lv == "normal" || lv == "initial" {
+                    (st.line_spacing, st.line_rule) = (0.0, LineRule::Multiple);
+                } else if let Some(n) = num(&lv) {
+                    (st.line_spacing, st.line_rule) = (n.clamp(0.25, 10.0), LineRule::Multiple);
+                } else if let Some(n) = lv.strip_suffix('%').and_then(num) {
+                    (st.line_spacing, st.line_rule) = ((n / 100.0).clamp(0.25, 10.0), LineRule::Multiple);
+                } else if let Some(pt) = length_pt(&lv, size).filter(|pt| *pt > 0.0) {
+                    (st.line_spacing, st.line_rule) = (pt, LineRule::Exact);
+                }
+            }
+            "margin-top" if margins => st.space_before = space(&lv).or(st.space_before),
+            "margin-bottom" if margins => st.space_after = space(&lv).or(st.space_after),
+            // Top, then bottom when given apart (`top sides bottom ...`).
+            "margin" if margins => {
+                let parts: Vec<&str> = lv.split_whitespace().collect();
+                if (1..=4).contains(&parts.len()) {
+                    st.space_before = space(parts[0]).or(st.space_before);
+                    st.space_after = space(parts[if parts.len() > 2 { 2 } else { 0 }]).or(st.space_after);
+                }
+            }
+            "text-indent" if margins => st.first_line = length_pt(&lv, size).unwrap_or(st.first_line),
+            _ => {}
+        }
     }
 }
 
@@ -947,5 +1123,56 @@ mod tests {
         assert_eq!(font_size("11pt", 12.0), Some(11.0));
         assert_eq!(font_size("200%", 12.0), Some(24.0));
         assert_eq!(font_size("1.5em", 10.0), Some(15.0));
+    }
+
+    #[test]
+    fn browser_lists_keep_their_marks() {
+        // Chrome on Windows: the header, then the fragment with the styles
+        // the page gave each tag.
+        let html = "Version:0.9\r\nStartHTML:0000000105\r\nEndHTML:0000000999\r\nStartFragment:0000000141\r\nEndFragment:0000000900\r\nSourceURL:https://example.com/\r\n<html>\r\n<body>\r\n<!--StartFragment--><ul style=\"margin: 0px 0px 16px; padding-left: 2em; color: rgb(31, 35, 40); font-family: -apple-system, &quot;Segoe UI&quot;, sans-serif; font-size: 16px;\"><li style=\"margin-top: 0.25em;\">Disc item</li><li>Second<ul style=\"list-style-type: circle;\"><li>Nested</li></ul></li></ul><ul style=\"list-style-type: '- ';\"><li>Dash item</li></ul><ul style=\"list-style: square inside;\"><li>Square</li></ul><ol type=\"a\" start=\"3\"><li>Third letter</li><li>Fourth</li></ol><ol style=\"list-style-type: upper-roman;\"><li>Roman</li></ol><ul style=\"list-style-type: none;\"><li>Unmarked</li></ul><p>- typed dash</p><p>– typed en dash</p><!--EndFragment-->\r\n</body>\r\n</html>";
+        let p = paras(html);
+        let summary: Vec<(&str, ParaKind, u8, u8)> = p.iter().map(|p| (p.text.as_str(), p.style.kind, p.style.level, p.style.list_format)).collect();
+        assert_eq!(
+            summary,
+            [
+                ("Disc item", ParaKind::Bullet, 0, 0),
+                ("Second", ParaKind::Bullet, 0, 0),
+                ("Nested", ParaKind::Bullet, 1, 2),
+                ("Dash item", ParaKind::Bullet, 0, 4),
+                ("Square", ParaKind::Bullet, 0, 3),
+                ("Third letter", ParaKind::Numbered, 0, 3),
+                ("Fourth", ParaKind::Numbered, 0, 3),
+                ("Roman", ParaKind::Numbered, 0, 6),
+                ("Unmarked", ParaKind::Normal, 0, 0),
+                ("- typed dash", ParaKind::Normal, 0, 0),
+                ("– typed en dash", ParaKind::Normal, 0, 0),
+            ]
+        );
+        assert_eq!((p[5].style.start_at, p[6].style.start_at), (3, 0));
+        assert!(p[8].style.indent_left > 0.0);
+        // The item's own margin, in the text's size (16px = 12pt).
+        assert_eq!(p[0].style.space_before, Some(3.0));
+        assert_eq!(p[1].style.space_before, None);
+        // Firefox: a list item with the `disc` it names.
+        let p = paras("<ul><li style=\"list-style-type: disc\">one</li></ul>");
+        assert_eq!((p[0].style.kind, p[0].style.list_format), (ParaKind::Bullet, 1));
+    }
+
+    #[test]
+    fn line_height_and_paragraph_spacing() {
+        // Google Docs, then a page's paragraphs and line breaks.
+        let html = "<meta charset=\"utf-8\"><b style=\"font-weight:normal;\" id=\"docs-internal-guid-1\"><p dir=\"ltr\" style=\"line-height:1.38;margin-top:0pt;margin-bottom:0pt;\"><span style=\"font-size:11pt;\">Docs line</span></p></b><p style=\"line-height: 1.5; margin: 0px 0px 1.5em;\">One<br>two</p><p style=\"line-height: 24px; margin-top: 12pt; text-indent: 2em;\">Fixed</p><div style=\"line-height: 200%\"><p>Inherits</p></div><ul style=\"line-height: 1.8; margin-bottom: 20px\"><li style=\"margin-bottom: 6px\">Item</li></ul>";
+        let p = paras(html);
+        let t: Vec<&str> = p.iter().map(|p| p.text.as_str()).collect();
+        assert_eq!(t, ["Docs line", "One\u{2028}two", "Fixed", "Inherits", "Item"]);
+        let s = |i: usize| (p[i].style.line_spacing, p[i].style.line_rule, p[i].style.space_before, p[i].style.space_after);
+        assert_eq!(s(0), (1.38, LineRule::Multiple, Some(0.0), Some(0.0)));
+        assert_eq!(s(1), (1.5, LineRule::Multiple, Some(0.0), Some(18.0)));
+        assert_eq!(s(2), (18.0, LineRule::Exact, Some(12.0), None));
+        assert_eq!(p[2].style.first_line, 24.0);
+        assert_eq!(s(3), (2.0, LineRule::Multiple, None, None));
+        // A list's line height goes to its items, its margin doesn't.
+        assert_eq!(s(4), (1.8, LineRule::Multiple, None, Some(4.5)));
+        assert_eq!(p[4].style.kind, ParaKind::Bullet);
     }
 }

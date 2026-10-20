@@ -1403,7 +1403,7 @@ impl Reader {
                 self.top().hide = true;
                 None
             }
-            "nonshppict" | "shprslt" | "sn" | "listtext" | "pntext" | "fldtype" | "datafield" | "formfield" | "themedata" | "colorschememapping" | "latentstyles" | "datastore" | "xmlnstbl" | "rsidtbl" | "generator" | "mmathPr" | "pgdsctbl" | "listpicture" | "revtbl" | "annotation" | "atnid" | "atnauthor" | "xe" | "tc" | "object" | "objdata" | "nesttableprops" | "userprops" | "docvar" | "wgrffmtfilter" | "filetbl" | "pnseclvl" | "template" => Some(Dest::Skip),
+            "nonshppict" | "shprslt" | "sn" | "listtext" | "pntext" | "fldtype" | "datafield" | "formfield" | "themedata" | "colorschememapping" | "latentstyles" | "datastore" | "xmlnstbl" | "rsidtbl" | "generator" | "mmathPr" | "pgdsctbl" | "listpicture" | "revtbl" | "annotation" | "atnid" | "atnauthor" | "xe" | "tc" | "objdata" | "nesttableprops" | "userprops" | "docvar" | "wgrffmtfilter" | "filetbl" | "pnseclvl" | "template" => Some(Dest::Skip),
             "field" => {
                 let depth = self.stack.len();
                 self.fields.push(FieldState { depth, instr: String::new(), link: None, field: None, result: String::new() });
@@ -1509,6 +1509,8 @@ impl Reader {
                     match w {
                         "pngblip" => p.kind = 1,
                         "jpegblip" => p.kind = 2,
+                        "emfblip" => p.kind = 3,
+                        "wmetafile" => p.kind = 4,
                         "picw" => p.w = v,
                         "pich" => p.h = v,
                         "picwgoal" => p.wgoal = v,
@@ -1832,12 +1834,24 @@ impl Reader {
                     && p.kind != 0
                     && !p.data.is_empty()
                 {
-                    let (pw, ph) = crate::pixel_size(&p.data).map_or((p.w, p.h), |(w, h)| (w as i32, h as i32));
-                    let w = if p.wgoal > 0 { p.wgoal as f32 / TW } else { pw as f32 * 0.75 } * p.sx.max(1) as f32 / 100.0;
-                    let h = if p.hgoal > 0 { p.hgoal as f32 / TW } else { ph as f32 * 0.75 } * p.sy.max(1) as f32 / 100.0;
+                    // A metafile's \picw is in hundredths of a millimetre,
+                    // a bitmap's in pixels.
+                    let himetric = (p.w as f32 * 72.0 / 2540.0, p.h as f32 * 72.0 / 2540.0);
+                    let natural = match p.kind {
+                        3 => crate::metafile::size(&p.data).map_or(himetric, |(w, h)| (w as f32, h as f32)),
+                        4 => himetric,
+                        _ => {
+                            let (pw, ph) = crate::pixel_size(&p.data).map_or((p.w, p.h), |(w, h)| (w as i32, h as i32));
+                            (pw as f32 * 0.75, ph as f32 * 0.75)
+                        }
+                    };
+                    let w = if p.wgoal > 0 { p.wgoal as f32 / TW } else { natural.0 } * p.sx.max(1) as f32 / 100.0;
+                    let h = if p.hgoal > 0 { p.hgoal as f32 / TW } else { natural.1 } * p.sy.max(1) as f32 / 100.0;
+                    // A WMF comes without the header that gives its size.
+                    let data = if p.kind == 4 { crate::metafile::wmf_placeable(&p.data, w as f64).unwrap_or(p.data) } else { p.data };
                     let mut a = self.attrs();
                     a.link = None;
-                    a.image = Some(Arc::new(Image::new(Arc::from(p.data), w.max(1.0), h.max(1.0))));
+                    a.image = Some(Arc::new(Image::new(Arc::from(data), w.max(1.0), h.max(1.0))));
                     self.object(a);
                 }
             }

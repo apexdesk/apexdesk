@@ -1267,7 +1267,7 @@ fn tessellate_row(
         add_row_hline(point_scale, row, &mut mesh, |glyph| {
             let format = &job.sections[glyph.section_index as usize].format;
             let stroke = format.underline;
-            let y = glyph.logical_rect().bottom();
+            let y = glyph.underline_y();
             (stroke, y)
         });
     }

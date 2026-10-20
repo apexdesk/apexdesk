@@ -88,7 +88,7 @@ arboard = { version = "3.6", default-features = false, features = ["image-data"]
 # Videos and sounds through Media Foundation, Windows' own decoders
 # (Microsoft's bindings, MIT or Apache-2.0; cpal and wgpu already build
 # this version).
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Registry", "Win32_System_Variant", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Graphics_Printing", "Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Registry", "Win32_Storage_Xps", "Win32_System_Variant", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Strings for Launch Services (File > Options > Default program).

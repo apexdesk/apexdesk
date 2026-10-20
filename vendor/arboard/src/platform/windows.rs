@@ -651,9 +651,12 @@ impl<'clipboard> Get<'clipboard> {
 				continue;
 			}
 			let mut out = Vec::new();
+			// "HTML Format" is read whole, header and context included:
+			// `get_html` fails on a memory block whose bytes past the
+			// zero aren't UTF-8, and leaves out the tags around the
+			// fragment (the lists and tables it is in). (ApexDesk patch.)
 			let read = match name {
 				"text/plain" => clipboard_win::raw::get_string(&mut out),
-				"text/html" => clipboard_win::raw::get_html(id, &mut out),
 				_ => clipboard_win::raw::get_vec(id, &mut out),
 			};
 			if read.is_err() {
