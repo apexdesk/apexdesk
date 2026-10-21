@@ -88,6 +88,59 @@ impl Region {
     }
 }
 
+/// Font files the system gives a region's language, lowercase: on Android
+/// its font configuration names them, as phone makers ship their own CJK
+/// fonts (MiSans, HarmonyOS Sans, OPPO Sans...) under their own names.
+fn system_files(region: Region) -> &'static [String] {
+    static FILES: std::sync::OnceLock<[Vec<String>; 4]> = std::sync::OnceLock::new();
+    let files = FILES.get_or_init(|| {
+        let mut out: [Vec<String>; 4] = Default::default();
+        if cfg!(target_os = "android") {
+            for conf in ["/system/etc/font_fallback.xml", "/system/etc/fonts.xml", "/product/etc/fonts_customization.xml"] {
+                if let Ok(xml) = apex_fs::read(conf) {
+                    for (r, f) in fonts_xml(&String::from_utf8_lossy(&xml)) {
+                        let v = &mut out[REGIONS.iter().position(|x| *x == r).unwrap_or(0)];
+                        if !v.contains(&f) {
+                            v.push(f);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    });
+    &files[REGIONS.iter().position(|x| *x == region).unwrap_or(0)]
+}
+
+/// The font files of the CJK families in an Android font configuration
+/// (`<family lang="zh-Hans"><font ...>NAME.ttc</font>`), lowercase.
+fn fonts_xml(xml: &str) -> Vec<(Region, String)> {
+    let mut out = Vec::new();
+    for family in xml.split("<family").skip(1) {
+        let family = family.split("</family>").next().unwrap_or("");
+        let head = family.split('>').next().unwrap_or("");
+        let Some(lang) = head.split("lang=\"").nth(1).and_then(|l| l.split('"').next()) else { continue };
+        let region = lang.split([',', ' ']).find_map(|t| match t.trim() {
+            t if t.starts_with("zh-Hans") => Some(Region::Sc),
+            t if t.starts_with("zh-Hant") => Some(Region::Tc),
+            "ja" | "ja-Jpan" => Some(Region::Jp),
+            "ko" | "ko-Kore" => Some(Region::Kr),
+            _ => None,
+        });
+        let Some(region) = region else { continue };
+        for font in family.split("<font").skip(1) {
+            if font.starts_with("Family") {
+                continue;
+            }
+            let name = font.split_once('>').map(|(_, t)| t.split('<').next().unwrap_or("").trim()).unwrap_or("");
+            if !name.is_empty() {
+                out.push((region, name.to_lowercase()));
+            }
+        }
+    }
+    out
+}
+
 fn script(c: char) -> u8 {
     match c as u32 {
         0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9F => KANA,
@@ -186,7 +239,10 @@ pub(super) fn update(defs: &mut FontDefinitions, paths: &[PathBuf]) -> bool {
                 _ => region,
             };
             let order = [region, own].into_iter().chain(REGIONS);
-            order.flat_map(|r| r.files().iter().filter_map(|f| by_name.get(*f).copied())).collect()
+            order
+                .flat_map(|r| system_files(r).iter().map(String::as_str).chain(r.files().iter().copied()))
+                .filter_map(|f| by_name.get(f).copied())
+                .collect()
         };
         let found = files.into_iter().find_map(|p| {
             let name = format!("cjk:{}", p.display());
@@ -316,6 +372,31 @@ mod tests {
 
     /// With Noto Sans CJK installed (Linux), each region gets its own face
     /// of the collection.
+    #[test]
+    fn reads_android_font_config() {
+        let xml = r#"<familyset>
+            <family name="sans-serif"><font weight="400">Roboto-Regular.ttf</font></family>
+            <family lang="zh-Hans">
+                <font weight="400" style="normal" index="2">NotoSansCJK-Regular.ttc
+                    <axis tag="wght" stylevalue="400"/>
+                </font>
+                <font weight="400" style="normal" fallbackFor="serif">MiSansVF.ttf</font>
+            </family>
+            <family lang="zh-Hant,zh-Bopo"><font weight="400">HarmonyOS_Sans_TC.ttf</font></family>
+            <family lang="ja"><font weight="400">NotoSansCJK-Regular.ttc</font></family>
+            <family lang="und-Zsye"><font weight="400">NotoColorEmoji.ttf</font></family>
+        </familyset>"#;
+        assert_eq!(
+            fonts_xml(xml),
+            [
+                (Region::Sc, "notosanscjk-regular.ttc".to_string()),
+                (Region::Sc, "misansvf.ttf".to_string()),
+                (Region::Tc, "harmonyos_sans_tc.ttf".to_string()),
+                (Region::Jp, "notosanscjk-regular.ttc".to_string()),
+            ]
+        );
+    }
+
     #[test]
     fn picks_regional_face() {
         let mut paths = Vec::new();

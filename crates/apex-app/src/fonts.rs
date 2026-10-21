@@ -84,6 +84,11 @@ pub(crate) fn font_dirs() -> Vec<PathBuf> {
         v.push("/System/Library/Fonts/Supplemental".into());
         v.push("/Library/Fonts".into());
         v.push("/System/Library/Fonts".into());
+    } else if cfg!(target_os = "android") {
+        // The system's, and those a phone maker adds.
+        v.push("/system/fonts".into());
+        v.push("/product/fonts".into());
+        v.push("/system_ext/fonts".into());
     } else {
         v.push("/usr/share/fonts".into());
         v.push("/usr/local/share/fonts".into());
