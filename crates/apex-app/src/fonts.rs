@@ -90,6 +90,9 @@ pub(crate) fn font_dirs() -> Vec<PathBuf> {
         v.push("/product/fonts".into());
         v.push("/system_ext/fonts".into());
     } else {
+        // NixOS font directory
+        v.push("/run/current-system/sw/share/X11/fonts".into());
+        // Standard FHS directories
         v.push("/usr/share/fonts".into());
         v.push("/usr/local/share/fonts".into());
     }
@@ -99,6 +102,12 @@ pub(crate) fn font_dirs() -> Vec<PathBuf> {
         v.push(h.join(".fonts"));
         v.push(h.join("Library/Fonts"));
     }
+    if let Some(dirs) = std::env::var_os("XDG_DATA_DIRS") {
+        for d in std::env::split_paths(&dirs) {
+            v.push(d.join("fonts"));
+            v.push(d.join("X11/fonts"));
+        }
+    }
     v
 }
 
@@ -106,8 +115,7 @@ pub(crate) fn scan(dir: &Path, depth: u32, out: &mut Vec<PathBuf>) {
     let Ok(rd) = apex_fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let p = e.path();
-        let Ok(ft) = e.file_type() else { continue };
-        if ft.is_dir() {
+        if p.is_dir() {
             if depth > 0 {
                 scan(&p, depth - 1, out);
             }
@@ -320,6 +328,23 @@ pub fn install(ctx: &egui::Context) {
     let mut paths = Vec::new();
     for d in font_dirs() {
         scan(&d, 4, &mut paths);
+    }
+    #[cfg(unix)]
+    {
+        for query in [":lang=zh-cn", ":lang=zh-tw", ":lang=ja", ":lang=ko", "sans-serif:lang=zh-cn"] {
+            if let Ok(o) = std::process::Command::new("fc-match")
+                .args(["-f", "%{file}\n", query])
+                .output()
+            {
+                let s = String::from_utf8_lossy(&o.stdout);
+                for line in s.lines() {
+                    let p = PathBuf::from(line.trim());
+                    if p.is_file() && !paths.contains(&p) {
+                        paths.push(p);
+                    }
+                }
+            }
+        }
     }
     let by_name: HashMap<String, &PathBuf> = paths.iter().filter_map(|p| Some((p.file_name()?.to_str()?.to_ascii_lowercase(), p))).collect();
     let mut defs = FontDefinitions::default();
