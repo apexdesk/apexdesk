@@ -64,23 +64,23 @@ impl Region {
 
     /// Font files to try, in order: Windows, macOS, then Linux ones.
     fn files(self) -> &'static [&'static str] {
-        const PAN: [&str; 3] = ["notosanscjk-regular.ttc", "sourcehansans-regular.ttc", "notosanscjk-vf.ttc"];
+        const PAN: [&str; 4] = ["notosanscjk-regular.ttc", "sourcehansans-regular.ttc", "sourcehansans.ttc", "notosanscjk-vf.ttc"];
         match self {
             Region::Sc => &["msyh.ttc", "deng.ttf", "simsun.ttc", "simhei.ttf", "pingfang.ttc", "hiragino sans gb.ttc", "hiragino sans gb w3.ttc", "stheiti light.ttc", "stheiti medium.ttc",
-                PAN[0], "notosanscjksc-regular.otf", "notosanssc-regular.otf", "notosanssc-regular.ttf", "sourcehansanssc-regular.otf", PAN[1], "wqy-microhei.ttc", "wqy-zenhei.ttc", "droidsansfallbackfull.ttf", "droidsansfallback.ttf", PAN[2]],
+                PAN[0], "notosanscjksc-regular.otf", "notosanssc-regular.otf", "notosanssc-regular.ttf", "sourcehansanssc-regular.otf", PAN[1], PAN[2], "wqy-microhei.ttc", "wqy-zenhei.ttc", "droidsansfallbackfull.ttf", "droidsansfallback.ttf", PAN[3]],
             Region::Tc => &["msjh.ttc", "mingliu.ttc", "pingfang.ttc", "stheiti light.ttc", "stheiti medium.ttc",
-                PAN[0], "notosanscjktc-regular.otf", "notosanstc-regular.otf", "notosanstc-regular.ttf", "sourcehansanstc-regular.otf", PAN[1], "uming.ttc", "wqy-microhei.ttc", "wqy-zenhei.ttc", PAN[2]],
+                PAN[0], "notosanscjktc-regular.otf", "notosanstc-regular.otf", "notosanstc-regular.ttf", "sourcehansanstc-regular.otf", PAN[1], PAN[2], "uming.ttc", "wqy-microhei.ttc", "wqy-zenhei.ttc", PAN[3]],
             Region::Jp => &["yugothr.ttc", "yugothm.ttc", "meiryo.ttc", "msgothic.ttc", "ヒラギノ角ゴシック w3.ttc", "ヒラギノ角ゴ pron w3.otf", "hiragino sans w3.ttc", "osaka.ttf",
-                PAN[0], "notosanscjkjp-regular.otf", "notosansjp-regular.otf", "notosansjp-regular.ttf", "sourcehansansjp-regular.otf", PAN[1], "ipaexg.ttf", "ipagp.ttf", "ipag.ttf", "vl-pgothic-regular.ttf", "vl-gothic-regular.ttf", "takaopgothic.ttf", PAN[2]],
+                PAN[0], "notosanscjkjp-regular.otf", "notosansjp-regular.otf", "notosansjp-regular.ttf", "sourcehansansjp-regular.otf", PAN[1], PAN[2], "ipaexg.ttf", "ipagp.ttf", "ipag.ttf", "vl-pgothic-regular.ttf", "vl-gothic-regular.ttf", "takaopgothic.ttf", PAN[3]],
             Region::Kr => &["malgun.ttf", "gulim.ttc", "applesdgothicneo.ttc", "applegothic.ttf",
-                PAN[0], "notosanscjkkr-regular.otf", "notosanskr-regular.otf", "notosanskr-regular.ttf", "sourcehansanskr-regular.otf", PAN[1], "nanumgothic.ttf", "nanumbarungothic.ttf", "undotum.ttf", PAN[2]],
+                PAN[0], "notosanscjkkr-regular.otf", "notosanskr-regular.otf", "notosanskr-regular.ttf", "sourcehansanskr-regular.otf", PAN[1], PAN[2], "nanumgothic.ttf", "nanumbarungothic.ttf", "undotum.ttf", PAN[3]],
         }
     }
 
     /// Faces to pick in font collections, as lowercase family names.
     fn faces(self) -> &'static [&'static str] {
         match self {
-            Region::Sc => &["noto sans cjk sc", "source han sans sc", "microsoft yahei ui", "pingfang sc", "heiti sc", "hiragino sans gb"],
+            Region::Sc => &["noto sans cjk sc", "source han sans sc", "source han sans", "microsoft yahei ui", "pingfang sc", "heiti sc", "hiragino sans gb"],
             Region::Tc => &["noto sans cjk tc", "source han sans tc", "microsoft jhenghei ui", "pingfang tc", "heiti tc", "pmingliu"],
             Region::Jp => &["noto sans cjk jp", "source han sans", "source han sans jp", "yu gothic ui", "meiryo ui", "ms ui gothic", "hiragino sans"],
             Region::Kr => &["noto sans cjk kr", "source han sans k", "source han sans kr", "malgun gothic", "apple sd gothic neo", "gulim"],
@@ -91,6 +91,7 @@ impl Region {
 /// Font files the system gives a region's language, lowercase: on Android
 /// its font configuration names them, as phone makers ship their own CJK
 /// fonts (MiSans, HarmonyOS Sans, OPPO Sans...) under their own names.
+/// On Linux/Unix, fontconfig (`fc-match`) resolves the preferred fonts.
 fn system_files(region: Region) -> &'static [String] {
     static FILES: std::sync::OnceLock<[Vec<String>; 4]> = std::sync::OnceLock::new();
     let files = FILES.get_or_init(|| {
@@ -102,6 +103,32 @@ fn system_files(region: Region) -> &'static [String] {
                         let v = &mut out[REGIONS.iter().position(|x| *x == r).unwrap_or(0)];
                         if !v.contains(&f) {
                             v.push(f);
+                        }
+                    }
+                }
+            }
+        }
+        #[cfg(unix)]
+        if !cfg!(target_os = "android") {
+            let queries: [(Region, &[&str]); 4] = [
+                (Region::Sc, &[":lang=zh-cn", "sans-serif:lang=zh-cn", ":lang=zh"]),
+                (Region::Tc, &[":lang=zh-tw", "sans-serif:lang=zh-tw", ":lang=zh-hk"]),
+                (Region::Jp, &[":lang=ja", "sans-serif:lang=ja"]),
+                (Region::Kr, &[":lang=ko", "sans-serif:lang=ko"]),
+            ];
+            for (r, qs) in queries {
+                let v = &mut out[REGIONS.iter().position(|x| *x == r).unwrap_or(0)];
+                for q in qs {
+                    if let Ok(o) = std::process::Command::new("fc-match").args(["-f", "%{file}\n", q]).output() {
+                        let s = String::from_utf8_lossy(&o.stdout);
+                        for line in s.lines() {
+                            let p = Path::new(line.trim());
+                            if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                                let lower = name.to_lowercase();
+                                if !lower.is_empty() && !v.contains(&lower) {
+                                    v.push(lower);
+                                }
+                            }
                         }
                     }
                 }
@@ -195,7 +222,7 @@ fn wanted() -> (Option<Region>, u8) {
 pub(super) fn pending() -> bool {
     let (ui, seen) = wanted();
     let Ok(st) = state().lock() else { return false };
-    (ui.is_some() && ui != st.region) || (seen | ui.map_or(0, Region::scripts)) & !(st.covered | st.failed) != 0
+    (ui.is_some() && ui != st.region) || (seen | ui.map_or(0, Region::scripts) | HAN) & !(st.covered | st.failed) != 0
 }
 
 /// Loads the CJK fonts the interface language and the text seen need (or
@@ -218,7 +245,8 @@ pub(super) fn update(defs: &mut FontDefinitions, paths: &[PathBuf]) -> bool {
         changed |= st.region.is_some();
         *st = State { region: Some(r), ..Default::default() };
     }
-    let mut missing = (seen | ui.map_or(0, Region::scripts)) & !(st.covered | st.failed);
+    // Always include HAN so Chinese characters are covered in fallback from startup
+    let mut missing = (seen | ui.map_or(0, Region::scripts) | HAN) & !(st.covered | st.failed);
     if missing == 0 {
         return changed;
     }
