@@ -683,6 +683,10 @@ pub fn open_external(target: &str) -> bool {
         test::OPENED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         return true;
     }
+    // Android has no program to hand it to: the system opens it.
+    #[cfg(target_os = "android")]
+    return crate::android::open_url(target);
+    #[cfg_attr(target_os = "android", allow(unreachable_code))]
     let mut cmd = if cfg!(target_os = "windows") {
         // Not `cmd /C start`: the shell would interpret the URL.
         let mut c = Command::new(apex_io::safe_path::windows_program(r"System32\rundll32.exe"));

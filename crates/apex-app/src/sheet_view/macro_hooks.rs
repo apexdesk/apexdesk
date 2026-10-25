@@ -85,8 +85,8 @@ pub enum Clickable {
     Image(u32),
 }
 
-/// Assign Macro: the shape or picture, the name typed and the macros of
-/// the workbook.
+/// Assign Macro: the shape, form control or picture, the name typed and
+/// the macros of the workbook.
 pub struct AssignDlg {
     sheet: usize,
     target: Clickable,
@@ -104,8 +104,9 @@ impl SheetView {
         }
     }
 
-    /// The macros of the workbook (none when its code doesn't parse).
-    fn macro_list(&self) -> Vec<String> {
+    /// The macros of the workbook (those of the modules that parse when
+    /// one doesn't).
+    pub(super) fn macro_list(&self) -> Vec<String> {
         let Some(bin) = &self.wb.macros.project else { return Vec::new() };
         let Ok(p) = apex_io::vba::read(bin) else { return Vec::new() };
         let sources: Vec<apex_vba::Source> = p
@@ -121,13 +122,13 @@ impl SheetView {
                 apex_vba::Source { name: m.name, kind, code: m.code }
             })
             .collect();
-        apex_vba::Project::parse(&sources).map(|p| p.macros()).unwrap_or_default()
+        apex_vba::Project::parse(&sources).map(|p| p.macros()).unwrap_or_else(|_| sources.chunks(1).filter_map(|m| apex_vba::Project::parse(m).ok()).flat_map(|p| p.macros()).collect())
     }
 
     pub(super) fn open_assign_macro(&mut self, target: Clickable) {
         let sh = self.sh();
         let name = match target {
-            Clickable::Shape(id) => sh.shapes.iter().find(|s| s.id == id).map(|s| s.macro_name.clone()),
+            Clickable::Shape(id) => sh.shapes.iter().find(|s| s.id == id).map(|s| s.control.as_ref().map_or(&s.macro_name, |c| &c.macro_name).clone()),
             Clickable::Image(id) => sh.image(id).map(|i| i.macro_name.clone()),
         };
         let Some(name) = name else { return };
@@ -179,16 +180,27 @@ impl SheetView {
             return;
         }
         let Some(d) = self.cell_hooks.assign.take() else { return };
+        if ok {
+            self.assign(d);
+        }
+    }
+
+    /// OK in Assign Macro: its target runs the macro named.
+    fn assign(&mut self, d: AssignDlg) {
         let name = d.name.trim().to_string();
         // A name, or nothing: not a formula or a path.
-        if !ok || !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+        if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') {
             return;
         }
         let Some(sh) = self.wb.sheets.get(d.sheet) else { return };
         match d.target {
             Clickable::Shape(id) => {
                 if let Some(mut s) = sh.shapes.iter().find(|s| s.id == id).cloned() {
-                    s.macro_name = name;
+                    // A form control keeps its own (what its click runs).
+                    match &mut s.control {
+                        Some(c) => c.macro_name = name,
+                        None => s.macro_name = name,
+                    }
                     self.wb.set_shape(d.sheet, s);
                 }
             }
@@ -199,5 +211,58 @@ impl SheetView {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use apex_sheet::ControlKind;
+
+    /// A workbook whose Module1 has `code`, and `Broken` code that doesn't
+    /// parse when `broken`.
+    fn view(code: &str, broken: bool) -> SheetView {
+        let mut wb = Workbook::new();
+        let bin = apex_io::vba::new_workbook_project("ThisWorkbook", &["Sheet1".to_string()]).unwrap();
+        let mut p = apex_io::vba::read(&bin).unwrap();
+        let mut m = apex_io::vba::VbaModule::standard("Module1");
+        m.code = code.into();
+        p.modules.push(m);
+        if broken {
+            let mut m = apex_io::vba::VbaModule::standard("Broken");
+            m.code = "Sub Oops(\n".into();
+            p.modules.push(m);
+        }
+        wb.macros.project = Some(std::sync::Arc::new(p.write().unwrap()));
+        SheetView::new(wb)
+    }
+
+    fn button(v: &SheetView) -> &apex_sheet::FormControl {
+        v.sh().shapes.iter().find_map(|s| s.control.as_deref().filter(|c| c.kind == ControlKind::Button)).expect("button")
+    }
+
+    // Inserting a button asks for its macro from the workbook's list, as
+    // Excel does; choosing one is what its click runs.
+    #[test]
+    fn a_new_button_lists_the_macros() {
+        let mut v = view("Sub Hello()\nEnd Sub\nSub WithArg(x)\nEnd Sub\n", false);
+        v.insert_control(ControlKind::Button);
+        let d = v.cell_hooks.assign.as_mut().expect("Assign Macro open");
+        assert_eq!(d.macros, ["Hello"]);
+        // OK with it chosen.
+        let d = v.cell_hooks.assign.take().unwrap();
+        v.assign(AssignDlg { name: "Hello".into(), ..d });
+        assert_eq!(button(&v).macro_name, "Hello");
+        // Assign Macro on it again shows the one it has.
+        let id = v.sh().shapes.iter().find(|s| s.control.is_some()).unwrap().id;
+        v.open_assign_macro(Clickable::Shape(id));
+        assert_eq!(v.cell_hooks.assign.as_ref().unwrap().name, "Hello");
+    }
+
+    // A module that doesn't parse doesn't hide the macros of the others.
+    #[test]
+    fn macros_of_the_modules_that_parse() {
+        let v = view("Sub Hello()\nEnd Sub\n", true);
+        assert_eq!(v.macro_list(), ["Hello"]);
     }
 }

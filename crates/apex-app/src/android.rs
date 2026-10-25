@@ -501,6 +501,33 @@ pub fn set_clipboard_text(text: &str) {
     }
 }
 
+/// Opens a link or file with the app the system chooses for it (an
+/// ACTION_VIEW intent); false when none can.
+pub fn open_url(target: &str) -> bool {
+    use jni::objects::JValue;
+    use jni::{jni_sig, jni_str};
+    let r = with_activity(|env, activity| {
+        let view = |env: &mut jni::Env, activity: &jni::objects::JObject| -> jni::errors::Result<()> {
+            let text = env.new_string(target)?;
+            let uri = env.call_static_method(jni_str!("android/net/Uri"), jni_str!("parse"), jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"), &[JValue::Object(&text)])?.l()?;
+            let action = env.new_string("android.intent.action.VIEW")?;
+            let intent = env.new_object(jni_str!("android/content/Intent"), jni_sig!("(Ljava/lang/String;Landroid/net/Uri;)V"), &[JValue::Object(&action), JValue::Object(&uri)])?;
+            env.call_method(activity, jni_str!("startActivity"), jni_sig!("(Landroid/content/Intent;)V"), &[JValue::Object(&intent)])?;
+            Ok(())
+        };
+        let r = view(env, activity);
+        // No app for it (ActivityNotFoundException): not left pending.
+        if env.exception_check() {
+            env.exception_clear();
+        }
+        r
+    });
+    if let Err(e) = &r {
+        log(&format!("open {target}: {e}"));
+    }
+    r.is_ok()
+}
+
 fn clipboard_manager<'local>(env: &mut jni::Env<'local>, activity: &jni::objects::JObject) -> jni::errors::Result<jni::objects::JObject<'local>> {
     use jni::objects::JValue;
     use jni::{jni_sig, jni_str};

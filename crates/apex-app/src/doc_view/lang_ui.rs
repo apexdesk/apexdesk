@@ -17,7 +17,7 @@ pub(super) struct LangDlg {
 const COMMON: [&str; 16] = ["es-ES", "es-MX", "es-AR", "en-US", "en-GB", "ca-ES", "gl-ES", "eu-ES", "pt-PT", "pt-BR", "fr-FR", "de-DE", "it-IT", "nl-NL", "sv-SE", "pl-PL"];
 
 fn choices() -> Vec<(String, String, bool)> {
-    let installed: Vec<String> = crate::spell::languages().map(|l| l.replace('_', "-")).collect();
+    let installed: Vec<String> = crate::spell::languages().into_iter().map(|l| l.replace('_', "-")).collect();
     let mut all: Vec<String> = COMMON.iter().map(|s| s.to_string()).collect();
     for l in &installed {
         if !all.iter().any(|x| x.eq_ignore_ascii_case(l)) {

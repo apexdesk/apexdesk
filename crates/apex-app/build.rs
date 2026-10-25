@@ -1,5 +1,5 @@
-//! On Windows, the program icon (the language files are embedded by the
-//! apex-i18n crate) and the main thread's stack.
+//! On Windows, the program icon and manifest (the language files are
+//! embedded by the apex-i18n crate) and the main thread's stack.
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -19,9 +19,9 @@ fn windows_stack() {
     }
 }
 
-/// Compiles `packaging/windows/apexdesk.rc` (the .exe icon) with `rc` or
-/// `llvm-rc` and links it in. Without a resource compiler the program just
-/// has no icon in Explorer.
+/// Compiles `packaging/windows/apexdesk.rc` (the .exe icon and manifest)
+/// with `rc` or `llvm-rc` and links it in. Without a resource compiler the
+/// program has no icon in Explorer and no manifest.
 fn windows_icon() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") || std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc") {
         return;
@@ -30,6 +30,7 @@ fn windows_icon() {
     let rc = dir.join("apexdesk.rc");
     println!("cargo:rerun-if-changed={}", rc.display());
     println!("cargo:rerun-if-changed={}", dir.join("apexdesk.ico").display());
+    println!("cargo:rerun-if-changed={}", dir.join("apexdesk.exe.manifest").display());
     println!("cargo:rerun-if-env-changed=RC");
     let res = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("apexdesk.res");
     let mut tools: Vec<String> = std::env::var("RC").into_iter().collect();
@@ -40,8 +41,10 @@ fn windows_icon() {
         let ok = std::process::Command::new(&tool).current_dir(&dir).args(["/nologo", &fo]).arg(&rc).status().is_ok_and(|s| s.success());
         if ok {
             println!("cargo:rustc-link-arg-bins={}", res.display());
+            // The manifest is the one in the resources, not one the linker makes.
+            println!("cargo:rustc-link-arg-bins=/MANIFEST:NO");
             return;
         }
     }
-    println!("cargo:warning=no resource compiler (rc / llvm-rc): the .exe has no icon");
+    println!("cargo:warning=no resource compiler (rc / llvm-rc): the .exe has no icon nor manifest");
 }

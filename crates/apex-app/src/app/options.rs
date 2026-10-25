@@ -468,7 +468,7 @@ fn proofing_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
             policy::note(ui, "SpellingLanguage");
             return;
         }
-        let langs: Vec<&str> = crate::spell::languages().collect();
+        let langs = crate::spell::languages();
         if langs.is_empty() {
             ui.label(RichText::new(tr("spell.none_installed")).weak());
         } else {
@@ -476,8 +476,8 @@ fn proofing_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
             widgets::combo_name(
                 egui::ComboBox::from_id_salt("opt_spell").selected_text(text).width(200.0).show_ui(ui, |ui| {
                     for l in langs {
-                        if ui.selectable_label(d.spell_lang == l, format!("{} - {l}", crate::spell::language_name(l))).clicked() {
-                            d.spell_lang = l.to_string();
+                        if ui.selectable_label(d.spell_lang == l, format!("{} - {l}", crate::spell::language_name(&l))).clicked() {
+                            d.spell_lang = l;
                         }
                     }
                 }),
@@ -485,6 +485,7 @@ fn proofing_page(ui: &mut egui::Ui, d: &mut OptionsDlg) {
             );
         }
     });
+    ui.horizontal(|ui| crate::spell::get_dictionaries(ui));
     ui.checkbox(&mut d.spell_auto, tr("spell.auto"));
     ui.checkbox(&mut d.grammar_auto, tr("grammar.auto_docs"));
     if ui.add_enabled(crate::grammar::any_off(), egui::Button::new(tr("grammar.reset_rules"))).clicked() {

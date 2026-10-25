@@ -357,7 +357,7 @@ impl SheetView {
             self.delete_shape();
             ui.close();
         }
-        if self.selected_shape().is_some_and(|s| s.control.is_none()) && ui.button(format!("{}…", tr("macros.assign"))).clicked() {
+        if self.selected_shape().is_some() && ui.button(format!("{}…", tr("macros.assign"))).clicked() {
             if let Some((_, id)) = self.images.shapes.selected {
                 self.open_assign_macro(super::macro_hooks::Clickable::Shape(id));
             }

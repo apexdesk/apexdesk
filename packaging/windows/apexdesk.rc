@@ -1,1 +1,3 @@
 1 ICON "apexdesk.ico"
+// The application manifest (RT_MANIFEST, 1 for an .exe).
+1 24 "apexdesk.exe.manifest"

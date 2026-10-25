@@ -61,15 +61,16 @@ fn search_dirs() -> Vec<PathBuf> {
 /// and LibreOffice's; on macOS `~/Library/Spelling`.
 /// Returns `(language code like "es_ES", aff path, dic path)`, deduplicated
 /// by canonical path (distros symlink es_AR, es_MX... to es_ES; the entry
-/// named like the real file wins) and sorted by language code.
+/// named like the real file wins) and by language (the folder searched
+/// first wins: the organization's, then the user's), sorted by language code.
 pub fn installed() -> Vec<(String, PathBuf, PathBuf)> {
     list_in(&search_dirs())
 }
 
 pub(crate) fn list_in(dirs: &[PathBuf]) -> Vec<(String, PathBuf, PathBuf)> {
-    // canonical aff -> (lang, aff, dic)
-    let mut found: BTreeMap<PathBuf, (String, PathBuf, PathBuf)> = BTreeMap::new();
-    for dir in dirs {
+    // canonical aff -> (lang, aff, dic, index of its folder)
+    let mut found: BTreeMap<PathBuf, (String, PathBuf, PathBuf, usize)> = BTreeMap::new();
+    for (i, dir) in dirs.iter().enumerate() {
         let Ok(rd) = apex_fs::read_dir(dir) else { continue };
         let mut entries: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
         entries.sort();
@@ -89,16 +90,17 @@ pub(crate) fn list_in(dirs: &[PathBuf]) -> Vec<(String, PathBuf, PathBuf)> {
             let canon_lang = canon.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
             match found.get(&canon) {
                 // Keep the first one found unless this one carries the real name.
-                Some((l, _, _)) if *l == canon_lang || lang != canon_lang => {}
+                Some((l, _, _, _)) if *l == canon_lang || lang != canon_lang => {}
                 _ => {
-                    found.insert(canon, (lang, aff, dic));
+                    found.insert(canon, (lang, aff, dic, i));
                 }
             }
         }
     }
     let mut v: Vec<_> = found.into_values().collect();
-    v.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-    v
+    v.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.3.cmp(&b.3)).then_with(|| a.1.cmp(&b.1)));
+    v.dedup_by(|b, a| a.0 == b.0);
+    v.into_iter().map(|(l, aff, dic, _)| (l, aff, dic)).collect()
 }
 
 #[cfg(test)]
@@ -127,5 +129,25 @@ mod tests {
         assert_eq!(langs, ["es_ES", "fr_FR"]);
         assert!(v[0].2.ends_with("es_ES.dic"));
         let _ = apex_fs::remove_dir_all(&dir);
+    }
+
+    // The same language in two folders is listed once: the one of the
+    // folder searched first.
+    #[test]
+    fn one_per_language() {
+        let root = apex_fs::temp_dir().join(format!("apex-spell-languages-{}", apex_fs::process_id()));
+        let _ = apex_fs::remove_dir_all(&root);
+        for d in ["first", "second"] {
+            apex_fs::create_dir_all(root.join(d)).expect("mkdir");
+            apex_fs::write(root.join(d).join("es_ES.aff"), "SET UTF-8\n").expect("write");
+            apex_fs::write(root.join(d).join("es_ES.dic"), "1\nhola\n").expect("write");
+        }
+        apex_fs::write(root.join("second").join("fr_FR.aff"), "SET UTF-8\n").expect("write");
+        apex_fs::write(root.join("second").join("fr_FR.dic"), "1\nbonjour\n").expect("write");
+        let v = list_in(&[root.join("first"), root.join("second")]);
+        let langs: Vec<&str> = v.iter().map(|x| x.0.as_str()).collect();
+        assert_eq!(langs, ["es_ES", "fr_FR"]);
+        assert!(v[0].1.starts_with(root.join("first")));
+        let _ = apex_fs::remove_dir_all(&root);
     }
 }

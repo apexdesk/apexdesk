@@ -30,6 +30,8 @@ struct Dlg {
     sheet: usize,
     orig: SheetShape,
     c: FormControl,
+    /// The workbook's macros, for a button's.
+    macros: Vec<String>,
 }
 
 pub(super) fn label_key(k: ControlKind) -> &'static str {
@@ -299,7 +301,7 @@ impl SheetView {
     }
 
     /// Puts a control of kind `k` at the active cell and opens its
-    /// settings.
+    /// settings (a button's macro, as Excel asks for it).
     pub(super) fn insert_control(&mut self, k: ControlKind) {
         self.settle_edit();
         let (w, h) = k.size();
@@ -324,7 +326,11 @@ impl SheetView {
         let id = self.wb.add_shape(self.sheet, s);
         if self.sh().shapes.iter().any(|s| s.id == id) {
             self.select_shape(id);
-            self.open_control_dialog();
+            if k == ControlKind::Button {
+                self.open_assign_macro(super::macro_hooks::Clickable::Shape(id));
+            } else {
+                self.open_control_dialog();
+            }
         }
     }
 
@@ -334,14 +340,15 @@ impl SheetView {
         if c.kind != ControlKind::Radio {
             c.value = self.wb.control_value(self.sheet, &c);
         }
-        self.images.shapes.controls.dialog = Some(Dlg { sheet: self.sheet, orig: s, c });
+        let macros = if c.kind == ControlKind::Button { self.macro_list() } else { Vec::new() };
+        self.images.shapes.controls.dialog = Some(Dlg { sheet: self.sheet, orig: s, c, macros });
     }
 
     pub(super) fn control_dialog(&mut self, ctx: &egui::Context) {
         self.control_popup(ctx);
         let Some(d) = &mut self.images.shapes.controls.dialog else { return };
         let title = format!("{} — {}", tr("control.format"), tr(label_key(d.c.kind)));
-        let res = widgets::dialog(ctx, "control-format", &title, 420.0, |ui| dialog_ui(ui, &mut d.c));
+        let res = widgets::dialog(ctx, "control-format", &title, 420.0, |ui| dialog_ui(ui, &mut d.c, &d.macros));
         match res {
             DialogResult::None => {}
             DialogResult::Ok => {
@@ -365,7 +372,7 @@ impl SheetView {
     }
 }
 
-fn dialog_ui(ui: &mut egui::Ui, c: &mut FormControl) {
+fn dialog_ui(ui: &mut egui::Ui, c: &mut FormControl, macros: &[String]) {
     let k = c.kind;
     widgets::form(ui, "control-form", |ui| {
         if k.has_text() {
@@ -398,7 +405,19 @@ fn dialog_ui(ui: &mut egui::Ui, c: &mut FormControl) {
                 widgets::form_row(ui, "", |ui| ui.checkbox(&mut c.horizontal, tr("control.horizontal")));
             }
             ControlKind::Button => {
-                widgets::form_row(ui, &tr("control.macro"), |ui| ui.add(egui::TextEdit::singleline(&mut c.macro_name).desired_width(200.0)));
+                widgets::form_row(ui, &tr("control.macro"), |ui| {
+                    ui.add(egui::TextEdit::singleline(&mut c.macro_name).desired_width(200.0));
+                    // The workbook's macros to choose from.
+                    let r = egui::ComboBox::from_id_salt("control-macro").selected_text("").width(24.0).show_ui(ui, |ui| {
+                        if macros.is_empty() {
+                            ui.weak(tr("macros.no_macros"));
+                        }
+                        for m in macros {
+                            ui.selectable_value(&mut c.macro_name, m.clone(), m);
+                        }
+                    });
+                    widgets::combo_name(r, tr("control.macro"));
+                })
             }
             _ => {}
         }

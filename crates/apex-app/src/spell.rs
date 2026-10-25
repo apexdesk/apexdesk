@@ -14,6 +14,8 @@ use eframe::egui;
 use crate::i18n::{tr, trf};
 use crate::widgets::FitWindow as _;
 
+mod install;
+
 struct State {
     /// Chosen dictionary ("es_ES"); empty when none is installed.
     lang: String,
@@ -67,7 +69,27 @@ static STATE: LazyLock<Mutex<State>> = LazyLock::new(|| {
     })
 });
 
-static INSTALLED: LazyLock<Vec<(String, PathBuf, PathBuf)>> = LazyLock::new(apex_spell::installed);
+/// The dictionaries found, looked for again after one is installed.
+static INSTALLED: Mutex<Option<Arc<Vec<(String, PathBuf, PathBuf)>>>> = Mutex::new(None);
+
+fn installed() -> Arc<Vec<(String, PathBuf, PathBuf)>> {
+    INSTALLED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(|| {
+            // Those the user installed, on every system.
+            if let Some(d) = install::user_dir() {
+                apex_spell::add_search_dir(d);
+            }
+            Arc::new(apex_spell::installed())
+        })
+        .clone()
+}
+
+/// Looks for the installed dictionaries again.
+fn rescan() {
+    *INSTALLED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
 
 fn state() -> MutexGuard<'static, State> {
     STATE.lock().unwrap_or_else(|e| e.into_inner())
@@ -78,8 +100,8 @@ fn personal_path() -> Option<PathBuf> {
 }
 
 /// Installed dictionaries (language codes).
-pub fn languages() -> impl Iterator<Item = &'static str> {
-    INSTALLED.iter().map(|(l, _, _)| l.as_str())
+pub fn languages() -> Vec<String> {
+    installed().iter().map(|(l, _, _)| l.clone()).collect()
 }
 
 /// A language code as people read it ("es_ES" -> "Español (ES)").
@@ -102,31 +124,25 @@ pub fn language_name(code: &str) -> String {
 }
 
 /// The installed dictionary that best matches a locale like "es_ES.UTF-8".
-fn best_match(locale: &str) -> Option<&'static str> {
+fn best_match(locale: &str) -> Option<String> {
     let code = locale.split(['.', '@']).next().unwrap_or("").replace('-', "_");
     if code.is_empty() {
         return None;
     }
     let lang = code.split('_').next().unwrap_or("");
-    languages().find(|l| l.eq_ignore_ascii_case(&code)).or_else(|| {
+    let langs = languages();
+    let found = langs.iter().find(|l| l.eq_ignore_ascii_case(&code)).or_else(|| {
         // es_ES before es_AR when only the language matches.
         let main = format!("{lang}_{}", lang.to_ascii_uppercase());
-        languages().find(|l| *l == main).or_else(|| languages().find(|l| l.split('_').next() == Some(lang)))
-    })
+        langs.iter().find(|l| **l == main).or_else(|| langs.iter().find(|l| l.split('_').next() == Some(lang)))
+    });
+    found.cloned()
 }
 
 /// Chooses the dictionary (the saved one, else the system locale's, else
 /// the interface language's, else English) and starts loading it.
 pub fn init(ctx: &egui::Context, saved: &str, auto: bool) {
-    let sys = ["LC_ALL", "LC_MESSAGES", "LANG"].iter().filter_map(|v| std::env::var(v).ok()).find(|v| !v.is_empty() && v != "C" && v != "POSIX").or_else(|| apex_i18n::env_locale().filter(|v| v != "C" && v != "POSIX"));
-    let lang = languages()
-        .find(|l| *l == saved)
-        .or_else(|| sys.as_deref().and_then(best_match))
-        .or_else(|| best_match(crate::i18n::current()))
-        .or_else(|| best_match("en_US"))
-        .or_else(|| languages().next())
-        .unwrap_or("")
-        .to_string();
+    let lang = chosen(saved, system_locale().as_deref());
     {
         let mut s = state();
         s.ctx = Some(ctx.clone());
@@ -138,8 +154,53 @@ pub fn init(ctx: &egui::Context, saved: &str, auto: bool) {
     load(ctx, lang);
 }
 
+/// The system's locale ("es_ES.UTF-8").
+fn system_locale() -> Option<String> {
+    ["LC_ALL", "LC_MESSAGES", "LANG"].iter().filter_map(|v| std::env::var(v).ok()).find(|v| !v.is_empty() && v != "C" && v != "POSIX").or_else(|| apex_i18n::env_locale().filter(|v| v != "C" && v != "POSIX"))
+}
+
+/// Dictionaries were just installed (`langs`): they're listed and used at
+/// once; with none until now, the one that fits best becomes the
+/// language.
+fn installed_now(langs: &[String]) {
+    rescan();
+    let ctx = {
+        let mut s = state();
+        for l in langs {
+            s.others.remove(l);
+        }
+        forget(&mut s);
+        s.ctx.clone()
+    };
+    let Some(ctx) = ctx else { return };
+    let cur = language();
+    if langs.contains(&cur) {
+        // A new version of the one in use.
+        load(&ctx, cur);
+    } else if !ready() && !loading() {
+        let lang = chosen(&cur, system_locale().as_deref());
+        state().lang_changed = true;
+        load(&ctx, lang);
+    }
+}
+
+/// The dictionary to use: the saved one, else the system locale's, else
+/// the interface language's, else English, else the first.
+fn chosen(saved: &str, sys: Option<&str>) -> String {
+    let langs = languages();
+    langs
+        .iter()
+        .find(|l| *l == saved)
+        .cloned()
+        .or_else(|| sys.and_then(best_match))
+        .or_else(|| best_match(crate::i18n::current()))
+        .or_else(|| best_match("en_US"))
+        .or_else(|| langs.first().cloned())
+        .unwrap_or_default()
+}
+
 fn load(ctx: &egui::Context, lang: String) {
-    let Some((_, aff, dic)) = INSTALLED.iter().find(|(l, _, _)| *l == lang).cloned() else {
+    let Some((_, aff, dic)) = installed().iter().find(|(l, _, _)| *l == lang).cloned() else {
         let mut s = state();
         s.lang = lang;
         s.dict = None;
@@ -251,13 +312,14 @@ fn pick(s: &State, lang: &str) -> Pick {
     if code.eq_ignore_ascii_case(&s.lang) {
         return Pick::Main;
     }
-    if let Some((l, _, _)) = INSTALLED.iter().find(|(l, _, _)| l.eq_ignore_ascii_case(&code)) {
+    let installed = installed();
+    if let Some((l, _, _)) = installed.iter().find(|(l, _, _)| l.eq_ignore_ascii_case(&code)) {
         return Pick::Other(l.clone());
     }
     if base(&code) == base(&s.lang) {
         return Pick::Main;
     }
-    match INSTALLED.iter().find(|(l, _, _)| base(l) == base(&code)) {
+    match installed.iter().find(|(l, _, _)| base(l) == base(&code)) {
         Some((l, _, _)) => Pick::Other(l.clone()),
         None => Pick::Skip,
     }
@@ -270,7 +332,7 @@ fn other(s: &mut State, code: &str) -> Option<Arc<Dictionary>> {
         Some(Other::Loading) => return None,
         None => {}
     }
-    let (_, aff, dic) = INSTALLED.iter().find(|(l, _, _)| l == code)?.clone();
+    let (_, aff, dic) = installed().iter().find(|(l, _, _)| l == code)?.clone();
     s.others.insert(code.to_string(), Other::Loading);
     let code = code.to_string();
     let ctx = s.ctx.clone();
@@ -401,7 +463,7 @@ pub mod test {
         s.lang_changed = false;
         s.auto_changed = false;
         if s.lang != first {
-            s.dict = INSTALLED.iter().find(|(l, _, _)| *l == first).and_then(|(_, aff, dic)| Dictionary::load(aff, dic).ok()).map(Arc::new);
+            s.dict = installed().iter().find(|(l, _, _)| *l == first).and_then(|(_, aff, dic)| Dictionary::load(aff, dic).ok()).map(Arc::new);
             s.lang = first;
             s.loading = false;
         }
@@ -499,6 +561,10 @@ impl Dialog {
         egui::Window::new(title).id(egui::Id::new("spell_dialog")).open(&mut open).collapsible(false).resizable(false).default_width(460.0).default_pos(ctx.content_rect().right_top() + egui::vec2(-500.0, 130.0)).show_fit(ctx, |ui| {
             if self.done {
                 ui.label(tr(if ready() { "spell.complete" } else { "spell.no_dictionary" }));
+                if !ready() && !loading() {
+                    ui.label(egui::RichText::new(tr("spell.get_hint")).weak());
+                    ui.horizontal(|ui| get_dictionaries(ui));
+                }
                 ui.add_space(8.0);
                 if ui.button(tr("dialog.ok")).clicked() {
                     action = Some(Action::Close);
@@ -611,14 +677,32 @@ pub fn language_menu(ui: &mut egui::Ui) -> bool {
     let mut changed = false;
     let label = if cur.is_empty() { tr("spell.none_installed").to_string() } else { language_name(&cur) };
     egui::ComboBox::from_id_salt("spell_lang").selected_text(label).show_ui(ui, |ui| {
-        for l in languages() {
-            if ui.selectable_label(l == cur, format!("{} - {l}", language_name(l))).clicked() {
+        for l in &languages() {
+            if ui.selectable_label(*l == cur, format!("{} - {l}", language_name(l))).clicked() {
                 set_language(ui.ctx(), l);
                 changed = true;
             }
         }
     });
     changed
+}
+
+/// "Download dictionaries…" (LibreOffice's) and "Install dictionary…" (the
+/// file downloaded); true when one was clicked.
+pub fn get_dictionaries(ui: &mut egui::Ui) -> bool {
+    if cfg!(target_arch = "wasm32") {
+        return false;
+    }
+    let mut clicked = false;
+    if ui.button(format!("{}…", tr("spell.download"))).on_hover_text(install::DOWNLOAD_URL).clicked() {
+        crate::common::open_external(install::DOWNLOAD_URL);
+        clicked = true;
+    }
+    if ui.button(format!("{}…", tr("spell.install"))).on_hover_text(tr("spell.install_tip")).clicked() {
+        install::pick();
+        clicked = true;
+    }
+    clicked
 }
 
 /// Proofing items of the Review menus (`as_you_type`: the documents'
@@ -643,14 +727,19 @@ pub fn review_items(ui: &mut egui::Ui, as_you_type: bool, mut text_lang: Option<
             ui.separator();
             ui.weak(tr("lang.default_dict"));
         }
-        if INSTALLED.is_empty() {
+        let langs = languages();
+        if langs.is_empty() {
             ui.weak(tr("spell.none_installed"));
         }
-        for l in languages() {
-            if ui.radio(l == cur, format!("{} - {l}", language_name(l))).clicked() {
+        for l in &langs {
+            if ui.radio(*l == cur, format!("{} - {l}", language_name(l))).clicked() {
                 set_language(ui.ctx(), l);
                 ui.close();
             }
+        }
+        ui.separator();
+        if get_dictionaries(ui) {
+            ui.close();
         }
     });
     if toolstrip::small(ui, Some(Icon::Replace), &format!("{}…", tr("ac.title")), "", toolstrip::accent(), false).clicked() {
