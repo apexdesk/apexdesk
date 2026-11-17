@@ -16,7 +16,7 @@ impl App {
         for i in 0..self.tabs.len() {
             let id = self.tabs[i].id;
             let protected = self.is_protected(id);
-            let on = allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id) && !protected;
+            let on = allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id, &self.tabs) && !protected;
             let file_name = self.tabs[i].name();
             let file_path = self.tabs[i].path.as_ref().and_then(|p| p.parent()).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
             let View::Sheet(v) = &mut self.tabs[i].view else { continue };

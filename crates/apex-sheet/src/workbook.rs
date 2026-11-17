@@ -774,14 +774,15 @@ impl Workbook {
     }
 
     /// The sheets a reference reaches: one, or all of a 3D span.
-    fn resolve_span(&self, own: usize, s: &Option<Arc<str>>) -> std::ops::RangeInclusive<usize> {
+    /// No sheet when a name doesn't resolve (an empty range).
+    fn resolve_span(&self, own: usize, s: &Option<Arc<str>>) -> std::ops::Range<usize> {
         if let Some((a, b)) = s.as_deref().and_then(crate::formula::split_3d) {
             return match (self.sheet_index(a), self.sheet_index(b)) {
-                (Some(a), Some(b)) => a.min(b)..=a.max(b),
-                _ => 1..=0,
+                (Some(a), Some(b)) => a.min(b)..a.max(b) + 1,
+                _ => 0..0,
             };
         }
-        self.resolve(own, s).map_or(1..=0, |i| i..=i)
+        self.resolve(own, s).map_or(0..0, |i| i..i + 1)
     }
 
     fn resolve(&self, own: usize, s: &Option<Arc<str>>) -> Option<usize> {
@@ -2135,7 +2136,47 @@ impl Workbook {
                 (!ranges.is_empty()).then(|| Validation { ranges, ..v.clone() })
             })
             .collect();
-        Clip { rows: r.rows(), cols: r.cols(), origin: r.start, cells, styles, col_widths, row_heights, validations, source: None }
+        Clip { rows: r.rows(), cols: r.cols(), origin: r.start, cells, styles, col_widths, row_heights, validations, src_rows: Vec::new(), source: None }
+    }
+
+    /// Copies a block without the rows its sheet's filter hides, the rest
+    /// one under another: a copy of a filtered list is the list as shown.
+    /// Rows hidden by hand go along, as in `copy`.
+    pub fn copy_visible(&self, sheet: usize, r: &Range) -> Clip {
+        let mut clip = self.copy(sheet, r);
+        if self.sheets[sheet].filter.is_none() {
+            return clip;
+        }
+        let shown: Vec<u32> = (0..r.rows()).filter(|i| !self.filter_hides(sheet, r.start.row + i)).collect();
+        if shown.is_empty() || shown.len() as u32 == r.rows() {
+            return clip;
+        }
+        let place = |dr: u32| shown.binary_search(&dr).ok().map(|k| k as u32);
+        clip.cells.retain_mut(|(dr, _, _)| match place(*dr) {
+            Some(k) => {
+                *dr = k;
+                true
+            }
+            None => false,
+        });
+        clip.row_heights = clip.row_heights.iter().filter_map(|&(i, h)| place(i).map(|k| (k, h))).collect();
+        // The rules follow their rows: each range becomes the rows of it
+        // that are left, where they are now.
+        for v in &mut clip.validations {
+            v.ranges = v
+                .ranges
+                .iter()
+                .filter_map(|x| {
+                    let lo = shown.partition_point(|&i| r.start.row + i < x.start.row) as u32;
+                    let hi = shown.partition_point(|&i| r.start.row + i <= x.end.row) as u32;
+                    (lo < hi).then(|| Range::new(CellRef::new(r.start.row + lo, x.start.col), CellRef::new(r.start.row + hi - 1, x.end.col)))
+                })
+                .collect();
+        }
+        clip.validations.retain(|v| !v.ranges.is_empty());
+        clip.rows = shown.len() as u32;
+        clip.src_rows = shown;
+        clip
     }
 
     /// A clip copied in another workbook as one of this workbook: cell
@@ -2185,7 +2226,7 @@ impl Workbook {
         ids.sort_unstable();
         ids.dedup();
         let styles = ids.into_iter().map(|id| (id, self.styles.get(id).clone())).collect();
-        Clip { rows: rows.max(1), cols: cols.max(1), origin: CellRef::new(0, 0), cells, styles, col_widths, row_heights: Vec::new(), validations: Vec::new(), source: None }
+        Clip { rows: rows.max(1), cols: cols.max(1), origin: CellRef::new(0, 0), cells, styles, col_widths, row_heights: Vec::new(), validations: Vec::new(), src_rows: Vec::new(), source: None }
     }
 
     /// Pastes a clip at `at`, tiling it across `target` when it is a multiple.
@@ -2212,7 +2253,7 @@ impl Workbook {
                     let mut cell = cell.clone();
                     if let Content::Formula { expr, .. } = &mut cell.content {
                         let mut e = expr.expr().into_owned();
-                        e.offset(dst.row as i64 - (clip.origin.row + dr) as i64, dst.col as i64 - (clip.origin.col + dc) as i64);
+                        e.offset(dst.row as i64 - clip.src_row(*dr) as i64, dst.col as i64 - (clip.origin.col + dc) as i64);
                         *expr = e.into();
                     }
                     out.insert(dst, Some(cell));
@@ -2440,9 +2481,26 @@ pub struct Clip {
     /// The validation rules over its cells, their ranges cut to it (where
     /// they were in the sheet, like `origin`).
     pub validations: Vec<Validation>,
+    /// For a clip without the rows a filter hid (`Workbook::copy_visible`):
+    /// how far below `origin` each of its rows was. Empty when its rows
+    /// were one under another, as they are in the clip.
+    pub src_rows: Vec<u32>,
     /// The saved file and the sheet it was copied from, for Paste Link in
     /// another workbook (the program sets it; `copy` doesn't know files).
     pub source: Option<ClipSource>,
+}
+
+impl Clip {
+    /// The row of the sheet its row `dr` was copied from: relative
+    /// references of a pasted formula move from there.
+    pub fn src_row(&self, dr: u32) -> u32 {
+        self.origin.row + self.src_rows.get(dr as usize).copied().unwrap_or(dr)
+    }
+
+    /// The cells it was copied from, the rows a filter hid among them too.
+    pub fn source(&self) -> Range {
+        Range::new(self.origin, CellRef::new(self.src_row(self.rows.max(1) - 1), self.origin.col + self.cols.max(1) - 1))
+    }
 }
 
 /// Where the cells of a clip are.

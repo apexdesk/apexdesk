@@ -155,8 +155,9 @@ The open-source components it uses are listed in
   (Word 97-2003) — cells, formulas, styles, names, notes and links; text,
   formatting, lists, tables, pictures, notes, headers and footers — saved as
   another format. Encrypted binary files aren't supported.
-- **Languages**: English (default), Spanish, French, German, Italian and
-  Portuguese; more can be added without touching the code (see below).
+- **Languages**: English (default), Spanish, French, German, Italian,
+  Portuguese, Japanese, Korean and Chinese (simplified and traditional);
+  more can be added without touching the code (see below).
 
 ## Building
 
@@ -216,9 +217,10 @@ This makes `ApexDesk.app` for both Apple silicon and Intel, signed ad hoc
 (the first time, open it with right click → Open). `APEXDESK_SIGN_ID` signs
 with a Developer ID instead.
 
-Files dropped on the window open as tabs. Opening a file from the Finder
-(double click or **Open with**) starts ApexDesk but does not yet pass it the
-file: winit does not receive macOS's "open documents" events.
+Files dropped on the window open as tabs, and so do files opened from the
+Finder (double click or **Open with**) or dropped on the Dock icon: macOS
+sends them as "open documents" events, which `crates/apex-app/src/finder.rs`
+takes for winit's application delegate.
 
 ## Command line and terminal
 
@@ -299,10 +301,10 @@ server.
 ## Adding a language
 
 Translations live in `crates/apex-app/i18n/<code>.txt`, one `key = text` per
-line. Copy `en.txt` to e.g. `fr.txt`, set `lang.name = Français` and translate
-the texts; keys you leave out fall back to English. The build embeds every
-file in that folder automatically, and the new language appears under
-**View → Language**. `cargo test -p apex-app` checks that all keys exist.
+line. Copy `en.txt` to e.g. `nl.txt`, set `lang.name = Nederlands` and
+translate the texts; keys you leave out fall back to English. The build embeds
+every file in that folder automatically, and the new language appears under
+**File → Options → General → Language**. `cargo test -p apex-app` checks that all keys exist.
 
 ## Testing the UI
 

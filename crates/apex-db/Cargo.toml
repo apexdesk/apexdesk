@@ -18,4 +18,4 @@ web-time.workspace = true
 encoding_rs = "0.8"
 # Attachments of Access 2007+ are stored deflated (zlib).
 miniz_oxide = "0.9"
-rusqlite = { version = "0.40", features = ["bundled", "column_decltype", "backup", "hooks", "limits"], optional = true }
+rusqlite = { version = "0.43", features = ["bundled", "column_decltype", "backup", "hooks", "limits"], optional = true }

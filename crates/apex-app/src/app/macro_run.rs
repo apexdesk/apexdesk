@@ -160,6 +160,73 @@ struct Enabled {
     project: usize,
     /// The procedures that may handle events (lower case).
     handlers: Vec<String>,
+    /// The code the user enabled, and what they wrote since (see
+    /// [`code_hash`]). Other code is not enabled, however it got there: an
+    /// assistant wrote it, or undo or redo brought it back.
+    approved: Vec<[u8; 32]>,
+    /// The project last found approved (hashing it again is the slow part).
+    checked: std::cell::RefCell<std::sync::Weak<Vec<u8>>>,
+}
+
+impl Enabled {
+    fn new(bin: &Arc<Vec<u8>>, handlers: Vec<String>) -> Enabled {
+        Enabled { events: true, project: Arc::as_ptr(bin) as usize, handlers, approved: vec![code_hash(bin)], checked: std::cell::RefCell::new(Arc::downgrade(bin)) }
+    }
+
+    /// Whether `bin` is code the user enabled or wrote.
+    fn approves(&self, bin: Option<&Arc<Vec<u8>>>) -> bool {
+        let Some(bin) = bin else { return false };
+        if self.checked.borrow().upgrade().is_some_and(|c| Arc::ptr_eq(&c, bin)) {
+            return true;
+        }
+        let ok = self.approved.contains(&code_hash(bin));
+        if ok {
+            *self.checked.borrow_mut() = Arc::downgrade(bin);
+        }
+        ok
+    }
+}
+
+/// What enabling a project vouches for: its modules (names, kinds,
+/// attributes and code) and its forms' designs. A signature or the
+/// project's other streams don't count; a project that can't be read (or
+/// is locked, its code maybe hidden) counts as its bytes.
+fn code_hash(bin: &[u8]) -> [u8; 32] {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    let mut field = |b: &[u8]| {
+        h.update((b.len() as u64).to_le_bytes());
+        h.update(b);
+    };
+    match apex_io::vba::read(bin) {
+        Ok(p) if !p.protected => {
+            for (i, m) in p.modules.iter().enumerate() {
+                let kind = match m.kind {
+                    apex_io::vba::ModuleKind::Standard => b"s",
+                    apex_io::vba::ModuleKind::Class => b"c",
+                    apex_io::vba::ModuleKind::Document => b"d",
+                    apex_io::vba::ModuleKind::Form => b"f",
+                };
+                field(kind);
+                field(m.name.as_bytes());
+                field(m.attributes.as_bytes());
+                field(m.code.as_bytes());
+                if let Some(streams) = p.form_streams(i) {
+                    let mut names: Vec<&String> = streams.keys().collect();
+                    names.sort();
+                    for n in names {
+                        field(n.as_bytes());
+                        field(&streams[n]);
+                    }
+                }
+            }
+        }
+        _ => {
+            field(b"raw");
+            field(bin);
+        }
+    }
+    h.finalize().into()
 }
 
 #[derive(Default)]
@@ -213,9 +280,32 @@ pub(super) struct MacroRun {
 }
 
 impl MacroRun {
-    /// Whether the macros of tab `id` were enabled.
-    pub(super) fn is_enabled(&self, id: u64) -> bool {
-        self.enabled.contains_key(&id)
+    /// Whether the macros of tab `id` were enabled, for the code it has
+    /// now.
+    pub(super) fn is_enabled(&self, id: u64, tabs: &[super::Tab]) -> bool {
+        let Some(en) = self.enabled.get(&id) else { return false };
+        en.approves(tabs.iter().find(|t| t.id == id).and_then(|t| macro_project(&t.view)))
+    }
+
+    /// The user changed the code of tab `id` (the editor, the recorder,
+    /// Macro Options), which was enabled before (`was`, from
+    /// [`Self::is_enabled`]): the code it has now stays enabled. Code not
+    /// enabled before isn't by being changed.
+    pub(super) fn approve(&mut self, id: u64, tabs: &[super::Tab], was: bool) {
+        if !was {
+            return;
+        }
+        let Some(bin) = tabs.iter().find(|t| t.id == id).and_then(|t| macro_project(&t.view)) else { return };
+        if let Some(en) = self.enabled.get_mut(&id) {
+            let hash = code_hash(bin);
+            if !en.approved.contains(&hash) {
+                // Bounded: a long session of edits keeps its latest.
+                if en.approved.len() >= 64 {
+                    en.approved.remove(1);
+                }
+                en.approved.push(hash);
+            }
+        }
     }
 
     /// Whether events fire for tab `id`, as a macro left it.
@@ -755,6 +845,57 @@ fn signed_macros(macros: &apex_doc::Macros, publishers: &[String]) -> bool {
     ok
 }
 
+/// Tells the interpreter which files are the program's own, never for
+/// macros to read or change: the settings folder (with the personal macro
+/// workbook, recovery copies and templates), a portable copy's data, the
+/// add-ins and the policy files.
+pub(super) fn protect_own_files(settings: &crate::settings::Settings) {
+    let mut own: Vec<PathBuf> = crate::settings::config_dir().into_iter().collect();
+    own.extend(crate::portable::data_dir());
+    own.extend(library::personal_path());
+    own.extend(settings.addins.iter().cloned());
+    own.extend(std::env::var_os("APEXDESK_POLICY").map(PathBuf::from));
+    if cfg!(all(unix, not(target_os = "macos"))) {
+        own.push(PathBuf::from("/etc/apexdesk"));
+    }
+    apex_vba::files::protect(own);
+}
+
+/// What the `MacroRevocation` policy says of a signed project.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum RevocationCheck {
+    /// Not revoked, or nothing to ask (the policy is off, the publisher is
+    /// trusted by name, the certificate is self-signed).
+    Pass,
+    /// No answer, and the policy lets it run anyway.
+    Unchecked,
+    /// No answer, and the policy requires one.
+    Required,
+    /// The certificate of this signer was revoked.
+    Revoked(String),
+}
+
+/// Under "signed only", before signed code becomes runnable (enabled in
+/// the window, run by `run-macro` or the API, loaded as a library):
+/// whether the certificate it is trusted through was revoked, under
+/// policy `mode` (`check`, `off`, `require`; see `revocation`).
+pub(super) fn revocation_check(mode: &str, publishers: &[String], macros: &apex_doc::Macros) -> RevocationCheck {
+    if mode == "off" {
+        return RevocationCheck::Pass;
+    }
+    let signers = macro_signers(macros);
+    if signers.iter().any(|s| s.is_trusted_with(publishers, true)) {
+        return RevocationCheck::Pass;
+    }
+    let Some(s) = signers.iter().find(|s| s.is_trusted() && !s.cert.self_issued()) else { return RevocationCheck::Pass };
+    match revocation::verdict(&s.chain) {
+        revocation::Verdict::Good => RevocationCheck::Pass,
+        revocation::Verdict::Revoked => RevocationCheck::Revoked(s.cert.subject.display()),
+        revocation::Verdict::NoAnswer if mode == "require" => RevocationCheck::Required,
+        revocation::Verdict::NoAnswer => RevocationCheck::Unchecked,
+    }
+}
+
 /// The system's dialog for what a macro asks to pick.
 fn picker(pick: &apex_vba::files::FilePick) -> crate::file_dialog::FileDialog {
     let mut dlg = crate::file_dialog::FileDialog::new();
@@ -815,7 +956,7 @@ impl App {
         if let View::Doc(v) = &self.tabs[idx].view {
             let Some(bin) = v.doc.macros.project.clone() else { return };
             let project = parse(&bin).ok();
-            self.macro_run.enabled.insert(id, Enabled { events: true, project: Arc::as_ptr(&bin) as usize, handlers: Vec::new() });
+            self.macro_run.enabled.insert(id, Enabled::new(&bin, Vec::new()));
             let (event, entry) = if self.macro_run.made_new.remove(&id) { ("New", Entry::New) } else { ("Open", Entry::Open) };
             if project.is_some_and(|p| apex_vba::doc_handler(&p, event).is_some()) {
                 self.macro_run.queue = Some((id, entry));
@@ -827,7 +968,7 @@ impl App {
         self.macro_run.seen.insert(id, v.wb.edits);
         let project = parse(&bin).ok();
         let handlers = project.as_ref().map(Project::event_names).unwrap_or_default();
-        self.macro_run.enabled.insert(id, Enabled { events: true, project: Arc::as_ptr(&bin) as usize, handlers });
+        self.macro_run.enabled.insert(id, Enabled::new(&bin, handlers));
         self.events_settled(id);
         if project.is_some_and(|p| p.has_open_handler()) {
             self.macro_run.queue = Some((id, Entry::Open));
@@ -839,8 +980,7 @@ impl App {
     /// Publishers trusted by name and self-signed certificates aren't
     /// asked about.
     fn revocation_allows(&mut self, id: u64) -> bool {
-        let mode = self.settings.macro_revocation.as_str();
-        if !self.settings.macros_signed_only || mode == "off" {
+        if !self.settings.macros_signed_only {
             return true;
         }
         let Some(macros) = self.tabs.iter().find(|t| t.id == id).and_then(|t| match &t.view {
@@ -850,26 +990,36 @@ impl App {
         }) else {
             return true;
         };
-        let signers = macro_signers(macros);
-        if signers.iter().any(|s| s.is_trusted_with(&self.settings.trusted_publishers, true)) {
-            return true;
-        }
-        let Some(s) = signers.iter().find(|s| s.is_trusted() && !s.cert.self_issued()) else { return true };
-        match revocation::verdict(&s.chain) {
-            revocation::Verdict::Good => true,
-            revocation::Verdict::Revoked => {
-                self.notify(Notice::error(trf("macros.revoked", &[("name", &s.cert.subject.display())])));
+        match revocation_check(&self.settings.macro_revocation, &self.settings.trusted_publishers, macros) {
+            RevocationCheck::Pass => true,
+            RevocationCheck::Revoked(name) => {
+                self.notify(Notice::error(trf("macros.revoked", &[("name", &name)])));
                 false
             }
-            revocation::Verdict::NoAnswer if mode == "require" => {
+            RevocationCheck::Required => {
                 self.notify(Notice::error(tr("macros.revocation_required")));
                 false
             }
-            revocation::Verdict::NoAnswer => {
+            RevocationCheck::Unchecked => {
                 self.notify(Notice::info(tr("macros.revocation_unchecked")));
                 true
             }
         }
+    }
+
+    /// Whether a queued run of tab `id` may start now: a macro of the
+    /// personal workbook or an add-in, or code of a workbook or document
+    /// whose macros are enabled for the code it has now.
+    fn may_start(&mut self, id: u64, entry: &Entry) -> bool {
+        let library = match entry {
+            Entry::Macro(n) | Entry::Call(n, _) | Entry::Step(n) => self.is_library_macro(id, n),
+            _ => false,
+        };
+        let Some(t) = self.tabs.iter().find(|t| t.id == id) else { return false };
+        if library || !matches!(t.view, View::Sheet(_) | View::Doc(_)) {
+            return true;
+        }
+        !self.is_protected(id) && allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id, &self.tabs)
     }
 
     /// Developer > Macros (Alt+F8): the macros of the active workbook.
@@ -922,7 +1072,7 @@ impl App {
         if name.contains('!') {
             return Err("only the file's own macros can be run".into());
         }
-        if !(allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id)) {
+        if !(allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id, &self.tabs)) {
             return Err("this file's macros aren't enabled: the user must enable them in ApexDesk first (the macro bar)".into());
         }
         if self.macro_run.job.is_some() || self.macro_run.queue.is_some() || self.macro_run.consent.is_some() {
@@ -937,6 +1087,15 @@ impl App {
         self.macro_run.queue = None;
     }
 
+    /// Whether the queued run would start now.
+    #[cfg(test)]
+    pub(super) fn queued_may_start_for_test(&mut self) -> Option<bool> {
+        let (id, entry) = self.macro_run.queue.take()?;
+        let ok = self.may_start(id, &entry);
+        self.macro_run.queue = Some((id, entry));
+        Some(ok)
+    }
+
     fn request_run(&mut self, id: u64, entry: Entry) {
         if self.is_protected(id) {
             self.notify(Notice::info(tr("protected.macros")));
@@ -949,7 +1108,7 @@ impl App {
             Entry::Macro(n) | Entry::Call(n, _) => self.is_library_macro(id, n),
             _ => false,
         };
-        if library || (allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id)) {
+        if library || (allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id, &self.tabs)) {
             self.macro_run.queue = Some((id, entry));
         } else {
             self.macro_run.consent = Some((id, entry));
@@ -977,11 +1136,23 @@ impl App {
             self.sheet_events(ctx);
             self.macro_timers(ctx);
             if let Some((id, entry)) = self.macro_run.queue.take() {
-                self.start_macro(ctx, id, entry, None);
+                // The code may have changed since this was asked for (an
+                // assistant wrote other code meanwhile): it runs only if
+                // still enabled, else the user is asked.
+                if self.may_start(id, &entry) {
+                    self.start_macro(ctx, id, entry, None);
+                } else if !matches!(entry, Entry::Events(_)) {
+                    self.macro_run.consent = Some((id, entry));
+                }
             } else if self.macro_run.consent.is_none()
                 && let Some((id, entry, after)) = self.next_events()
             {
-                self.start_macro(ctx, id, entry, after);
+                if self.may_start(id, &entry) {
+                    self.start_macro(ctx, id, entry, after);
+                } else if let Some(after) = after {
+                    // Handlers no longer enabled: what the user did goes on.
+                    self.event_after(id, after);
+                }
             }
         }
         self.poll_macro();
@@ -998,6 +1169,7 @@ impl App {
 
     fn start_macro(&mut self, ctx: &egui::Context, id: u64, entry: Entry, after: Option<events::After>) {
         let Some(idx) = self.tabs.iter().position(|t| t.id == id) else { return };
+        protect_own_files(&self.settings);
         if matches!(self.tabs[idx].view, View::Doc(_)) {
             return self.start_doc_macro(ctx, idx, entry);
         }

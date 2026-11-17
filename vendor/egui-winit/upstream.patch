@@ -1,0 +1,62 @@
+--- a/src/clipboard.rs
++++ b/src/clipboard.rs
+@@ -1,5 +1,10 @@
+ use raw_window_handle::RawDisplayHandle;
+ 
++/// ApexDesk patch: on Android the program hands in the system clipboard
++/// (read, write), reached through Java, which this crate doesn't do.
++#[cfg(target_os = "android")]
++pub static ANDROID: std::sync::OnceLock<(fn() -> Option<String>, fn(&str))> = std::sync::OnceLock::new();
++
+ /// Handles interfacing with the OS clipboard.
+ ///
+ /// If the "clipboard" feature is off, or we cannot connect to the OS clipboard,
+@@ -87,6 +92,14 @@
+             };
+         }
+ 
++        // ApexDesk patch: the system clipboard on Android.
++        #[cfg(target_os = "android")]
++        if let Some((get, _)) = ANDROID.get()
++            && let Some(text) = get()
++        {
++            return Some(text);
++        }
++
+         Some(self.clipboard.clone())
+     }
+ 
+@@ -117,6 +130,12 @@
+             return;
+         }
+ 
++        // ApexDesk patch: the system clipboard on Android.
++        #[cfg(target_os = "android")]
++        if let Some((_, set)) = ANDROID.get() {
++            set(&text);
++        }
++
+         self.clipboard = text;
+     }
+ 
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -2155,6 +2155,18 @@
+         window_attributes = window_attributes.with_name(app_id, "");
+     }
+ 
++    // ApexDesk patch: the first window shows with the token its launcher
++    // (a dock, a file manager) handed over, which tells the desktop the
++    // program has started. Without it the desktop waits for a timeout and,
++    // meanwhile, ignores clicks on the program's icon.
++    #[cfg(all(any(feature = "wayland", feature = "x11"), target_os = "linux"))]
++    if let Some(token) = std::env::var("XDG_ACTIVATION_TOKEN").or_else(|_| std::env::var("DESKTOP_STARTUP_ID")).ok().filter(|t| !t.is_empty()) {
++        use winit::platform::startup_notify::WindowAttributesExtStartupNotify as _;
++        window_attributes = window_attributes.with_activation_token(winit::window::ActivationToken::from_raw(token));
++        // Used once: not by a later window, nor by a program started from here.
++        winit::platform::startup_notify::reset_activation_token_env();
++    }
++
+     #[cfg(all(feature = "x11", target_os = "linux"))]
+     {
+         use winit::platform::x11::WindowAttributesExtX11 as _;

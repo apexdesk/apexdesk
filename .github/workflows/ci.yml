@@ -33,7 +33,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
       # Some tests lay out pages with the system's fonts and play media
       # with its GStreamer, as on a desktop.
@@ -41,7 +43,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev fonts-dejavu fonts-liberation fonts-noto-core \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
-      - run: cargo test --workspace --no-fail-fast
+      - run: cargo test --workspace --locked --no-fail-fast
+
+  # Lints (warnings are reported, lints at deny level fail), the
+  # dependencies (vulnerabilities, licenses, sources, yanked crates) and
+  # the version written by hand in the packaging files.
+  checks:
+    name: Clippy, cargo deny, versions
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: scripts/check-version.sh
+      - run: cargo clippy --workspace --locked
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
 
   # Macros, their signatures and the command line behave differently by
   # system (paths, the certificate store): their tests run on all three.
@@ -54,11 +76,13 @@ jobs:
         os: [macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --no-fail-fast -p apex-vba -p apex-sign
-      - run: cargo test --no-fail-fast -p apex-app --test cli
-      - run: cargo test --no-fail-fast -p apex-app --bin apexdesk -- macro
+      - run: cargo test --locked --no-fail-fast -p apex-vba -p apex-sign
+      - run: cargo test --locked --no-fail-fast -p apex-app --test cli
+      - run: cargo test --locked --no-fail-fast -p apex-app --bin apexdesk -- macro
 
   linux:
     name: Linux ${{ matrix.arch }}
@@ -71,7 +95,9 @@ jobs:
           - { arch: aarch64, runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
       - uses: mlugg/setup-zig@v2
         with:
@@ -102,8 +128,9 @@ jobs:
         arch: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.97.1"
           targets: ${{ matrix.arch }}-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - name: Build
@@ -112,7 +139,7 @@ jobs:
           # rc.exe, from the Windows SDK, gives the program its icon.
           $rc = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\rc.exe" | Sort-Object FullName | Select-Object -Last 1
           if ($rc) { $env:RC = $rc.FullName }
-          cargo build --release -p apex-app --target ${{ matrix.arch }}-pc-windows-msvc
+          cargo build --release --locked -p apex-app --target ${{ matrix.arch }}-pc-windows-msvc
       - name: Zip
         shell: pwsh
         run: |
@@ -140,7 +167,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
       - name: Tools
         shell: pwsh
@@ -167,8 +196,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.97.1"
           targets: aarch64-apple-darwin, x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
       - run: packaging/macos/build.sh
@@ -182,8 +212,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.97.1"
           targets: aarch64-linux-android, armv7-linux-androideabi
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-java@v4
@@ -195,7 +226,9 @@ jobs:
           mkdir -p ~/.android
           keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -keypass android \
             -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-      - run: packaging/android/apk.sh
+      # No release key in CI: the APK is signed with the debug key made
+      # above, for trying out (apk.sh refuses it without --debug).
+      - run: packaging/android/apk.sh --debug
       - uses: actions/upload-artifact@v4
         with:
           name: android
@@ -208,8 +241,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.97.1"
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-noto-core fonts-dejavu-core
@@ -236,6 +270,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # One list of SHA-256 sums for everything released (the scripts'
+      # own .sha256 files aren't uploaded: this covers them all).
+      - run: cd dist && rm -f ./*.sha256 && sha256sum -- * > SHA256SUMS
       - env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --draft --title "$GITHUB_REF_NAME" --generate-notes

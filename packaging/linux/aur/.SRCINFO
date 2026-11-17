@@ -1,6 +1,6 @@
 pkgbase = apexdesk-bin
 	pkgdesc = Free office suite: documents, spreadsheets, presentations, PDF, databases and notebooks
-	pkgver = 1.2.0
+	pkgver = 1.2.1
 	pkgrel = 1
 	url = https://apexdesk.github.io/
 	arch = x86_64
@@ -27,7 +27,7 @@ pkgbase = apexdesk-bin
 	conflicts = apexdesk
 	options = !strip
 	options = !debug
-	source = https://github.com/apexdesk/apexdesk/releases/download/v1.2.0/apexdesk-1.2.0-linux-x86_64-portable.tar.gz
+	source = https://github.com/apexdesk/apexdesk/releases/download/v1.2.1/apexdesk-1.2.1-linux-x86_64-portable.tar.gz
 	source = apexdesk.desktop
 	source = apexdesk-mime.xml
 	source = apexdesk.svg

@@ -149,7 +149,7 @@ pub fn read(data: &[u8], delim: Option<u8>) -> Workbook {
         Ok(s) if !s.starts_with('\u{feff}') => Cow::Borrowed(s),
         _ => Cow::Owned(crate::decode_text(data)),
     };
-    let mut l = Loader::new(delim.unwrap_or_else(|| detect_delimiter(&text)));
+    let mut l = Loader::new(delim.unwrap_or_else(|| detect_delimiter(&text)), &text);
     l.records(&text, true);
     l.finish()
 }
@@ -184,7 +184,7 @@ fn read_pieces(mut file: impl std::io::Read, delim: Option<u8>, piece: u64) -> s
             Ok(t) if loader.is_some() || !t.starts_with('\u{feff}') => t,
             _ => return Ok(None),
         };
-        let l = loader.get_or_insert_with(|| Loader::new(delim.unwrap_or_else(|| detect_delimiter(text))));
+        let l = loader.get_or_insert_with(|| Loader::new(delim.unwrap_or_else(|| detect_delimiter(text)), text));
         match l.records(text, eof) {
             Some(used) if !eof => {
                 buf.drain(..used);
@@ -192,7 +192,57 @@ fn read_pieces(mut file: impl std::io::Read, delim: Option<u8>, piece: u64) -> s
             _ => break,
         }
     }
-    Ok(Some(loader.unwrap_or_else(|| Loader::new(delim.unwrap_or(b','))).finish()))
+    Ok(Some(loader.unwrap_or_else(|| Loader::new(delim.unwrap_or(b','), "")).finish()))
+}
+
+/// Whether `f`, when it is a plain number (digits with a sign and a
+/// decimal mark), is still the same once read as one: not with zeros in
+/// front (`08001`, `-007`) nor with over 15 significant digits.
+fn number_keeps(f: &str, decimal: char) -> bool {
+    let digits = f.strip_prefix(['-', '+']).unwrap_or(f);
+    let (int, frac) = digits.split_once(decimal).unwrap_or((digits, ""));
+    if int.is_empty() || !int.bytes().all(|b| b.is_ascii_digit()) || !frac.bytes().all(|b| b.is_ascii_digit()) {
+        return true;
+    }
+    if int.len() > 1 && int.starts_with('0') {
+        return false;
+    }
+    // Past 15 digits before the point a number is written with an exponent.
+    let (int, frac) = (int.trim_start_matches('0'), frac.trim_end_matches('0'));
+    let significant = if int.is_empty() { frac.trim_start_matches('0').len() } else { int.len() + frac.len() };
+    int.len() <= 15 && significant <= 15
+}
+
+/// The order of the dates of a CSV file when its first lines settle it:
+/// day first when some date has a day past 12 in front (`25/03/2026`),
+/// month first when one has it second. `None` when nothing tells, or
+/// when the file has both.
+fn date_order(sample: &str, delim: u8) -> Option<apex_sheet::format::DateOrder> {
+    use apex_sheet::format::DateOrder;
+    let (mut dmy, mut mdy) = (false, false);
+    for line in sample.lines().take(1000) {
+        for f in line.split(delim as char) {
+            let f = f.trim().trim_matches('"');
+            let Some(sep) = f.chars().find(|c| matches!(c, '/' | '-' | '.')) else { continue };
+            let parts: Vec<&str> = f.split(sep).collect();
+            // `1.5` and `3-4` are numbers or text; `3/4` is a date.
+            let enough = if sep == '/' { (2..=3).contains(&parts.len()) } else { parts.len() == 3 };
+            if !enough || !parts.iter().all(|p| !p.is_empty() && p.len() <= 4 && p.bytes().all(|b| b.is_ascii_digit())) {
+                continue;
+            }
+            let (Ok(a), Ok(b)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) else { continue };
+            if parts[0].len() > 2 || parts[1].len() > 2 || a == 0 || b == 0 {
+                continue;
+            }
+            dmy |= a > 12 && a <= 31 && b <= 12;
+            mdy |= b > 12 && b <= 31 && a <= 12;
+        }
+    }
+    match (dmy, mdy) {
+        (true, false) => Some(DateOrder::Dmy),
+        (false, true) => Some(DateOrder::Mdy),
+        _ => None,
+    }
 }
 
 /// A workbook being filled with the records of a CSV file.
@@ -207,11 +257,16 @@ struct Loader {
 }
 
 impl Loader {
-    fn new(delim: u8) -> Loader {
+    /// `sample`: the start of the file, to tell the order of its dates.
+    fn new(delim: u8, sample: &str) -> Loader {
         let mut wb = Workbook::empty();
-        let locale = wb.locale;
-        // Semicolon CSVs come from comma-decimal locales.
-        let locale = if delim == b';' { Locale::ES } else if delim == b',' && locale.decimal == ',' { Locale::EN } else { locale };
+        let system = wb.locale;
+        // Semicolon CSVs come from comma-decimal locales, and a comma
+        // separated file can't have decimal commas. That says nothing of
+        // its dates: they keep the system's order unless the file shows
+        // another (a 25/03 can only be day first).
+        let mut locale = if delim == b';' { Locale::ES } else if delim == b',' && system.decimal == ',' { Locale::EN } else { system };
+        locale.date_order = date_order(sample, delim).unwrap_or(system.date_order);
         wb.sheets.push(apex_sheet::Sheet::new("Sheet1"));
         Loader { wb, delim, locale, formats: Default::default(), texts: Default::default(), row: 0 }
     }
@@ -237,7 +292,10 @@ impl Loader {
             }
             // A leading apostrophe is text in a file (as in Excel and
             // LibreOffice), not the "keep as text" mark of cell input.
-            if f.starts_with('\'') {
+            // So is a number that would come out changed: codes with
+            // leading zeros (`08001`) and more digits than a number keeps
+            // (account and card numbers).
+            if f.starts_with('\'') || !number_keeps(f, self.locale.decimal) {
                 wb.load_cell(0, CellRef::new(r, c as u32), Content::Value(self.texts.text(f)), 0);
                 continue;
             }
@@ -363,6 +421,38 @@ mod tests {
         assert!(out.starts_with("'="), "{out}");
         assert_eq!(guard_formula("\t=1+2"), "'\t=1+2");
         assert_eq!(guard_formula("\r@SUM(A1)"), "'\r@SUM(A1)");
+    }
+
+    /// The separator says how numbers are written, not how dates are:
+    /// those follow what the file shows.
+    #[test]
+    fn date_order_from_the_data() {
+        let serial = |y, m, d| Value::Number(apex_sheet::format::date_to_serial(y, m, d));
+        let wb = read(b"id,date\n1,03/04/2026\n2,25/12/2026\n", None);
+        assert_eq!(wb.sheets[0].value(CellRef::new(1, 1)), &serial(2026, 4, 3));
+        let wb = read(b"id;date\n1;03/04/2026\n2;12/25/2026\n", None);
+        assert_eq!(wb.sheets[0].value(CellRef::new(1, 1)), &serial(2026, 3, 4));
+        assert_eq!(date_order("a,b\n1.5,3-4\n", b','), None);
+        assert_eq!(date_order("13/12/2026,12/13/2026", b','), None);
+        // Nothing settles it: the system's order.
+        let wb = read(b"id,date\n1,03/04/2026\n", None);
+        let system = Workbook::empty().locale.date_order;
+        let want = if system == apex_sheet::format::DateOrder::Mdy { serial(2026, 3, 4) } else { serial(2026, 4, 3) };
+        assert_eq!(wb.sheets[0].value(CellRef::new(1, 1)), &want);
+    }
+
+    /// Opening a CSV file and saving it gives back what it had.
+    #[test]
+    fn numbers_that_would_change_stay_text() {
+        let src = "cp,iban,n\r\n08001,12345678901234567890,1234567890123456\r\n-007,4111111111111111,123456789012345\r\n00,0.5,12.25\r\n";
+        let mut wb = read(src.as_bytes(), Some(b','));
+        wb.locale = Locale::EN;
+        assert_eq!(wb.sheets[0].value(CellRef::new(1, 0)), &Value::text("08001"));
+        assert_eq!(wb.sheets[0].value(CellRef::new(2, 2)), &Value::Number(123456789012345.0));
+        assert_eq!(wb.sheets[0].value(CellRef::new(3, 1)), &Value::Number(0.5));
+        assert_eq!(write(&wb, 0, Some(',')), src);
+        assert!(number_keeps("0", '.') && number_keeps("0.001", '.') && number_keeps("1,000", '.') && number_keeps("abc", '.'));
+        assert!(!number_keeps("0,1234567890123456", ',') && !number_keeps("000.25", '.'));
     }
 
     #[test]

@@ -27,7 +27,7 @@ if ! command -v llvm-lib >/dev/null 2>&1; then
     [ -n "$llvm" ] && PATH=$llvm:$PATH && export PATH
 fi
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-XWIN_ACCEPT_LICENSE=${XWIN_ACCEPT_LICENSE:-1} cargo xwin build --release -p apex-app --target $target
+XWIN_ACCEPT_LICENSE=${XWIN_ACCEPT_LICENSE:-1} cargo xwin build --release --locked -p apex-app --target $target
 
 name=apexdesk-$version-windows-x86_64
 stage=$root/target/$target/$name
@@ -38,6 +38,7 @@ cp "$here/README.txt" "$stage/"
 cp "$root/THIRD-PARTY-NOTICES.md" "$root/LICENSE" "$root/EULA.md" "$root/EULA.es.md" "$stage/"
 rm -f "$root/dist/$name.zip"
 (cd "$stage/.." && zip -qr9 "$root/dist/$name.zip" "$name")
+"$root/scripts/sha256.sh" "$root/dist/$name.zip"
 echo "dist/$name.zip"
 
 # The portable copy: the same program with a "portable" marker, so its
@@ -47,4 +48,5 @@ rm -rf "$stage/../$pname" "$root/dist/$pname.zip"
 cp -r "$stage" "$stage/../$pname"
 printf 'ApexDesk keeps its settings and data in the "data" folder here.\r\n' > "$stage/../$pname/portable"
 (cd "$stage/.." && zip -qr9 "$root/dist/$pname.zip" "$pname")
+"$root/scripts/sha256.sh" "$root/dist/$pname.zip"
 echo "dist/$pname.zip"

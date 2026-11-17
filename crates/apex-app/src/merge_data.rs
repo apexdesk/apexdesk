@@ -94,6 +94,9 @@ pub fn parse_database(s: &str, sql: &str) -> Result<Source, String> {
         None => (String::new(), rest),
     };
     let (addr, database) = rest.split_once('/').unwrap_or((rest, ""));
+    // Encrypted unless asked otherwise (`?tls=off`).
+    let (database, options) = database.split_once('?').unwrap_or((database, ""));
+    let tls = !options.split('&').any(|o| matches!(o.to_ascii_lowercase().as_str(), "tls=off" | "tls=0" | "tls=false" | "sslmode=disable"));
     let (host, port) = match addr.rsplit_once(':') {
         Some((h, p)) => (h, p.parse().map_err(|_| format!("{s}: bad port"))?),
         None => (addr, kind.default_port()),
@@ -101,7 +104,7 @@ pub fn parse_database(s: &str, sql: &str) -> Result<Source, String> {
     if host.is_empty() {
         return Err(format!("{s}: no server"));
     }
-    Ok(Source::Database { kind, host: host.to_string(), port, database: database.to_string(), user, sql: sql.to_string(), tls: false })
+    Ok(Source::Database { kind, host: host.to_string(), port, database: database.to_string(), user, sql: sql.to_string(), tls })
 }
 
 #[cfg(test)]
@@ -112,7 +115,8 @@ mod tests {
     fn database_names() {
         assert_eq!(parse_database("clients.db", "t").unwrap(), Source::Sqlite { path: "clients.db".into(), sql: "t".into() });
         let s = parse_database("sqlserver://ana@sql.local/crm", "Clients").unwrap();
-        assert_eq!(s, Source::Database { kind: DbKind::SqlServer, host: "sql.local".into(), port: 1433, database: "crm".into(), user: "ana".into(), sql: "Clients".into(), tls: false });
+        assert_eq!(s, Source::Database { kind: DbKind::SqlServer, host: "sql.local".into(), port: 1433, database: "crm".into(), user: "ana".into(), sql: "Clients".into(), tls: true });
+        assert!(matches!(parse_database("postgres://h/x?tls=off", "").unwrap(), Source::Database { tls: false, ref database, .. } if database == "x"));
         let s = parse_database("postgres://h:6543/x", "").unwrap();
         assert!(matches!(s, Source::Database { kind: DbKind::Postgres, port: 6543, .. }));
         assert!(parse_database("oracle://h/x", "").is_err());

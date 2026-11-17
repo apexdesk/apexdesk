@@ -1094,6 +1094,22 @@ pub(crate) fn map2(a: Value, b: Value, f: impl Fn(Value, Value) -> Value) -> Val
     Value::Array(Arc::new(Matrix::new(rows, cols, data)))
 }
 
+/// Orders two numbers as the comparison operators do: on their first 15
+/// significant digits, as Excel does, so 0.1+0.2=0.3 is TRUE. Sorting and
+/// lookups keep the exact order (a tolerance is not transitive).
+pub(crate) fn cmp_sig15(x: f64, y: f64) -> Ordering {
+    if x == y {
+        return Ordering::Equal;
+    }
+    // Only numbers this close can agree in 15 digits; the rest skip the
+    // rounding.
+    if x.is_finite() && y.is_finite() && (x - y).abs() <= x.abs().max(y.abs()) * 1e-14 {
+        let sig15 = |v: f64| format!("{:.14e}", v).parse::<f64>().unwrap_or(v);
+        return sig15(x).partial_cmp(&sig15(y)).unwrap_or(Ordering::Equal);
+    }
+    x.partial_cmp(&y).unwrap_or(Ordering::Equal)
+}
+
 fn binop(op: BinOp, a: Value, b: Value) -> Value {
     if let Value::Error(k) = a {
         return Value::Error(k);
@@ -1120,7 +1136,10 @@ fn binop(op: BinOp, a: Value, b: Value) -> Value {
             // Compare: empty behaves as 0 vs numbers and "" vs text.
             let a = if matches!(a, Value::Empty) && matches!(b, Value::Text(_)) { Value::text("") } else { a };
             let b = if matches!(b, Value::Empty) && matches!(a, Value::Text(_)) { Value::text("") } else { b };
-            let ord = a.compare(&b);
+            let ord = match (&a, &b) {
+                (Value::Number(x), Value::Number(y)) => cmp_sig15(*x, *y),
+                _ => a.compare(&b),
+            };
             Value::Bool(match op {
                 BinOp::Eq => ord == Ordering::Equal,
                 BinOp::Ne => ord != Ordering::Equal,
@@ -1365,6 +1384,7 @@ impl<'a> Env<'a> {
             Expr::Bool(b) => Value::Bool(*b),
             Expr::Error(k) => Value::Error(*k),
             Expr::Lit(v) => v.clone(),
+            Expr::Kept(k) => k.value.clone(),
             Expr::Name(n) => match self.lookup_name(n) {
                 Some(Bound::V(v)) => v,
                 Some(Bound::R(s, r)) => self.ref_value(s, &r),

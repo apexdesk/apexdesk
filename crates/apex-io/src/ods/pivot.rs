@@ -17,7 +17,7 @@ use super::data::{parse_ranges, range_addr};
 use crate::xml::{Ev, Reader, Tag, esc};
 
 /// Slot of `wb.kept.xml` holding data pilots ApexDesk doesn't recalculate.
-const KEPT_SLOT: &str = "ods-data-pilot";
+pub(crate) const KEPT_SLOT: &str = "ods-data-pilot";
 
 /// ODF functions of the summary functions (distinct count has none).
 const FUNCS: [(AggFunc, &str); 11] = [

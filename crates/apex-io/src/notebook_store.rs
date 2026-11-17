@@ -163,8 +163,38 @@ fn upgrade(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// When what a connection runs must stop, if it has to. SQLite sets the
+/// check through the only reference to the connection, and a read has a
+/// shared one: it is set once, and told from here when to stop.
+#[derive(Clone, Default)]
+struct Deadline(std::sync::Arc<std::sync::Mutex<Option<web_time::Instant>>>);
+
+impl Deadline {
+    fn of(conn: &mut Connection) -> Deadline {
+        let deadline = Deadline::default();
+        let end = deadline.0.clone();
+        let _ = conn.progress_handler(100_000, Some(move || end.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|end| web_time::Instant::now() > end)));
+        deadline
+    }
+
+    /// `READ_SECONDS` from now.
+    fn start(&self) {
+        self.set(Some(web_time::Instant::now() + web_time::Duration::from_secs(READ_SECONDS)));
+    }
+
+    fn stop(&self) {
+        self.set(None);
+    }
+
+    fn set(&self, end: Option<web_time::Instant>) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = end;
+    }
+}
+
 pub struct NoteStore {
     conn: Connection,
+    /// The time limit of a read of the whole file.
+    deadline: Deadline,
     /// The keys of the sections unlocked.
     keys: HashMap<i64, Key>,
     /// Pages the user took out of a section under a password (or whose
@@ -278,12 +308,13 @@ impl NoteStore {
         apex_db::sqlite::clear(path).map_err(|e| NoteError::Other(e.to_string()))?;
         use rusqlite::OpenFlags as F;
         let flags = F::SQLITE_OPEN_READ_WRITE | F::SQLITE_OPEN_CREATE | F::SQLITE_OPEN_NOFOLLOW | F::SQLITE_OPEN_URI | F::SQLITE_OPEN_NO_MUTEX;
-        let conn = Connection::open_with_flags(path, flags).map_err(other)?;
+        let mut conn = Connection::open_with_flags(path, flags).map_err(other)?;
+        let deadline = Deadline::of(&mut conn);
         harden(&conn).map_err(other)?;
         conn.execute_batch(SCHEMA).map_err(other)?;
         upgrade(&conn).map_err(other)?;
         conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('app', ?1), ('version', ?2)", params![APP, VERSION.to_string()]).map_err(other)?;
-        Self::hold(conn)
+        Self::hold(conn, deadline)
     }
 
     /// The notebook at `path`, held until it is closed.
@@ -294,15 +325,15 @@ impl NoteStore {
 
     pub fn open(path: &Path) -> Result<NoteStore, NoteError> {
         apex_db::sqlite::check_journal(path).map_err(|e| NoteError::Other(e.to_string()))?;
-        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(other)?;
+        let mut conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE).map_err(other)?;
+        let deadline = Deadline::of(&mut conn);
         // The file is anyone's: no SQL of its own runs here.
         harden(&conn).map_err(other)?;
         // Held by someone else: say so at once.
         conn.busy_timeout(web_time::Duration::ZERO).map_err(other)?;
         // Nothing of the file's is read before its schema is checked (a
         // `meta` view could run for ever), and all of it in a time limit.
-        let end = web_time::Instant::now() + web_time::Duration::from_secs(READ_SECONDS);
-        let _ = conn.progress_handler(100_000, Some(move || web_time::Instant::now() > end));
+        deadline.start();
         // A notebook has no triggers or views: one brought by the file
         // would run on our own writes.
         // Nor computed columns, checks, defaults worked out or indexes of
@@ -333,26 +364,25 @@ impl NoteStore {
         }
         conn.execute_batch(SCHEMA).map_err(|e| if busy(&e) { NoteError::Locked } else { other(e) })?;
         upgrade(&conn).map_err(other)?;
-        let _ = conn.progress_handler(0, None::<fn() -> bool>);
-        Self::hold(conn)
+        deadline.stop();
+        Self::hold(conn, deadline)
     }
 
     /// Takes the file for this connection alone until it closes.
-    fn hold(conn: Connection) -> Result<NoteStore, NoteError> {
+    fn hold(conn: Connection, deadline: Deadline) -> Result<NoteStore, NoteError> {
         conn.busy_timeout(web_time::Duration::ZERO).map_err(other)?;
         // What is deleted or replaced (a text once sealed) is wiped, not
         // left in the file's free space.
         conn.execute_batch("PRAGMA secure_delete = ON;").map_err(other)?;
         conn.execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT;").map_err(|e| if busy(&e) { NoteError::Locked } else { other(e) })?;
-        Ok(NoteStore { conn, keys: HashMap::new(), freed: HashSet::new() })
+        Ok(NoteStore { conn, deadline, keys: HashMap::new(), freed: HashSet::new() })
     }
 
     /// The sections and pages, with each page's plain text.
     pub fn load(&self) -> Result<Notebook, NoteError> {
-        let end = web_time::Instant::now() + web_time::Duration::from_secs(READ_SECONDS);
-        let _ = self.conn.progress_handler(100_000, Some(move || web_time::Instant::now() > end));
+        self.deadline.start();
         let r = self.load_all();
-        let _ = self.conn.progress_handler(0, None::<fn() -> bool>);
+        self.deadline.stop();
         r
     }
 

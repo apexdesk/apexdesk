@@ -872,6 +872,9 @@ struct Story {
     page_break: bool,
     column_break: bool,
     kind: NoteKind,
+    /// Tables the story has (the last one's number), not counted again
+    /// over all its paragraphs at each new one.
+    tables: u32,
 }
 
 struct FieldState {
@@ -880,7 +883,39 @@ struct FieldState {
     link: Option<Arc<str>>,
     field: Option<Field>,
     result: String,
+    instr_groups: u32,
 }
+
+impl FieldState {
+    /// Reads the instruction so far: the link or the field it makes.
+    fn read_instr(&mut self) {
+        let instr = self.instr.trim().to_string();
+        let words = apex_doc::words(&instr);
+        if words.first().is_some_and(|w| w.eq_ignore_ascii_case("HYPERLINK")) {
+            let mut target = String::new();
+            let mut i = 1;
+            while i < words.len() {
+                match words[i].as_str() {
+                    "\\l" => {
+                        target.push('#');
+                        target.push_str(words.get(i + 1).map_or("", |s| s.as_str()));
+                        i += 1;
+                    }
+                    s if s.starts_with('\\') => i += 1,
+                    s if target.is_empty() => target = s.to_string(),
+                    _ => {}
+                }
+                i += 1;
+            }
+            self.link = (!target.is_empty()).then(|| Arc::from(target.as_str()));
+        } else {
+            self.field = Field::parse(&instr, "");
+        }
+    }
+}
+
+/// Instruction groups of one field read as they close.
+const MAX_INSTR_READS: u32 = 8;
 
 #[derive(Default)]
 struct Pict {
@@ -1350,8 +1385,8 @@ impl Reader {
                 }
             }
         }
-        let id = story.paras.iter().filter_map(|p| p.cell.as_ref().map(|c| c.table)).max().unwrap_or(0) + 1;
-        story.paras.extend(table.into_paras(id));
+        story.tables += 1;
+        story.paras.extend(table.into_paras(story.tables));
     }
 
     fn word(&mut self, w: &str, n: Option<i32>, star: bool) {
@@ -1406,7 +1441,7 @@ impl Reader {
             "nonshppict" | "shprslt" | "sn" | "listtext" | "pntext" | "fldtype" | "datafield" | "formfield" | "themedata" | "colorschememapping" | "latentstyles" | "datastore" | "xmlnstbl" | "rsidtbl" | "generator" | "mmathPr" | "pgdsctbl" | "listpicture" | "revtbl" | "annotation" | "atnid" | "atnauthor" | "xe" | "tc" | "objdata" | "nesttableprops" | "userprops" | "docvar" | "wgrffmtfilter" | "filetbl" | "pnseclvl" | "template" => Some(Dest::Skip),
             "field" => {
                 let depth = self.stack.len();
-                self.fields.push(FieldState { depth, instr: String::new(), link: None, field: None, result: String::new() });
+                self.fields.push(FieldState { depth, instr: String::new(), link: None, field: None, result: String::new(), instr_groups: 0 });
                 None
             }
             "fldinst" => Some(Dest::FldInst),
@@ -1857,27 +1892,11 @@ impl Reader {
             }
             Dest::FldInst if parent != Some(Dest::FldInst) => {
                 if let Some(f) = self.fields.last_mut() {
-                    let instr = f.instr.trim().to_string();
-                    let words = apex_doc::words(&instr);
-                    if words.first().is_some_and(|w| w.eq_ignore_ascii_case("HYPERLINK")) {
-                        let mut target = String::new();
-                        let mut i = 1;
-                        while i < words.len() {
-                            match words[i].as_str() {
-                                "\\l" => {
-                                    target.push('#');
-                                    target.push_str(words.get(i + 1).map_or("", |s| s.as_str()));
-                                    i += 1;
-                                }
-                                s if s.starts_with('\\') => i += 1,
-                                s if target.is_empty() => target = s.to_string(),
-                                _ => {}
-                            }
-                            i += 1;
-                        }
-                        f.link = (!target.is_empty()).then(|| Arc::from(target.as_str()));
-                    } else {
-                        f.field = Field::parse(&instr, "");
+                    // A field of thousands of instruction groups would be
+                    // read again whole at each: past a few, once at its end.
+                    f.instr_groups = f.instr_groups.saturating_add(1);
+                    if f.instr_groups <= MAX_INSTR_READS {
+                        f.read_instr();
                     }
                 }
             }
@@ -1969,7 +1988,10 @@ impl Reader {
         }
         // The end of a field group.
         if self.fields.last().is_some_and(|f| f.depth == self.stack.len() + 1) {
-            let f = self.fields.pop().expect("field");
+            let mut f = self.fields.pop().expect("field");
+            if f.instr_groups > MAX_INSTR_READS {
+                f.read_instr();
+            }
             if let Some(mut field) = f.field {
                 field.cached = f.result;
                 let mut a = self.attrs();
@@ -2126,4 +2148,24 @@ pub fn read(data: &[u8]) -> Result<Document, crate::Error> {
     (m.title, m.subject, m.author, m.manager, m.company, m.category, m.keywords, m.description) = (title, subject, author, manager, company, category, keywords, desc);
     out.modified = false;
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn many_tables_and_field_groups_read_in_linear_time() {
+        let t = web_time::Instant::now();
+        let tables = format!("{{\\rtf1 {}}}", "\\trowd\\cellx1000\\intbl a\\cell\\row\\pard b\\par ".repeat(20_000));
+        let d = read(tables.as_bytes()).unwrap();
+        let ids: std::collections::HashSet<u32> = d.paragraphs.iter().filter_map(|p| p.cell.as_ref().map(|c| c.table)).collect();
+        assert_eq!(ids.len(), 20_000);
+        let fields = format!("{{\\rtf1{{\\field{}{{\\fldrslt r}}}}}}", "{\\fldinst x}".repeat(30_000));
+        read(fields.as_bytes()).unwrap();
+        // A hyperlink split over groups still reads.
+        let link = read(b"{\\rtf1{\\field{\\*\\fldinst HYPER}{\\*\\fldinst LINK \"http://a.b/\"}{\\fldrslt here}}}").unwrap();
+        assert!(link.paragraphs[0].runs.iter().any(|r| r.attrs.link.as_deref() == Some("http://a.b/")));
+        assert!(t.elapsed() < web_time::Duration::from_secs(10), "{:?}", t.elapsed());
+    }
 }

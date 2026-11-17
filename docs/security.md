@@ -101,11 +101,23 @@ script embedded in a document is never opened.
 **Protected View** (`crates/apex-app/src/app/protected.rs`)
 
 - Covers files the system marks as downloaded:
-  - `Zone.Identifier` on Windows;
-  - `com.apple.quarantine` on macOS;
-  - `user.xdg.origin.url` on Linux.
+  - `Zone.Identifier` (Internet or untrusted zone) on Windows;
+  - `com.apple.quarantine` or `kMDItemWhereFroms` on macOS;
+  - `user.xdg.origin.url` or `user.xdg.referrer.url` on Linux.
+- On Linux few programs set those marks, and some file systems keep none:
+  files in the downloads folder (`XDG_DOWNLOAD_DIR`), the temporary
+  folders (`$TMPDIR`, `/tmp`, `/var/tmp`, where mail programs open
+  attachments) and the cache folder open in Protected View too. The
+  folder isn't a mark: it doesn't follow the copies saved from the file,
+  and it doesn't stop `run-macro`.
 - Such files open read-only, with macros off, until the user enables
-  editing.
+  editing. View > New Window of such a file is in Protected View too;
+  enabling editing in one window enables it in all of them.
+- A file asks once. One the user enabled editing in, or saved from
+  ApexDesk, is kept in `trusted-documents.txt` in the settings folder
+  (path, length and time of last change, the newest 1000) and opens as
+  usual from then on; changed by another program, or downloaded again
+  under the same name, it asks again. Macros can't reach that file.
 - Files in the trusted locations are exempt.
 - Policy: `ProtectedView`.
 
@@ -134,7 +146,15 @@ script embedded in a document is never opened.
     reaches the workbook only when the user applies it.
   - A workbook in a trusted location reaches any file; changing files
     still asks.
-  - Hidden files and folders (`.ssh`, `.bashrc`) are never reached.
+  - Hidden files and folders (`.ssh`, `.bashrc`) are never reached, and
+    neither are ApexDesk's own files (its settings, the personal macro
+    workbook, the add-ins, the policy file), on any system and even
+    when the user picked them: a macro can't make itself run at every
+    start or lift a policy.
+  - Network shares and device paths are refused before the system is
+    asked about them, unless the workbook is on that share or the user
+    picked a file there: a path to someone's server would hand it the
+    user's sign-in.
   - Programs, scripts, shortcuts and documents that can hold macros are
     never written (Save As of the workbook itself excepted).
   - A function called from a cell reaches no file.
@@ -166,9 +186,11 @@ script embedded in a document is never opened.
     asked whether the certificate was revoked (OCSP, else its CRL, 5
     seconds at most; the answer is kept for a day). A revoked
     certificate never runs; with no answer the macros run with a notice,
-    or not at all under `require`. Self-signed certificates and
+    or not at all under `require`. An answer that has expired, or is
+    dated in the future, is no answer. `run-macro`, the API and the
+    add-ins loaded at start are held to the same. Self-signed certificates and
     publishers trusted by name aren't asked about;
-  - `DisableMacroEditor` (business license).
+  - `DisableMacroEditor`.
 
 - A VBA project locked with a password is shown read-only until its
   password is typed (checked against the salted SHA-1 hash in the
@@ -184,9 +206,94 @@ script embedded in a document is never opened.
   `trust: true`. Over MCP, `run_macro` runs only in the open workbook,
   only once its macros are enabled, and never in Protected View;
   `write_macro` turns the workbook's macros off again and can be undone.
+  Macros are enabled for the code the user saw, not for the tab: code
+  that changes without the user typing it (an assistant's edit, an undo
+  or redo that brings other code back) is not enabled, and a run that
+  was waiting doesn't start.
 
 **Automation API** (`apexdesk api`)
 
 - Off by default; business license only.
 - It serves only the process that started it: no network port.
 - Policy: `AllowAutomationAPI`.
+
+**Policies** (`crates/apex-app/src/policy.rs`)
+
+- A policy that only takes something away applies without a business
+  license: the safety policies (macros, links, Protected View, Get Data,
+  certificates, signatures), `DisableMacroEditor`, `OnlySharedTemplates`,
+  `CheckBeforeSharing` (`warn`, `block`), and `AllowAIAssistants` and
+  `AllowAutomationAPI` set to 0. The others need one; those left out are
+  listed by `apexdesk policy` and written to the log.
+- A policy file is read as UTF-8 (a byte order mark is skipped) or, when
+  it isn't, as Latin-1. `Name: value` and `Name value` lines of a known
+  policy count as `Name = value`.
+- A safety policy with a value that can't be read takes its safest one
+  (`MacroSecurity = disabled`, `ProtectedView = 1`, `LinkSecurity =
+  block`, `MacroRevocation = require`, the switches off). It and any
+  other value ignored are shown in Options and written to the log.
+- A policy file that exists but can't be read is written to the log.
+
+**Get Data from the web** (`crates/apex-query/src/sources/web.rs`)
+
+- An address the user wrote as local (an address of this computer or
+  network, localhost, a name without dots or under `.local`, `.lan`…)
+  is reached as written.
+- From an address on the internet, nothing leads into this computer or
+  the local network:
+  - the addresses a name resolves to are checked when connecting, so a
+    name that resolves into the network (or changes to, DNS rebinding)
+    is not reached;
+  - redirections are followed one by one and each is checked the same
+    way;
+  - through a proxy, names are resolved here and refused when they lead
+    inside. The proxy resolves them again; what its DNS says can't be
+    checked.
+- Hosts that hide an address are never fetched: numbers in another form
+  (`2130706433`, `0x7f.1`, `0177.0.0.1`, `127.1`) and local IPv4
+  addresses inside IPv6 ones (`::ffff:127.0.0.1`, NAT64, 6to4).
+- Policy: `DisableGetData`.
+
+**Database servers** (`crates/apex-query/src/sources/db.rs`, `sqlserver.rs`)
+
+- New connections are encrypted with TLS and check that the server's
+  certificate is valid for its name: against the Mozilla roots built in
+  (PostgreSQL, MySQL; a certificate of an organization's own authority
+  isn't accepted there) or the system's (SQL Server). A server that
+  doesn't offer TLS is refused, never asked again in clear text.
+  Turning TLS off is the user's choice, on the form;
+  on the command line, `?tls=off`. Connections saved without TLS keep
+  working as saved; a database's linked tables say so when asking for
+  the password.
+- Without TLS, PostgreSQL and MySQL send everything in clear text, and
+  SQL Server is encrypted without checking the certificate.
+- Queries only read (see `read_only_sql`).
+
+**Serving the browser version** (`apexdesk serve`)
+
+- Passwords are kept as Argon2 hashes. A wrong user takes as long as a
+  wrong password.
+- Failed sign-ins are counted by client address (an IPv6 client by its
+  /64), before the password is checked: five in 15 minutes and that
+  address waits. Other addresses can still sign in. Behind a proxy on
+  the same computer, `--proxied` takes the client's address from the
+  last `X-Forwarded-For`; without it, all clients share the proxy's
+  address and its limit.
+- Limits before signing in: 20 seconds for a request's headers (16 KB)
+  and the TLS handshake, 60 seconds for a body of up to 1 MB (4 KB for
+  a sign-in), 32 connections from one address and 256 in all. Larger
+  bodies are only read from signed-in users.
+- Requests for a name the server doesn't go by are refused (DNS
+  rebinding): on 127.0.0.1 only addresses and localhost, plus the names
+  `--host` gives. Listening on the network without `--host`, any name
+  goes.
+- Changes need a request from the server's own pages (`Origin`). The
+  session cookie is `HttpOnly` and `SameSite=Strict`, and `Secure` over
+  HTTPS (or behind `--proxied` when the proxy says HTTPS). Every reply
+  has a strict Content-Security-Policy, `nosniff`, `X-Frame-Options:
+  DENY` and, over HTTPS, `Strict-Transport-Security`.
+- A user reaches only their own folder: plain names, no hidden files,
+  links leading out are refused.
+- Get Data reaches only the database servers `--db-hosts` names, and
+  only with a user and password the page gives: never the server's own
+  Windows account, nor a database's sign-in without a password.

@@ -20,7 +20,7 @@ version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
 arch=${APEXDESK_ARCH:-$(uname -m)}
 bin=${APEXDESK_BIN:-}
 if [ -z "$bin" ]; then
-    (cd "$root" && cargo zigbuild --release -p apex-app --target "$arch-unknown-linux-gnu.2.31")
+    (cd "$root" && cargo zigbuild --release --locked -p apex-app --target "$arch-unknown-linux-gnu.2.31")
     bin=$root/target/$arch-unknown-linux-gnu/release/apexdesk
 fi
 
@@ -35,4 +35,5 @@ install -m644 "$root/THIRD-PARTY-NOTICES.md" "$root/LICENSE" "$root/EULA.md" "$r
 printf 'ApexDesk keeps its settings and data in the "data" folder here.\n' > "$stage/portable"
 tar -C "$root/target" --owner=0 --group=0 --numeric-owner -czf "$root/dist/$name.tar.gz" "$name"
 rm -rf "$stage"
+"$root/scripts/sha256.sh" "$root/dist/$name.tar.gz"
 echo "dist/$name.tar.gz"

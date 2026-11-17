@@ -71,6 +71,76 @@ pub fn run(argv: &[String]) -> Option<i32> {
     Some(code)
 }
 
+/// Options the window takes: the launcher's actions (and the process
+/// serial number old macOS versions add when the Finder starts a program).
+const WINDOW_OPTIONS: &[&str] = &["--new-doc", "--new-sheet", "--new-slides"];
+
+/// Checks the arguments that would open the window, which are files: a
+/// mistyped command or option is not opened as one. `Some(2)` when one
+/// is wrong (said on standard error).
+pub fn check_window_args(files: &[PathBuf]) -> Option<i32> {
+    let bad = files.iter().enumerate().find_map(|(i, f)| window_arg_error(f, i == 0, f.fs_exists()))?;
+    console::attach(false);
+    say(&format!("apexdesk: {bad}"));
+    say("Run 'apexdesk --help' for the commands and options.");
+    Some(2)
+}
+
+/// What is wrong with `arg` as a file to open, if anything: an option the
+/// window doesn't take, or a name that is no file and has no extension a
+/// new file would (the first argument then reads as a mistyped command).
+fn window_arg_error(arg: &Path, first: bool, exists: bool) -> Option<String> {
+    let text = arg.to_string_lossy();
+    if exists || WINDOW_OPTIONS.contains(&text.as_ref()) || text.starts_with("-psn_") {
+        return None;
+    }
+    if text.len() > 1 && text.starts_with('-') {
+        let known = WINDOW_OPTIONS.iter().chain(&["--help", "--version", "--tui"]).copied();
+        return Some(format!("unknown option '{text}'{}", did_you_mean(&text, known)));
+    }
+    let ext = arg.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let openable = apex_io::SHEET_EXTS.iter().chain(apex_io::DOC_EXTS).chain(apex_io::CODE_EXTS).chain(apex_io::SLIDES_EXTS).chain(apex_io::DB_EXTS).chain(crate::db_view::EXTS).chain(crate::note_view::EXTS);
+    if !ext.is_empty() && (ext == "pdf" || openable.copied().any(|e| e == ext)) {
+        return None;
+    }
+    if first && !text.contains(['/', '\\', '.']) {
+        return Some(format!("unknown command '{text}'{}", did_you_mean(&text, COMMANDS.iter().copied())));
+    }
+    Some(format!("{text}: no such file"))
+}
+
+/// "; did you mean 'X'?" for the closest of `known`, when it is close.
+fn did_you_mean<'a>(typed: &str, known: impl Iterator<Item = &'a str>) -> String {
+    let typed = typed.to_ascii_lowercase();
+    let best = known.map(|k| (edit_distance(&typed, k), k)).min_by_key(|(d, _)| *d);
+    match best {
+        Some((d, k)) if d <= 2.max(typed.chars().count() / 3) && d < typed.chars().count() => format!("; did you mean '{k}'?"),
+        _ => String::new(),
+    }
+}
+
+/// Levenshtein distance, an exchange of two neighbours counting one.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, v) in d[0].iter_mut().enumerate() {
+        *v = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[a.len()][b.len()]
+}
+
 enum Fail {
     /// Wrong arguments (exit status 2).
     Usage(String),
@@ -128,9 +198,9 @@ fn dispatch(cmd: &str, rest: &[String]) -> Res<i32> {
             }
             return Ok(0);
         }
-        "convert" => (Spec { values: &["to", "out", "output", "sheet", "password", "encoding", "from-encoding", "handouts", "width"], flags: &["quiet", "pdfa", "notes"] }, CONVERT_HELP),
+        "convert" => (Spec { values: &["to", "out", "output", "sheet", "password", "encoding", "from-encoding", "handouts", "width"], flags: &["quiet", "pdfa", "notes", "force"] }, CONVERT_HELP),
         "cat" => (Spec { values: &["sheet", "range", "format", "width", "password"], flags: &["formulas", "raw"] }, CAT_HELP),
-        "eval" => (Spec { values: &["sheet", "password"], flags: &[] }, EVAL_HELP),
+        "eval" => (Spec { values: &["sheet", "password"], flags: &["raw"] }, EVAL_HELP),
         "get" => (Spec { values: &["sheet", "format", "password"], flags: &["raw", "formulas"] }, GET_HELP),
         "set" => (Spec { values: &["sheet", "output", "password"], flags: &[] }, SET_HELP),
         "recalc" => (Spec { values: &["output", "password"], flags: &[] }, RECALC_HELP),
@@ -145,7 +215,7 @@ fn dispatch(cmd: &str, rest: &[String]) -> Res<i32> {
         "policy" => (Spec { values: &["templates"], flags: &["list"] }, policy::POLICY_HELP),
         "api" => (Spec { values: &[], flags: &[] }, api::API_HELP),
         "mcp" => (Spec { values: &[], flags: &[] }, crate::mcp::server::MCP_HELP),
-        "serve" => (Spec { values: &["dir", "web", "bind", "port", "cert", "key", "db-hosts", "add-user", "remove-user"], flags: &["list-users"] }, SERVE_HELP),
+        "serve" => (Spec { values: &["dir", "web", "bind", "port", "cert", "key", "db-hosts", "host", "add-user", "remove-user"], flags: &["list-users", "proxied"] }, SERVE_HELP),
         "tui" => (Spec { values: &[], flags: &[] }, TUI_HELP),
         _ => unreachable!(),
     };
@@ -218,6 +288,12 @@ Commands:
 
 Run 'apexdesk <command> --help' for its options.
 Exit status: 0 success, 1 error, 2 wrong usage.
+
+Numbers: what you type (formulas, 'set' values) is always English syntax
+(3.5, TRUE, ',' between arguments). What is printed or converted as the
+cells show follows the system's locale (LC_ALL, LC_NUMERIC or LANG):
+1,5 and VERDADERO in Spanish, with ';' between CSV fields where the
+decimal mark is ','. --raw prints values the same everywhere (3.5, TRUE).
 ",
         env!("CARGO_PKG_VERSION")
     )
@@ -253,10 +329,13 @@ const CONVERT_HELP: &str = "Usage: apexdesk convert FILE... --to FORMAT [options
 Converts each file (wildcards like *.xlsx work on every system).
 
 Formats:
-  spreadsheets  xlsx ods fods csv tsv pdf html md txt
-  documents     docx odt fodt rtf md txt pdf html epub tex
-  presentations pptx pdf png html md txt
+  spreadsheets  xlsx xlsm xltx xltm ods fods csv tsv pdf html md txt
+  documents     docx docm dotx dotm odt fodt rtf md txt pdf html epub tex
+  presentations pptx pptm potx ppsx odp pdf png html md txt
 Input may also be xls, xlsb, doc, and WPS Office et and wps.
+csv, tsv, md and txt hold the cells as shown, in the system's locale
+(see 'apexdesk --help'): csv separates fields with ';' where the decimal
+mark is ','.
 
 Options:
   -t, --to FORMAT     output format (required)
@@ -269,6 +348,7 @@ Options:
       --password-env VAR
                       the password is in environment variable VAR
   -q, --quiet         do not list the files written
+  -f, --force         replace output files that already exist
       --pdfa          pdf: write PDF/A-2b, for archiving (documents are
                       always tagged, for screen readers)
       --encoding ENC  csv, tsv, txt and md: encoding to write (default
@@ -283,7 +363,8 @@ Options:
       --width PX      presentations to png: picture width (default 1920);
                       one file per slide, NAME-1.png, NAME-2.png...
 
-A file is never written over its input.
+A file is never written over its input, nor over another file without
+--force.
 ";
 
 const CAT_HELP: &str = "Usage: apexdesk cat FILE [options]
@@ -295,12 +376,16 @@ Options:
   -r, --range RANGE   cells to print, like A1:D20 (default: the used area)
   -f, --format FMT    spreadsheets: table (default), csv, tsv, json, md
                       documents: text (default), md, plain, html
-      --raw           values without number formats
+      --raw           values without number formats, the same in every
+                      locale (3.5, TRUE)
       --formulas      formulas instead of their values
   -w, --width N       documents: wrap text at N columns (default 80)
   -p, --password PW   password of an encrypted file
       --password-env VAR
                       the password is in environment variable VAR
+
+Values show as in the window, in the system's locale: csv separates them
+with ';' where the decimal mark is ',' (like 'convert --to csv').
 ";
 
 const EVAL_HELP: &str = "Usage: apexdesk eval [FILE] FORMULA [options]
@@ -308,9 +393,11 @@ const EVAL_HELP: &str = "Usage: apexdesk eval [FILE] FORMULA [options]
 Computes a formula on the cells of FILE (or on an empty workbook) and
 prints the result. Formulas use English function names and ',' between
 arguments: 'SUM(B2:B10)/2', '=AVERAGE(Sheet2!A:A)'. Nothing is saved.
+The result prints in the system's locale, like 'get' (0,5 in Spanish).
 
 Options:
   -s, --sheet SHEET   sheet the formula is on (default: the first)
+      --raw           the result the same in every locale (0.5, TRUE)
   -p, --password PW   password of an encrypted file
       --password-env VAR
                       the password is in environment variable VAR
@@ -319,12 +406,15 @@ Options:
 const GET_HELP: &str = "Usage: apexdesk get FILE CELL... [options]
 
 Prints the value of cells or ranges: B3, A1:C10, Sheet2!D4 or a defined
-name. A range prints one row per line.
+name. A range prints one row per line. Values show as in the window, in
+the system's locale (csv separates them with ';' where the decimal mark
+is ',').
 
 Options:
   -s, --sheet SHEET   sheet number (1 = first) or name
   -f, --format FMT    ranges: tsv (default), csv, json, table, md
-      --raw           values without number formats
+      --raw           values without number formats, the same in every
+                      locale (3.5, TRUE)
       --formulas      formulas instead of their values
   -p, --password PW   password of an encrypted file
       --password-env VAR
@@ -334,8 +424,9 @@ Options:
 const SET_HELP: &str = "Usage: apexdesk set FILE CELL VALUE [CELL VALUE...] [options]
 
 Changes cells as if typed and saves the file (formulas recalculate).
-Values use English syntax: 3.5, TRUE, 2024-05-31, =SUM(A1:A3).
-Protected cells are not changed.
+Values use English syntax whatever the system's locale: 3.5, TRUE,
+2024-05-31, =SUM(A1:A3); '.' is the decimal mark, so 1,500 is 1500 and
+1,5 stays text. Protected cells are not changed.
 
 Options:
   -s, --sheet SHEET   sheet number (1 = first) or name
@@ -407,7 +498,8 @@ Options:
                       queries may name any)
       --sql SQL       DATA is a database: a SQLite file, or a server as
                       postgres://USER@HOST[:PORT]/DB (also mysql://,
-                      sqlserver://); SQL is a SELECT or a table name
+                      sqlserver://; encrypted with TLS, add ?tls=off for
+                      a server without it); SQL is a SELECT or a table name
       --password-env VAR
                       the database password is in environment variable VAR
                       (on Windows, sqlserver:// without a user signs in
@@ -541,10 +633,16 @@ fn output_of(path: &Path, fmt: Format, a: &Parsed) -> Res<(PathBuf, Format)> {
 
 // --- convert -------------------------------------------------------------------------
 
+/// Extensions of the flavours of xlsx, docx and pptx the writers make.
+const FLAVORS: &[&str] = &["xlsm", "xltx", "xltm", "docm", "dotx", "dotm", "pptm", "potx", "potm", "ppsx", "ppsm"];
+
 /// What `convert` writes.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Target {
     File(Format),
+    /// A macro-enabled, template or show flavour of xlsx, docx or pptx
+    /// ("xlsm"): the writers tell it by the file's extension.
+    Flavor(Format, &'static str),
     Pdf,
     Html,
     Epub,
@@ -563,13 +661,33 @@ impl Target {
             "png" => Target::Png,
             "text" | "plain" => Target::File(Format::Text),
             _ if apex_io::CODE_EXTS.contains(&s.as_str()) => return None,
-            _ => Target::File(Format::from_path(Path::new(&format!("x.{s}"))).filter(|f| f.can_save())?),
+            _ => {
+                let f = Format::from_path(Path::new(&format!("x.{s}"))).filter(|f| f.can_save())?;
+                if let Some(ext) = FLAVORS.iter().find(|e| **e == s) {
+                    Target::Flavor(f, ext)
+                } else if matches!(f, Format::Xlsx | Format::Docx | Format::Pptx | Format::Ods | Format::Odt | Format::Odp) && s != f.extension() {
+                    // ODF templates (.ots...) would come out as plain files
+                    // under a template's name.
+                    return None;
+                } else {
+                    Target::File(f)
+                }
+            }
         })
+    }
+
+    /// The format the file is written in.
+    fn format(self) -> Option<Format> {
+        match self {
+            Target::File(f) | Target::Flavor(f, _) => Some(f),
+            _ => None,
+        }
     }
 
     fn ext(self) -> &'static str {
         match self {
             Target::File(f) => f.extension(),
+            Target::Flavor(_, e) => e,
             Target::Pdf => "pdf",
             Target::Html => "html",
             Target::Epub => "epub",
@@ -659,11 +777,13 @@ fn convert_file_to(path: &Path, target: Target, a: &Parsed) -> Res<()> {
         p
     };
     let mut written: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    // A flavour writes as its format; `dest` keeps its extension.
+    let target = target.format().map_or(target, Target::File);
     // A workbook goes to PDF without a copy (a view takes it).
     let loaded = match (target, loaded) {
         (Target::Pdf, Loaded::Sheet(wb)) => {
             let out = dest("");
-            check_not_input(path, &out)?;
+            check_output(path, &out, a)?;
             let bytes = crate::headless::sheet_pdf(crate::sheet_view::SheetView::new(*wb), &name);
             apex_io::write_atomic(&out, &bytes).map_err(|e| Fail::Error(format!("{}: {e}", out.display())))?;
             report(path, &out, a);
@@ -686,7 +806,7 @@ fn convert_file_to(path: &Path, target: Target, a: &Parsed) -> Res<()> {
                     Target::File(Format::Text) => text_out(used(wb, i).map(|r| show::table(wb, i, r, &show::grid(wb, i, r, Shown::Display))).unwrap_or_default()),
                     Target::File(f @ (Format::Xlsx | Format::Ods | Format::Fods)) => {
                         let out = dest("");
-                        check_not_input(path, &out)?;
+                        check_output(path, &out, a)?;
                         save_sheet(wb, &out, f, a)?;
                         report(path, &out, a);
                         return Ok(());
@@ -706,7 +826,7 @@ fn convert_file_to(path: &Path, target: Target, a: &Parsed) -> Res<()> {
             let bytes = match target {
                 Target::File(f @ (Format::Markdown | Format::Text)) if to_enc.is_some() => {
                     let out = dest("");
-                    check_not_input(path, &out)?;
+                    check_output(path, &out, a)?;
                     let lost = apex_io::save_text(apex_io::TextSource::Doc(doc), &out, f, to_enc.unwrap_or(apex_io::Encoding::Utf8)).map_err(|e| Fail::Error(format!("{}: {e}", out.display())))?;
                     if lost > 0 {
                         say(&format!("apexdesk: {}: {lost} characters not in the encoding, written as '?'", out.display()));
@@ -717,7 +837,7 @@ fn convert_file_to(path: &Path, target: Target, a: &Parsed) -> Res<()> {
                 Target::File(f @ (Format::Docx | Format::Odt | Format::Fodt | Format::Markdown | Format::Rtf | Format::Text)) => {
 
                     let out = dest("");
-                    check_not_input(path, &out)?;
+                    check_output(path, &out, a)?;
                     apex_io::save_doc_with(doc, &out, f, a.value("password").filter(|_| apex_io::can_encrypt(f))).map_err(|e| Fail::Error(format!("{}: {e}", out.display())))?;
                     report(path, &out, a);
                     return Ok(());
@@ -725,7 +845,7 @@ fn convert_file_to(path: &Path, target: Target, a: &Parsed) -> Res<()> {
                 Target::Tex => {
                     // Its pictures go beside it.
                     let out = dest("");
-                    check_not_input(path, &out)?;
+                    check_output(path, &out, a)?;
                     apex_io::latex::save(doc, &out).map_err(|e| Fail::Error(format!("{}: {e}", out.display())))?;
                     report(path, &out, a);
                     return Ok(());
@@ -741,7 +861,7 @@ fn convert_file_to(path: &Path, target: Target, a: &Parsed) -> Res<()> {
             let bytes = match target {
                 Target::File(f @ (Format::Pptx | Format::Odp)) => {
                     let out = dest("");
-                    check_not_input(path, &out)?;
+                    check_output(path, &out, a)?;
                     apex_io::save_slides_with(deck, &out, f, a.value("password").filter(|_| apex_io::can_encrypt(f))).map_err(|e| Fail::Error(format!("{}: {e}", out.display())))?;
                     report(path, &out, a);
                     return Ok(());
@@ -778,10 +898,22 @@ fn convert_file_to(path: &Path, target: Target, a: &Parsed) -> Res<()> {
             }
         }
     }
+    // Nothing is written when one of the files can't be.
+    for (out, _) in &written {
+        check_output(path, out, a)?;
+    }
     for (out, bytes) in written {
-        check_not_input(path, &out)?;
         apex_io::write_atomic(&out, &bytes).map_err(|e| Fail::Error(format!("{}: {e}", out.display())))?;
         report(path, &out, a);
+    }
+    Ok(())
+}
+
+/// `out` is neither the input nor, without `--force`, a file that exists.
+fn check_output(input: &Path, out: &Path, a: &Parsed) -> Res<()> {
+    check_not_input(input, out)?;
+    if !a.flag("force") && out.fs_exists() {
+        return error(format!("{}: already exists; use --force to replace it", out.display()));
     }
     Ok(())
 }
@@ -817,7 +949,8 @@ pub(crate) const SLIDES_TARGETS: &[&str] = &["pptx", "odp", "pdf", "png", "html"
 /// Convert Files), into `out` or next to it; `all_sheets`: one file per
 /// sheet for the text formats.
 pub(crate) fn convert_file(path: &Path, to: &str, out: Option<&Path>, all_sheets: bool) -> Result<(), String> {
-    let mut argv: Vec<String> = vec!["--to".into(), to.into(), "--quiet".into()];
+    // The window's conversions replace earlier results, as they always did.
+    let mut argv: Vec<String> = vec!["--to".into(), to.into(), "--quiet".into(), "--force".into()];
     if let Some(d) = out {
         apex_fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
         argv.extend(["--out".into(), d.display().to_string()]);
@@ -825,7 +958,7 @@ pub(crate) fn convert_file(path: &Path, to: &str, out: Option<&Path>, all_sheets
     if all_sheets {
         argv.extend(["--sheet".into(), "all".into()]);
     }
-    let spec = Spec { values: &["to", "out", "output", "sheet", "password"], flags: &["quiet"] };
+    let spec = Spec { values: &["to", "out", "output", "sheet", "password"], flags: &["quiet", "force"] };
     let a = args::parse(&argv, &spec)?;
     let target = Target::parse(to).ok_or_else(|| format!("unknown format '{to}'"))?;
     match convert_one(path, target, &a) {
@@ -883,7 +1016,9 @@ fn cells_as(wb: &Workbook, sheet: usize, r: Range, format: &str, shown: Shown) -
             let rows = show::grid(wb, sheet, r, shown);
             match f {
                 "table" => show::table(wb, sheet, r, &rows),
-                "csv" => show::delimited(&rows, ','),
+                // As `convert --to csv` writes: ';' where values show a
+                // decimal comma.
+                "csv" => show::delimited(&rows, if shown != Shown::Raw && wb.locale.decimal == ',' { ';' } else { ',' }),
                 "tsv" => show::delimited(&rows, '\t'),
                 "md" | "markdown" => show::markdown(&rows),
                 _ => return usage(format!("unknown format '{format}' (table, csv, tsv, json, md)")),
@@ -976,20 +1111,30 @@ fn eval(a: &Parsed) -> Res<i32> {
         _ => return usage(format!("unexpected argument '{}'", a.pos[2])),
     };
     let sheet = pick_sheet(&wb, a.value("sheet"))?;
+    emit(&eval_text(&mut wb, sheet, &formula, a.flag("raw"))?);
+    Ok(0)
+}
+
+/// The result of `formula` (English syntax) as `eval` prints it: in the
+/// workbook's locale like `get`, or `raw`.
+fn eval_text(wb: &mut Workbook, sheet: usize, formula: &str, raw: bool) -> Res<String> {
     // English syntax; dates in the system's order.
-    wb.locale = Locale { date_order: wb.locale.date_order, ..Locale::EN };
-    let formula = if formula.starts_with('=') { formula } else { format!("={formula}") };
-    wb.check_formula(&formula).map_err(|e| Fail::Error(format!("{formula}: {e}")))?;
-    let v = wb.eval_formula(sheet, &formula);
-    let text = match &v {
+    let english = Locale { date_order: wb.locale.date_order, ..Locale::EN };
+    let locale = std::mem::replace(&mut wb.locale, english);
+    let formula = if formula.starts_with('=') { formula.to_string() } else { format!("={formula}") };
+    let checked = wb.check_formula(&formula);
+    let v = checked.is_ok().then(|| wb.eval_formula(sheet, &formula));
+    wb.locale = locale;
+    checked.map_err(|e| Fail::Error(format!("{formula}: {e}")))?;
+    let v = v.unwrap_or(apex_sheet::Value::Empty);
+    let one = |v: &apex_sheet::Value| if raw { show::raw(v) } else { wb.format_value(0, v).0 };
+    Ok(match &v {
         apex_sheet::Value::Array(m) => {
-            let rows: Vec<Vec<String>> = (0..m.rows).map(|r| (0..m.cols).map(|c| show::raw(&m.data[r * m.cols + c])).collect()).collect();
+            let rows: Vec<Vec<String>> = (0..m.rows).map(|r| (0..m.cols).map(|c| one(&m.data[r * m.cols + c])).collect()).collect();
             show::delimited(&rows, '\t')
         }
-        v => format!("{}\n", show::raw(v)),
-    };
-    emit(&text);
-    Ok(0)
+        v => format!("{}\n", one(v)),
+    })
 }
 
 // --- set, recalc ---------------------------------------------------------------------
@@ -1421,5 +1566,86 @@ fn tui(a: &Parsed) -> Res<i32> {
     #[cfg(target_arch = "wasm32")]
     let _ = (path, hooks);
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn argv(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn mistyped_commands_do_not_open_the_window() {
+        let err = |a: &str, first: bool| window_arg_error(Path::new(a), first, false);
+        assert_eq!(err("convrt", true).unwrap(), "unknown command 'convrt'; did you mean 'convert'?");
+        assert_eq!(err("--hlep", true).unwrap(), "unknown option '--hlep'; did you mean '--help'?");
+        assert_eq!(err("--new-dco", false).unwrap(), "unknown option '--new-dco'; did you mean '--new-doc'?");
+        assert_eq!(err("zzzzzz", true).unwrap(), "unknown command 'zzzzzz'");
+        assert!(err("notes", false).unwrap().contains("no such file"));
+        // Files to create, existing files (any name) and the launcher's options open.
+        for ok in ["new report.xlsx", "dir/Informe final.DOCX", "a.pdf", "--new-doc", "-psn_0_1234"] {
+            assert_eq!(err(ok, true), None, "{ok}");
+        }
+        assert_eq!(window_arg_error(Path::new("convrt"), true, true), None);
+        assert_eq!(window_arg_error(Path::new("--hlep"), true, true), None);
+        // Real commands never get here.
+        assert_eq!(command(&argv(&["convert"])), Some("convert"));
+        assert_eq!(command(&argv(&["convrt"])), None);
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = apex_fs::temp_dir().join(format!("apex-cli-{name}-{}", apex_fs::process_id()));
+        let _ = apex_fs::remove_dir_all(&dir);
+        apex_fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn convert_keeps_existing_files_and_honours_flavours() {
+        let dir = scratch("convert");
+        let csv = dir.join("a.csv");
+        apex_fs::write(&csv, "Name,Qty\nPen,3\n").unwrap();
+        let spec = Spec { values: &["to", "out", "output", "sheet", "password"], flags: &["quiet", "force"] };
+        let run = |v: &[&str]| {
+            let a = args::parse(&argv(v), &spec).unwrap();
+            convert_one(&csv, Target::parse(a.value("to").unwrap()).unwrap(), &a)
+        };
+        assert!(run(&["--to", "md", "-q"]).is_ok());
+        let Err(Fail::Error(e)) = run(&["--to", "md", "-q"]) else { panic!("replaced an existing file") };
+        assert!(e.contains("--force"), "{e}");
+        assert!(run(&["--to", "md", "-q", "-f"]).is_ok());
+        // .xlsm is a macro-enabled workbook under its own name, not an .xlsx.
+        assert_eq!(Target::parse("xlsm"), Some(Target::Flavor(Format::Xlsx, "xlsm")));
+        assert!(run(&["--to", "xlsm", "-q"]).is_ok());
+        assert!(apex_io::open(&dir.join("a.xlsm")).is_ok());
+        assert!(!dir.join("a.xlsx").exists());
+        // ODF templates would come out as plain files.
+        assert_eq!(Target::parse("ots"), None);
+        assert_eq!(Target::parse("htm"), Some(Target::Html));
+        let _ = apex_fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn printed_values_follow_one_locale() {
+        let mut wb = Workbook::new();
+        wb.locale = Locale::EN;
+        wb.set_inputs(0, vec![(CellRef::new(0, 0), "1.5".into()), (CellRef::new(0, 1), "x".into())]);
+        wb.locale = Locale::ES;
+        let r = Range::new(CellRef::new(0, 0), CellRef::new(0, 1));
+        // As `convert --to csv` writes it in that locale.
+        let Ok(csv) = cells_as(&wb, 0, r, "csv", Shown::Display) else { panic!() };
+        assert_eq!(csv, apex_io::csv::write(&wb, 0, None).replace("\r\n", "\n"));
+        assert_eq!(csv, "1,5;x\n");
+        let Ok(raw) = cells_as(&wb, 0, r, "csv", Shown::Raw) else { panic!() };
+        assert_eq!(raw, "1.5,x\n");
+        // `eval` takes English syntax and prints like `get`.
+        let Ok(v) = eval_text(&mut wb, 0, "A1/3", false) else { panic!() };
+        assert_eq!(v, "0,5\n");
+        let Ok(v) = eval_text(&mut wb, 0, "=A1>1", true) else { panic!() };
+        assert_eq!(v, "TRUE\n");
+        assert_eq!(wb.locale.decimal, ',');
+    }
 }
 

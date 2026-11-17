@@ -39,6 +39,30 @@ pub struct Evidence {
     pub responder: Option<Cert>,
 }
 
+/// Leeway for the clocks of responders and of this computer.
+pub const SKEW: i64 = 5 * 60;
+/// How old an answer that doesn't say when the next one comes may be.
+pub const MAX_AGE: i64 = 24 * 3600;
+
+impl Evidence {
+    /// Whether the answer speaks for time `at`: made after it, or before
+    /// it but still current then. One dated past `now` is no answer. A
+    /// stale "good" (replayed from before the certificate was revoked)
+    /// proves nothing.
+    pub fn current_at(&self, at: i64, now: i64) -> bool {
+        if self.this_update > now.saturating_add(SKEW) || self.next_update.is_some_and(|n| n < self.this_update) {
+            return false;
+        }
+        if self.this_update.saturating_add(SKEW) >= at {
+            return true;
+        }
+        match self.next_update {
+            Some(n) => n.saturating_add(SKEW) >= at,
+            None => at.saturating_sub(self.this_update) <= MAX_AGE,
+        }
+    }
+}
+
 // --- OCSP ----------------------------------------------------------------------------
 
 /// The CertID of `cert` (issued by `issuer`), with SHA-1 as responders
@@ -244,7 +268,9 @@ fn pem_body(data: &[u8]) -> Option<Vec<u8>> {
     let start = text.find("-----BEGIN")?;
     let body = &text[start..];
     let from = body.find('\n')? + 1;
-    let to = body.find("-----END")?;
+    // The end marker is looked for past the first line: before it, the
+    // block is malformed.
+    let to = from + body.get(from..)?.find("-----END")?;
     crate::base64(&body[from..to])
 }
 
@@ -323,5 +349,33 @@ mod tests {
         assert!(parse_crl(b"-----BEGIN X509 CRL-----\nAAAA\n-----END X509 CRL-----\n").is_none());
         assert_eq!(trim(&[0, 0, 5]), [5]);
         assert_eq!(trim(&[0]), [0]);
+    }
+
+    #[test]
+    fn pem_end_before_the_first_line_break() {
+        // The end marker on the first line: no block, and no panic.
+        assert!(pem_body(b"-----BEGIN X509 CRL----------END X509 CRL-----\nAAAA").is_none());
+        assert!(parse_crl(b"-----BEGIN-----END\n").is_none());
+        assert_eq!(pem_body(b"-----BEGIN X509 CRL-----\nAAEC\n-----END X509 CRL-----\n"), Some(vec![0, 1, 2]));
+    }
+
+    #[test]
+    fn stale_answers_are_not_current() {
+        let day = 86_400;
+        let (now, signed) = (1_800_000_000, 1_799_000_000);
+        let ev = |this: i64, next: Option<i64>| Evidence { source: Source::Ocsp, status: CertStatus::Good, this_update: this, next_update: next, responder: None };
+        // Made after the signature, or before it and still current then.
+        assert!(ev(signed + day, None).current_at(signed, now));
+        assert!(ev(signed - day, Some(signed + day)).current_at(signed, now));
+        assert!(ev(signed - 60, None).current_at(signed, now));
+        // A month older than the signature, expired before it.
+        assert!(!ev(signed - 30 * day, Some(signed - 29 * day)).current_at(signed, now));
+        assert!(!ev(signed - 2 * day, None).current_at(signed, now));
+        // Dated in the future, or ending before it starts.
+        assert!(!ev(now + day, None).current_at(signed, now));
+        assert!(!ev(signed, Some(signed - 1)).current_at(signed, now));
+        // A few minutes of clock difference are tolerated.
+        assert!(ev(signed - 2 * day, Some(signed - SKEW + 1)).current_at(signed, now));
+        assert!(ev(now + SKEW - 1, None).current_at(now, now));
     }
 }

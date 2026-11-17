@@ -33,7 +33,7 @@ if [ "${1:-}" = "--uninstall" ]; then
     exit 0
 fi
 
-(cd "$root" && cargo build --release -p apex-app)
+(cd "$root" && cargo build --release --locked -p apex-app)
 
 # The program was called DemosOffice and GensWorkOffice for a while: those installs
 # go (the settings move to the new folder when the program first starts).

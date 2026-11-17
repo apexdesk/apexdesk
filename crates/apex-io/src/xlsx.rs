@@ -748,6 +748,9 @@ fn read_sheet_piece(xml: &str, st: &mut SheetState, sh: &mut Sheet, theme: &apex
                             shared.insert(s, (cell, e.clone(), ft.len().saturating_sub(256)));
                         }
                         expr = Some(e);
+                    } else if !ft.trim().is_empty() {
+                        // Saved back as it came rather than lost to its value.
+                        expr = Some(Arc::new(kept_formula(ft.trim(), &value, false)));
                     }
                 } else if let Some((s, _)) = f_shared {
                     if let Some((origin, e, cost)) = shared.get(&s) {
@@ -803,6 +806,12 @@ fn read_sheet_piece(xml: &str, st: &mut SheetState, sh: &mut Sheet, theme: &apex
 
 // `<row .../>` never gets an `End` event; detect via a sentinel we can't
 // observe from `Tag`, so rows are always advanced by `r` attributes instead.
+/// A formula ApexDesk can't read: its text, to save as it came, and the
+/// value the file had for it, to show.
+pub(crate) fn kept_formula(text: &str, value: &Value, odf: bool) -> apex_sheet::Expr {
+    apex_sheet::Expr::Kept(Arc::new(apex_sheet::formula::KeptFormula { text: text.into(), value: value.clone(), odf }))
+}
+
 fn r_last_empty(_t: &Tag) -> bool {
     false
 }
@@ -1556,6 +1565,30 @@ mod tests {
         read_sheet(sheet, &mut wb, 0, &[], &Default::default(), &[]);
         wb.finish_load();
         assert_eq!(wb.sheets[0].value(CellRef::new(1, 1)), &Value::Number(10.0));
+    }
+
+    /// A formula ApexDesk can't read shows the file's value and is saved
+    /// back unchanged, in xlsx and through ods.
+    #[test]
+    fn unreadable_formula_kept() {
+        let sheet = r#"<worksheet><sheetData><row r="1"><c r="A1" t="str"><f>IF(A10&gt;1,"a"</f><v>txt</v></c><c r="B1"><f>SUM(1 2)</f><v>42</v></c><c r="C1"><f>B1+1</f><v>43</v></c></row></sheetData></worksheet>"#;
+        let mut wb = Workbook::empty();
+        wb.sheets.push(Sheet::new("S"));
+        read_sheet(sheet, &mut wb, 0, &[], &Default::default(), &[]);
+        wb.finish_load();
+        wb.recalc_all();
+        let v = |wb: &Workbook, c: u32| wb.sheets[0].value(CellRef::new(0, c)).clone();
+        assert_eq!((v(&wb, 0), v(&wb, 1), v(&wb, 2)), (Value::text("txt"), Value::Number(42.0), Value::Number(43.0)));
+        let bytes = write(&wb);
+        let xml = crate::zip::ZipReader::new(&bytes).unwrap().read_string("xl/worksheets/sheet1.xml").unwrap();
+        assert!(xml.contains("<f>IF(A10&gt;1,&quot;a&quot;</f>") && xml.contains("<f>SUM(1 2)</f><v>42</v>"), "{xml}");
+        let back = read(&bytes).unwrap();
+        assert_eq!(v(&back, 1), Value::Number(42.0));
+        assert_eq!(back.sheets[0].get(CellRef::new(0, 1)).map(|c| &c.content), wb.sheets[0].get(CellRef::new(0, 1)).map(|c| &c.content));
+        // OpenDocument can't take Excel's text: the value goes there.
+        let ods = crate::ods::write(&wb);
+        let content = crate::zip::ZipReader::new(&ods).unwrap().read_string("content.xml").unwrap();
+        assert!(!content.contains("SUM(1 2)") && content.contains(r#"table:formula="of:=42""#), "{content}");
     }
 
     /// Formulas of Google Sheets are calculated again; the ones that use

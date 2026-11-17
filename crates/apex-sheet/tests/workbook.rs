@@ -145,6 +145,59 @@ fn paste_offsets_formulas() {
     assert_eq!(show(&w, "B2"), "4");
 }
 
+/// A list in A1:C6 (name, amount, amount doubled) filtered to the rows of "b".
+fn filtered_list() -> Workbook {
+    use apex_sheet::data::{AutoFilter, ColumnFilter, FilterKind};
+    let mut w = wb();
+    for (i, (name, n)) in [("who", "n"), ("a", "1"), ("b", "2"), ("a", "3"), ("b", "4"), ("a", "5")].iter().enumerate() {
+        let row = i as u32 + 1;
+        w.set_input(0, c(&format!("A{row}")), name);
+        w.set_input(0, c(&format!("B{row}")), n);
+        w.set_input(0, c(&format!("C{row}")), &if i == 0 { "twice".to_string() } else { format!("=B{row}*2") });
+    }
+    let mut f = AutoFilter::new(Range::parse("A1:C6").unwrap());
+    f.cols.push(ColumnFilter { col: 0, kind: FilterKind::Values { items: vec!["b".into()], blanks: false } });
+    w.set_filter(0, Some(f), "undo.filter");
+    assert!(w.filter_hides(0, 1) && !w.filter_hides(0, 2) && !w.filter_hides(0, 0));
+    w
+}
+
+#[test]
+fn copy_of_a_filtered_list_is_the_rows_it_shows() {
+    let mut w = filtered_list();
+    let r = Range::parse("A1:C6").unwrap();
+    let clip = w.copy_visible(0, &r);
+    assert_eq!((clip.rows, clip.cols), (3, 3));
+    assert_eq!(clip.src_rows, vec![0, 2, 4]);
+    assert_eq!(clip.source(), Range::parse("A1:C5").unwrap());
+    // The whole block is still there for whoever asks for it.
+    assert_eq!(w.copy(0, &r).rows, 6);
+    w.paste(0, &Range::single(c("E10")), &clip);
+    let got: Vec<String> = ["E10", "F10", "E11", "F11", "G11", "E12", "F12", "G12", "E13"].iter().map(|a| show(&w, a)).collect();
+    assert_eq!(got, ["who", "n", "b", "2", "4", "b", "4", "8", ""]);
+    // Each formula moves from the row it was in: it reads its own row.
+    assert_eq!(w.edit_text(0, c("G11")), "=F11*2");
+    assert_eq!(w.edit_text(0, c("G12")), "=F12*2");
+    // Paste Link points at the rows that were copied.
+    w.paste_link_clip(0, &clip, 0, c("I1"));
+    assert_eq!((w.edit_text(0, c("J2")), w.edit_text(0, c("J3"))), ("=B3".to_string(), "=B5".to_string()));
+    // Values only, through Paste Special.
+    w.paste_special(0, c("E20"), &clip, PasteSpecial { what: PasteWhat::Formulas, ..Default::default() });
+    assert_eq!(w.edit_text(0, c("G22")), "=F22*2");
+}
+
+#[test]
+fn copy_keeps_rows_hidden_by_hand_and_unfiltered_blocks() {
+    let mut w = wb();
+    for row in 1..=4 {
+        w.set_input(0, c(&format!("A{row}")), &row.to_string());
+    }
+    w.sheets[0].row_heights.insert(1, 0.0);
+    let clip = w.copy_visible(0, &Range::parse("A1:A4").unwrap());
+    assert_eq!(clip.rows, 4);
+    assert!(clip.src_rows.is_empty());
+}
+
 #[test]
 fn clip_goes_to_another_workbook_with_its_formats() {
     let mut a = wb();

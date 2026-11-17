@@ -76,4 +76,5 @@ if [ -n "${APEXDESK_NOTARY_PROFILE:-}" ]; then
     xcrun notarytool submit "$out" --keychain-profile "$APEXDESK_NOTARY_PROFILE" --wait
     xcrun stapler staple "$out"
 fi
+"$root/scripts/sha256.sh" "$out"
 echo "$out"

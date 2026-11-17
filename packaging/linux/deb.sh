@@ -22,7 +22,7 @@ version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
 arch=$(dpkg --print-architecture 2>/dev/null || echo amd64)
 bin=${APEXDESK_BIN:-}
 if [ -z "$bin" ]; then
-    (cd "$root" && cargo build --release -p apex-app)
+    (cd "$root" && cargo build --release --locked -p apex-app)
     bin=$root/target/release/apexdesk
 fi
 
@@ -74,4 +74,5 @@ chmod 755 "$pkg/DEBIAN/postinst" "$pkg/DEBIAN/postrm"
 mkdir -p "$dist"
 out=$dist/apexdesk_${version}_$arch.deb
 dpkg-deb --root-owner-group -Zxz --build "$pkg" "$out" >/dev/null
+"$root/scripts/sha256.sh" "$out"
 echo "$out"

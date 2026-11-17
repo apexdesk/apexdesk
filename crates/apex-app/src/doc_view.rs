@@ -506,7 +506,7 @@ impl DocView {
             pane_open: false,
             pane: Default::default(),
             dialog: None,
-            symbols: Default::default(),
+            symbols: crate::symbols::SymbolDialog::with_keys(),
             page_setup: None,
             font_dialog: None,
             file_name: String::new(),
@@ -2598,7 +2598,12 @@ impl DocView {
             self.viewport_w = avail_w;
         }
         let scroll_to_caret = active && std::mem::take(&mut self.scroll_to_caret);
+        // The pages' scroll bars always show, as the sheet's; what is on
+        // the pages keeps the usual ones.
+        let normal = ui.spacing().scroll;
+        ui.spacing_mut().scroll = theme::page_scroll_style();
         egui::ScrollArea::both().id_salt(("doc_scroll", self.uid, self.views.drawing)).auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+            ui.spacing_mut().scroll = normal;
             let (rect, _) = ui.allocate_exact_size(total, Sense::hover());
             let id = self.canvas_id();
             let resp = ui.interact(rect, id, Sense::click_and_drag());
@@ -2694,6 +2699,7 @@ impl DocView {
                 });
             }
         });
+        ui.spacing_mut().scroll = normal;
     }
 
     fn mouse(&mut self, ui: &egui::Ui, resp: &egui::Response, origin: Pos2) {
@@ -3050,6 +3056,8 @@ impl DocView {
                     self.insert("\t");
                 }
             }
+            // As in Word; the symbol dialog shows these keys.
+            Key::Space if cmd && shift => self.insert("\u{A0}"),
             Key::Space if cmd => self.clear_formatting(false),
             Key::A if cmd && !shift => self.sel = Selection { anchor: Pos::new(0, 0), cursor: self.doc.end() },
             Key::B if cmd && shift => self.toggle(|a| a.subscript, |a, v| {
@@ -3844,6 +3852,20 @@ mod tests {
         v.toggle_md_source();
         v.key(Key::Enter, None, Modifiers::COMMAND);
         assert!(v.doc.paragraphs[2].style.page_break_before);
+    }
+
+    // The keys the symbol dialog shows for a character type it.
+    #[test]
+    fn the_keys_shown_for_a_special_character_type_it() {
+        let shown: Vec<_> = crate::symbols::SPECIALS.iter().filter_map(|s| Some((s.ch, s.shortcut?))).collect();
+        assert_eq!(shown, [('\u{A0}', "Ctrl+Shift+Space")]);
+        let mut v = DocView::new(Document::from_paragraphs(vec![Paragraph::new("10km")]));
+        v.sel = Selection::caret(Pos::new(0, 2));
+        v.key(Key::Space, None, Modifiers::COMMAND | Modifiers::SHIFT);
+        assert_eq!(v.doc.paragraphs[0].text, "10\u{A0}km");
+        // Ctrl+Space alone still clears the formatting, and types nothing.
+        v.key(Key::Space, None, Modifiers::COMMAND);
+        assert_eq!(v.doc.paragraphs[0].text, "10\u{A0}km");
     }
 
     // Commands in the code view (nothing laid out) and positions inside

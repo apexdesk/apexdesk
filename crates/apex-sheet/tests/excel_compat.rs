@@ -505,3 +505,30 @@ fn texts_stop_at_32767_characters() {
     assert_eq!(ev("=SUBSTITUTE(REPT(\"x\",1000),\"x\",REPT(\"y\",100))"), Value::Error(ErrorKind::Value));
     assert_eq!(ev("=LEN(CONCAT(REPT(\"é\",20000),REPT(\"é\",20000)))"), Value::Error(ErrorKind::Value));
 }
+
+#[test]
+fn comparisons_use_15_significant_digits() {
+    let w = wb();
+    let ev = |f: &str| w.eval_formula(0, f);
+    assert_eq!(ev("=0.1+0.2=0.3"), Value::Bool(true));
+    assert_eq!(ev("=0.1+0.2<>0.3"), Value::Bool(false));
+    assert_eq!(ev("=0.1+0.2>0.3"), Value::Bool(false));
+    assert_eq!(ev("=0.1+0.2<=0.3"), Value::Bool(true));
+    // The difference itself is not rounded away, as in Excel.
+    assert_ne!(ev("=0.1+0.2-0.3"), Value::Number(0.0));
+    // 15 digits that differ still differ.
+    assert_eq!(ev("=1.00000000000001=1"), Value::Bool(false));
+    assert_eq!(ev("=1.00000000000001>1"), Value::Bool(true));
+}
+
+#[test]
+fn text_reads_as_a_number_in_the_book_locale() {
+    let mut w = Workbook::new();
+    w.locale = Locale::ES;
+    w.set_input(0, c("A1"), "=--\"1,5\"");
+    w.set_input(0, c("A2"), "=\"1,5\"*2");
+    w.set_input(0, c("A3"), "=VALOR(\"1,5\")");
+    assert_eq!(value(&w, "A1"), Value::Number(1.5));
+    assert_eq!(value(&w, "A2"), Value::Number(3.0));
+    assert_eq!(value(&w, "A3"), Value::Number(1.5));
+}

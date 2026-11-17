@@ -48,6 +48,13 @@ pub(crate) fn parse_keys(s: &str) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(m, key?))
 }
 
+/// A shortcut's text as this system writes it ("⇧⌘K" on macOS). The
+/// settings keep the text of [`keys_text`], the same on every system.
+pub(crate) fn shown_keys(ctx: &egui::Context, s: &str) -> String {
+    parse_keys(s).map_or_else(|| s.to_string(), |k| ctx.format_shortcut(&k))
+}
+
+/// The stored text of a shortcut ("Ctrl+Shift+K"; Ctrl is ⌘ on macOS).
 pub(crate) fn keys_text(m: Modifiers, key: Key) -> String {
     let mut s = String::new();
     if m.command || m.ctrl {
@@ -220,7 +227,7 @@ impl App {
                 }
             }
             let tip = match self.settings.keybinds.iter().find(|(b, _)| b.key == c.key && b.doc == doc) {
-                Some((_, k)) => format!("{} ({k})", c.label),
+                Some((_, k)) => format!("{} ({})", c.label, shown_keys(ui.ctx(), k)),
                 None => c.label.clone(),
             };
             let clicked = resp.on_hover_text(tip).clicked();
@@ -408,9 +415,9 @@ fn keys_page(ui: &mut egui::Ui, d: &mut CustomizeDlg, cmds: &[palette::Command])
             ui.label(RichText::new(&c.entry.label).strong());
             ui.small(place(c));
             ui.add_space(6.0);
-            let default = if c.entry.keys.is_empty() { tr("customize.none").to_string() } else { c.entry.keys.clone() };
+            let default = if c.entry.keys.is_empty() { tr("customize.none").to_string() } else { shown_keys(ui.ctx(), &c.entry.keys) };
             ui.label(trf("customize.default_keys", &[("keys", &default)]));
-            let mine: Vec<String> = d.binds.iter().filter(|(b, _)| b.key == c.entry.key).map(|(_, k)| k.clone()).collect();
+            let mine: Vec<String> = d.binds.iter().filter(|(b, _)| b.key == c.entry.key).map(|(_, k)| shown_keys(ui.ctx(), k)).collect();
             if !mine.is_empty() {
                 ui.label(trf("customize.own_keys", &[("keys", &mine.join(", "))]));
             }
@@ -419,7 +426,7 @@ fn keys_page(ui: &mut egui::Ui, d: &mut CustomizeDlg, cmds: &[palette::Command])
                 let text = if d.capturing {
                     tr("customize.press_keys").to_string()
                 } else {
-                    d.new_keys.clone().unwrap_or_else(|| tr("customize.click_to_set").to_string())
+                    d.new_keys.as_deref().map_or_else(|| tr("customize.click_to_set").to_string(), |k| shown_keys(ui.ctx(), k))
                 };
                 if ui.add(egui::Button::new(text).min_size(vec2(200.0, 26.0)).selected(d.capturing)).clicked() {
                     d.capturing = !d.capturing;
@@ -463,7 +470,7 @@ fn custom_list(ui: &mut egui::Ui, d: &mut CustomizeDlg) {
                 if ui.small_button("×").on_hover_text(tr("customize.remove")).clicked() {
                     remove = Some(i);
                 }
-                ui.label(RichText::new(k).monospace());
+                ui.label(RichText::new(shown_keys(ui.ctx(), k)).monospace());
                 ui.label(&c.label);
             });
         }

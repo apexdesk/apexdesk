@@ -208,7 +208,7 @@ fn paint_row(ui: &egui::Ui, rect: Rect, c: &Command, hot: bool) {
     ui.painter().galley(pos2(rect.min.x + 36.0, rect.center().y - g.size().y / 2.0), g, color);
     let mut right = rect.max.x - 8.0;
     if !c.entry.keys.is_empty() {
-        let k = ui.painter().text(pos2(right, rect.center().y), Align2::RIGHT_CENTER, &c.entry.keys, FontId::proportional(12.0), v.weak_text_color());
+        let k = ui.painter().text(pos2(right, rect.center().y), Align2::RIGHT_CENTER, crate::app::customize::shown_keys(ui.ctx(), &c.entry.keys), FontId::proportional(12.0), v.weak_text_color());
         right = k.min.x - 12.0;
     }
     let place = c.entry.place.join(" › ");

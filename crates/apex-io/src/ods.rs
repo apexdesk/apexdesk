@@ -22,7 +22,7 @@ mod named;
 mod scenarios;
 mod shapes;
 mod controls;
-mod pivot;
+pub(crate) mod pivot;
 pub(crate) mod page;
 
 const MIME: &str = "application/vnd.oasis.opendocument.spreadsheet";
@@ -2018,6 +2018,16 @@ fn cell_content(t: &Tag, text: Option<String>, wb: &mut Workbook, style: u32) ->
             let expr = if matrix { expr } else { expr.legacy() };
             return Content::Formula { expr: expr.into(), value: value.unwrap_or(Value::Empty) };
         }
+        // Saved back as it came rather than lost to its value.
+        let (ns, rest) = match f.trim().split_once(':') {
+            Some((ns, rest)) if !ns.is_empty() && ns.chars().all(|c| c.is_ascii_alphanumeric()) => (ns, rest),
+            _ => ("of", f.trim()),
+        };
+        let text = rest.strip_prefix('=').unwrap_or(rest).trim();
+        if !text.is_empty() {
+            let value = value.unwrap_or(Value::Empty);
+            return Content::Formula { expr: std::sync::Arc::new(crate::xlsx::kept_formula(text, &value, ns != "msoxl")).into(), value };
+        }
     }
     match value {
         // An empty text (`=""` pasted as a value) says so explicitly.
@@ -3207,6 +3217,23 @@ mod tests {
             }
         }
         assert_eq!(back.sheets[0].cond_formats, rules);
+    }
+
+    /// A formula ApexDesk can't read keeps its text and its value.
+    #[test]
+    fn unreadable_formula_kept() {
+        let mut wb = Workbook::new();
+        let kept = Arc::new(crate::xlsx::kept_formula("NOPE([.A1];", &Value::Number(7.0), true));
+        wb.load_cell(0, CellRef::new(0, 1), Content::Formula { expr: kept.into(), value: Value::Number(7.0) }, 0);
+        wb.finish_load();
+        let first = write(&wb);
+        let content = crate::zip::ZipReader::new(&first).unwrap().read_string("content.xml").unwrap();
+        assert!(content.contains(r#"table:formula="of:=NOPE([.A1];""#), "{content}");
+        let mut back = read(&first).unwrap();
+        back.recalc_all();
+        assert_eq!(back.sheets[0].value(CellRef::new(0, 1)), &Value::Number(7.0));
+        let again = crate::zip::ZipReader::new(&write(&back)).unwrap().read_string("content.xml").unwrap();
+        assert!(again.contains(r#"table:formula="of:=NOPE([.A1];""#), "{again}");
     }
 
     #[test]

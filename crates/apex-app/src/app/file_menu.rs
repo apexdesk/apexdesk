@@ -117,7 +117,9 @@ impl App {
             if item(ui, a, Icon::Save, tr("menu.save"), &k_save) {
                 *cmd = Some(AppCmd::Save);
             }
-            if item(ui, a, Icon::Save, tr("menu.save_as"), &k_save_as) {
+            // A tab that only writes a copy says so.
+            let save_as = if self.saves_copy(self.active) { tr("menu.save_copy") } else { tr("menu.save_as") };
+            if item(ui, a, Icon::Save, save_as, &k_save_as) {
                 self.save(self.active, true);
             }
             if item(ui, a, Icon::Save, &dots("enc.save"), "") {

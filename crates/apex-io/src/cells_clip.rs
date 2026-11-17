@@ -10,6 +10,7 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use apex_doc::{Align, Attrs};
+use apex_sheet::data::AutoFilter;
 use apex_sheet::names::absolute_ref;
 use apex_sheet::{CellRef, CellStyle, Clip, Content, DefinedName, HAlign, Line, LineStyle, Range, VAlign, Value, Workbook};
 
@@ -22,10 +23,13 @@ const COL_SCALE: f32 = 88.0 / 64.0;
 /// Size of cells that name none, in points.
 const DEFAULT_PT: f32 = 11.0;
 
-/// The cells of `r` as an HTML table: text as shown, each cell's
-/// formatting inline, numbers also as numbers (`x:num` for Excel, `sdval`
-/// for LibreOffice), merged cells spanning.
-pub fn html(wb: &Workbook, sheet: usize, r: &Range) -> String {
+/// The cells `clip` was copied from in `sheet` as an HTML table: text as
+/// shown, each cell's formatting inline, numbers also as numbers (`x:num`
+/// for Excel, `sdval` for LibreOffice), merged cells spanning. Rows the
+/// clip left out (a filter hid them) are left out here too.
+pub fn html(wb: &Workbook, sheet: usize, clip: &Clip) -> String {
+    let r = &clip.source();
+    let rows: Vec<u32> = (0..clip.rows.max(1)).map(|k| clip.src_row(k)).collect();
     let sh = &wb.sheets[sheet];
     let mut s = String::from("<meta charset=\"utf-8\"><table style=\"border-collapse:collapse\">");
     for col in r.start.col..=r.end.col {
@@ -33,14 +37,17 @@ pub fn html(wb: &Workbook, sheet: usize, r: &Range) -> String {
         let _ = write!(s, "<col width=\"{}\">", (w / COL_SCALE).round().max(0.0));
     }
     let merges: Vec<Range> = sh.merges.iter().filter_map(|m| m.intersect(r)).collect();
-    for row in r.start.row..=r.end.row {
+    // A merged cell starts at the first of its rows that is copied.
+    let top = |m: &Range| rows.iter().copied().find(|x| m.start.row <= *x).unwrap_or(m.start.row);
+    for &row in &rows {
         s.push_str("<tr>");
         for col in r.start.col..=r.end.col {
             let c = CellRef::new(row, col);
             let merge = merges.iter().find(|m| m.contains(c));
-            if merge.is_some_and(|m| m.start != c) {
+            if merge.is_some_and(|m| CellRef::new(top(m), m.start.col) != c) {
                 continue;
             }
+            let c = merge.map_or(c, |m| m.start);
             let cell = wb.cell(sheet, c);
             let style = wb.styles.get(cell.map_or(0, |x| x.style));
             s.push_str("<td");
@@ -48,8 +55,9 @@ pub fn html(wb: &Workbook, sheet: usize, r: &Range) -> String {
                 if m.cols() > 1 {
                     let _ = write!(s, " colspan=\"{}\"", m.cols());
                 }
-                if m.rows() > 1 {
-                    let _ = write!(s, " rowspan=\"{}\"", m.rows());
+                let span = rows.iter().filter(|x| m.start.row <= **x && **x <= m.end.row).count();
+                if span > 1 {
+                    let _ = write!(s, " rowspan=\"{span}\"");
                 }
             }
             let css = cell_css(style);
@@ -213,16 +221,31 @@ pub fn xlsx(wb: &Workbook, sheet: usize, clip: &Clip) -> Vec<u8> {
     let mut tmp = Workbook::new();
     let name = wb.sheets[sheet].name.clone();
     tmp.sheets[0].name = name.clone();
-    let c = tmp.adopt_clip(clip);
+    // The rows a filter hid, left out of the clip, are empty rows hidden
+    // by a filter here: the rows that were copied stay where they were.
+    let src = clip.source();
+    let mut spread = clip.clone();
+    for (dr, _, _) in &mut spread.cells {
+        *dr = clip.src_row(*dr) - clip.origin.row;
+    }
+    (spread.rows, spread.src_rows) = (src.rows(), Vec::new());
+    let c = tmp.adopt_clip(&spread);
     tmp.paste(0, &Range::single(clip.origin), &c);
     for &(i, w) in &clip.col_widths {
         tmp.sheets[0].col_widths.insert(clip.origin.col + i, w);
     }
     for &(i, h) in &clip.row_heights {
-        tmp.sheets[0].row_heights.insert(clip.origin.row + i, h);
+        tmp.sheets[0].row_heights.insert(clip.src_row(i), h);
     }
-    let end = CellRef::new(clip.origin.row + clip.rows.max(1) - 1, clip.origin.col + clip.cols.max(1) - 1);
-    tmp.names.push(DefinedName::new(CLIP_NAME, None, absolute_ref(&name, Range::new(clip.origin, end))));
+    let copied: std::collections::HashSet<u32> = (0..clip.rows).map(|k| clip.src_row(k)).collect();
+    let left_out: Vec<u32> = (src.start.row..=src.end.row).filter(|row| !copied.contains(row)).collect();
+    if let Some(first) = left_out.first().filter(|row| **row > 0) {
+        for &row in &left_out {
+            tmp.sheets[0].row_heights.insert(row, 0.0);
+        }
+        tmp.sheets[0].filter = Some(AutoFilter::new(Range::new(CellRef::new(first - 1, src.start.col), src.end)));
+    }
+    tmp.names.push(DefinedName::new(CLIP_NAME, None, absolute_ref(&name, src)));
     crate::xlsx::write(&tmp)
 }
 
@@ -235,7 +258,7 @@ pub fn read_xlsx(data: &[u8]) -> Option<Clip> {
         Some(s) => wb.sheets.iter().position(|x| *x.name == *s)?,
         None => 0,
     };
-    Some(wb.copy(si, &range))
+    Some(wb.copy_visible(si, &range))
 }
 
 /// Cells read from another program's HTML table, for
@@ -853,7 +876,7 @@ mod tests {
         other.paste(0, &Range::single(CellRef::new(0, 0)), &c);
         assert_eq!(other.display(0, CellRef::new(1, 0)).0, "6");
         assert!(other.styles.get(other.cell(0, CellRef::new(0, 0)).unwrap().style).bold);
-        let h = html(&wb, 0, &r);
+        let h = html(&wb, 0, &clip);
         assert!(h.contains("font-weight:bold") && h.contains("x:num=\"6\""), "{h}");
         // HTML's older words too, for LibreOffice Calc.
         assert!(h.contains("bgcolor=\"#FFFF00\"") && h.contains("<font face=\"Liberation Serif\" size=\"5\"") && h.contains("<b>2</b>"), "{h}");
@@ -865,4 +888,39 @@ mod tests {
         assert!(a.bold);
         assert_eq!((a.font_size, a.fill, a.font.as_deref()), (160, Some(0xFFFF00), Some("Liberation Serif")));
     }
+    #[test]
+    fn filtered_rows_stay_out_of_the_clipboard() {
+        use apex_sheet::data::{ColumnFilter, FilterKind};
+        let mut wb = Workbook::new();
+        for (i, (name, n)) in [("who", "n"), ("a", "1"), ("b", "2"), ("a", "3"), ("b", "4")].iter().enumerate() {
+            let row = i as u32;
+            wb.set_input(0, CellRef::new(row, 0), name);
+            wb.set_input(0, CellRef::new(row, 1), n);
+            if i > 0 {
+                wb.set_input(0, CellRef::new(row, 2), &format!("=B{}*2", row + 1));
+            }
+        }
+        let r = Range::new(CellRef::new(0, 0), CellRef::new(4, 2));
+        let mut f = AutoFilter::new(r);
+        f.cols.push(ColumnFilter { col: 0, kind: FilterKind::Values { items: vec!["b".into()], blanks: false } });
+        wb.set_filter(0, Some(f), "undo.filter");
+        let clip = wb.copy_visible(0, &r);
+        assert_eq!(clip.rows, 3);
+        let h = html(&wb, 0, &clip);
+        assert_eq!(h.matches("<tr>").count(), 3, "{h}");
+        assert!(!h.contains(">a<") && h.matches(">b<").count() == 2, "{h}");
+        // Another ApexDesk window gets the same three rows, and formulas
+        // that still read their own row wherever they land.
+        let back = read_xlsx(&xlsx(&wb, 0, &clip)).unwrap();
+        assert_eq!((back.rows, back.cols, back.src_rows.clone()), (3, 3, vec![0, 2, 4]));
+        let mut other = Workbook::new();
+        other.locale = apex_sheet::Locale::EN;
+        let c = other.adopt_clip(&back);
+        other.paste(0, &Range::single(CellRef::new(9, 0)), &c);
+        assert_eq!(other.display(0, CellRef::new(11, 0)).0, "b");
+        assert_eq!(other.display(0, CellRef::new(11, 2)).0, "8");
+        assert_eq!(other.edit_text(0, CellRef::new(11, 2)), "=B12*2");
+        assert!(other.cell(0, CellRef::new(12, 0)).is_none());
+    }
+
 }

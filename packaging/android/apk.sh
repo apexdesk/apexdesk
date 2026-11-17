@@ -11,10 +11,35 @@
 # APEXDESK_ANDROID_TARGETS: Rust targets to include (default
 # aarch64-linux-android and armv7-linux-androideabi, the latter for devices
 # with a 32-bit Android; x86_64-linux-android adds the emulator's).
-# APEXDESK_ANDROID_KEYSTORE / APEXDESK_ANDROID_KEY_PASS: the key that signs
-# (default the SDK's debug key, ~/.android/debug.keystore).
+# APEXDESK_ANDROID_KEYSTORE / APEXDESK_ANDROID_KEY_PASS: the key that signs.
+# Without them the build stops: the SDK's debug key
+# (~/.android/debug.keystore, password "android") signs only when asked for
+# with --debug or APEXDESK_ANDROID_DEBUG_KEY=1, for copies to try out (an
+# app signed with it can't be updated by one signed with the real key).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+
+debug_key=${APEXDESK_ANDROID_DEBUG_KEY:-0}
+for arg in "$@"; do
+    case "$arg" in
+        --debug) debug_key=1 ;;
+        *) echo "usage: packaging/android/apk.sh [--debug]" >&2; exit 2 ;;
+    esac
+done
+if [ -n "${APEXDESK_ANDROID_KEYSTORE:-}" ]; then
+    keystore=$APEXDESK_ANDROID_KEYSTORE
+    if [ -z "${APEXDESK_ANDROID_KEY_PASS:-}" ]; then
+        echo "APEXDESK_ANDROID_KEY_PASS is not set (the password of $keystore)" >&2
+        exit 1
+    fi
+elif [ "$debug_key" = 1 ]; then
+    keystore=$HOME/.android/debug.keystore
+    export APEXDESK_ANDROID_KEY_PASS=android
+else
+    echo "No signing key: set APEXDESK_ANDROID_KEYSTORE and APEXDESK_ANDROID_KEY_PASS," >&2
+    echo "or pass --debug to sign a test copy with the SDK's debug key." >&2
+    exit 1
+fi
 here=packaging/android
 
 sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}
@@ -44,7 +69,7 @@ for target in ${APEXDESK_ANDROID_TARGETS:-aarch64-linux-android armv7-linux-andr
     t=${target//-/_}
     export "CC_$t=$llvm/$clang$api-clang" "CXX_$t=$llvm/$clang$api-clang++" "AR_$t=$llvm/llvm-ar"
     export "CARGO_TARGET_${t^^}_LINKER=$llvm/$clang$api-clang"
-    cargo build --release --target "$target" -p apex-android
+    cargo build --release --locked --target "$target" -p apex-android
     mkdir -p "$work/lib/$abi"
     cp "target/$target/release/libapexdesk.so" "$work/lib/$abi/"
 done
@@ -61,7 +86,14 @@ javac -source 8 -target 8 -Xlint:-options -classpath "$jar" -d "$work/classes" $
 out=dist/apexdesk-$version-android.apk
 # The password from the environment, not the command line (where any
 # process can read it).
-export APEXDESK_ANDROID_KEY_PASS=${APEXDESK_ANDROID_KEY_PASS:-android}
-"$tools/apksigner" sign --ks "${APEXDESK_ANDROID_KEYSTORE:-$HOME/.android/debug.keystore}" \
+"$tools/apksigner" sign --ks "$keystore" \
     --ks-pass env:APEXDESK_ANDROID_KEY_PASS --out "$out" "$work/aligned.apk"
+# Which key signed it, so a release made with the debug key shows.
+if [ "$debug_key" = 1 ] && [ -z "${APEXDESK_ANDROID_KEYSTORE:-}" ]; then
+    echo "Signed with the DEBUG key ($keystore): not for release." >&2
+else
+    echo "Signed with $keystore" >&2
+fi
+"$tools/apksigner" verify --print-certs "$out" | grep -m2 -E 'certificate (DN|SHA-256 digest)' >&2 || true
+scripts/sha256.sh "$out"
 echo "$out"

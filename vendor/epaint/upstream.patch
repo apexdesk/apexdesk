@@ -1,0 +1,1090 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -157,6 +157,9 @@
+ [dependencies.smallvec]
+ version = "1.15"
+ 
++[dependencies.unicode-bidi]
++version = "0.3.18"
++
+ [dependencies.unicode-general-category]
+ version = "1.1"
+ 
+--- a/src/tessellator.rs
++++ b/src/tessellator.rs
+@@ -2039,7 +2039,11 @@
+                 continue;
+             }
+ 
+-            let final_row_pos = galley_pos + rotator * row.pos.to_vec2();
++            let mut final_row_pos = galley_pos + rotator * row.pos.to_vec2();
++            // Rows of unrounded galleys may sit between pixels.
++            if self.options.round_text_to_pixels && *angle == 0.0 {
++                final_row_pos.y = (final_row_pos.y * self.pixels_per_point).round() / self.pixels_per_point;
++            }
+ 
+             let mut row_rect = row.visuals.mesh_bounds;
+             if *angle != 0.0 {
+--- a/src/text/font.rs
++++ b/src/text/font.rs
+@@ -267,10 +267,18 @@
+         let width = bounds.width() as u16;
+         let height = bounds.height() as u16;
+ 
+-        let uv_rect = if width == 0 || height == 0 {
++        // ApexDesk patch: a glyph bigger than this isn't drawn; a file's
++        // huge font size would take gigabytes or overflow the atlas.
++        // (Half the atlas high at most: an overflowing atlas starts again a
++        // third of the way down, and mustn't grow past the GPU's limit.)
++        let most = atlas.size()[0].min(4096);
++        let uv_rect = if width == 0 || height == 0 || width as usize > most || height as usize > most / 2 {
+             UvRect::default()
+         } else {
+-            let mut ctx = vello_cpu::RenderContext::new(width, height);
++            // ApexDesk patch: one glyph is drawn in this thread (vello_cpu's
++            // threads, which the PDF renderer turns on, are not for this).
++            let settings = vello_cpu::RenderSettings { num_threads: 0, ..Default::default() };
++            let mut ctx = vello_cpu::RenderContext::new_with(width, height, settings);
+             ctx.set_transform(kurbo::Affine::translate((-bounds.x0, -bounds.y0)));
+             ctx.set_paint(color::OpaqueColor::<color::Srgb>::WHITE);
+             ctx.fill_path(&path);
+--- a/src/text/fonts.rs
++++ b/src/text/fonts.rs
+@@ -627,6 +627,9 @@
+     /// Location-independent (fallback choice depends only on charmap support,
+     /// not on variation coordinates).
+     pub face_cache: ahash::HashMap<char, FontFaceKey>,
++
++    /// ApexDesk patch: shaped segments, reused across font sizes.
++    pub shape_cache: super::text_layout::ShapeCache,
+ }
+ 
+ impl CachedFamily {
+@@ -644,6 +647,7 @@
+                 replacement_face_key: FontFaceKey::INVALID,
+                 replacement_char: PRIMARY_REPLACEMENT_CHAR,
+                 face_cache: Default::default(),
++                shape_cache: Default::default(),
+             };
+         }
+ 
+@@ -653,6 +657,7 @@
+             replacement_face_key: FontFaceKey::INVALID,
+             replacement_char: PRIMARY_REPLACEMENT_CHAR,
+             face_cache: Default::default(),
++                shape_cache: Default::default(),
+         };
+ 
+         let (replacement_face_key, replacement_char) = slf
+@@ -1200,7 +1205,11 @@
+                 text: job.text[start..end].to_owned(),
+                 wrap: crate::text::TextWrapping {
+                     max_rows: max_rows_remaining,
+-                    ..job.wrap
++                    keep_together: Vec::new(),
++                    // ApexDesk patch: a hanging indent takes in all the
++                    // rows of the later paragraphs.
++                    indent_all: job.wrap.indent_all || !is_first_paragraph,
++                    ..job.wrap.clone()
+                 },
+                 sections: Vec::new(),
+                 break_on_newline: job.break_on_newline,
+@@ -1213,10 +1222,16 @@
+                 },
+                 round_output_to_gui: job.round_output_to_gui,
+                 keep_trailing_whitespace: job.keep_trailing_whitespace,
++                vertical: job.vertical,
++                rtl: job.rtl,
+             };
+ 
++            // ApexDesk patch: the paragraph's first section in the job.
++            let mut first_section: Option<usize> = None;
++            let base = current_section;
+             // Add overlapping sections:
+-            for section in &job.sections[current_section..job.sections.len()] {
++            for (k, section) in job.sections[current_section..job.sections.len()].iter().enumerate() {
++                let k = base + k;
+                 let LayoutSection {
+                     leading_space,
+                     byte_range: section_range,
+@@ -1243,6 +1258,7 @@
+                         new_range.start <= new_range.end,
+                         "Bad new section range: {new_range:?}"
+                     );
++                    first_section.get_or_insert(k);
+                     paragraph_job.sections.push(LayoutSection {
+                         leading_space: if ByteIndex(start) <= section_range.start {
+                             *leading_space
+@@ -1255,6 +1271,12 @@
+                 }
+             }
+ 
++            // ApexDesk patch: text kept together, in the paragraph's sections.
++            if let Some(f) = first_section {
++                let (f, n) = (f as u32, paragraph_job.sections.len() as u32);
++                paragraph_job.wrap.keep_together = job.wrap.keep_together.iter().filter(|r| r.end > f && r.start < f + n).map(|r| r.start.saturating_sub(f)..(r.end - f).min(n)).collect();
++            }
++
+             // TODO(emilk): we could lay out each paragraph in parallel to get a nice speedup on multicore machines.
+             let (hash, galley) =
+                 self.layout_internal(fonts, paragraph_job, pixels_per_point, false);
+--- /dev/null
++++ b/src/text/kinsoku.rs
+@@ -0,0 +1,97 @@
++//! ApexDesk patch: East Asian line breaking (kinsoku shori).
++//!
++//! Lines may break between any two ideographs or kana, and between them and
++//! other text, but no line starts with closing punctuation, small kana or
++//! the prolonged sound mark, and none ends with an opening bracket. The
++//! lists follow Word's default Japanese rules, with Chinese punctuation
++//! (they match `apex_doc::asian`).
++
++/// Ideographs, kana, bopomofo and full width punctuation: characters a
++/// line may break before or after without a space. Hangul is left out:
++/// Korean breaks at spaces.
++pub(crate) fn breaks_freely(c: char) -> bool {
++    matches!(c as u32,
++        0x2E80..=0x2FDF
++        | 0x2FF0..=0x303F
++        | 0x3040..=0x312F
++        | 0x3190..=0x31FF
++        | 0x3200..=0x33FF
++        | 0x3400..=0x4DBF
++        | 0x4E00..=0x9FFF
++        | 0xF900..=0xFAFF
++        | 0xFE10..=0xFE1F
++        | 0xFE30..=0xFE4F
++        | 0xFF00..=0xFF9F
++        | 0xFFE0..=0xFFEF
++        | 0x1B000..=0x1B16F
++        | 0x20000..=0x3134F
++    )
++}
++
++/// No line may start with these.
++pub(crate) fn no_line_start(c: char) -> bool {
++    "!%),.:;?]}¢°’”‰′″℃、。々〉》」』】〕〗〙〛゛゜ゝゞ・ヽヾ！％），．：；？］｝｡｣､･ﾞﾟ￠ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿｧｨｩｪｫｬｭｮｯｰー‐゠–〜～…‥〻〟»›︐︑︒︓︔︕︖︶︸︺︼︾﹀﹂﹄﹈︘"
++        .contains(c)
++}
++
++/// No line may end with these.
++pub(crate) fn no_line_end(c: char) -> bool {
++    "$([{£¥‘“〈《「『【〔〖〘〚〝＄（［｛｢￡￥«‹︵︷︹︻︽︿﹁﹃﹇︗".contains(c)
++}
++
++/// Punctuation that may hang past the right edge
++/// ([`crate::text::TextWrapping::hanging_punctuation`]).
++pub(crate) fn hangs(c: char) -> bool {
++    matches!(c, '、' | '。' | '，' | '．' | '､' | '｡' | '︑' | '︒' | '︐')
++}
++
++/// Middle of the ideographic em box above the baseline, as a share of
++/// the font size (the box goes from 0.12 below it to 0.88 above).
++pub const EM_BOX_MIDDLE: f32 = 0.38;
++
++/// Characters that stand upright in vertical text: ideographs, kana,
++/// hangul, full width forms and the vertical forms of punctuation. The
++/// rest (Latin letters, digits, the prolonged sound mark, dashes and
++/// tildes) lie on their side.
++pub fn upright_in_vertical(c: char) -> bool {
++    let u = c as u32;
++    let cjk = matches!(u,
++        0x1100..=0x11FF
++        | 0x2E80..=0x2FDF
++        | 0x2FF0..=0x303F
++        | 0x3040..=0x31FF
++        | 0x3200..=0x33FF
++        | 0x3400..=0x4DBF
++        | 0x4E00..=0x9FFF
++        | 0xA960..=0xA97F
++        | 0xAC00..=0xD7FF
++        | 0xF900..=0xFAFF
++        | 0xFE10..=0xFE1F
++        | 0xFE30..=0xFE4F
++        | 0xFF01..=0xFF60
++        | 0xFFE0..=0xFFE6
++        | 0x1B000..=0x1B16F
++        | 0x20000..=0x3134F
++    ) || matches!(c, '※' | '§' | '°' | '±' | '×' | '÷' | '■' | '□' | '▲' | '△' | '○' | '●' | '◎' | '★' | '☆');
++    cjk && !matches!(c, 'ー' | '〜' | '～' | '＝' | '－' | '〰' | '…' | '‥' | '（' | '）' | '［' | '］' | '｛' | '｝' | '＜' | '＞' | '＿' | '｜' | '→' | '←')
++}
++
++/// Whether a line may break between `a` and `b` with the rules on.
++pub(crate) fn allowed(a: char, b: char) -> bool {
++    !no_line_end(a) && !no_line_start(b)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn rules() {
++        assert!(breaks_freely('漢') && breaks_freely('か') && breaks_freely('。') && !breaks_freely('한') && !breaks_freely('a'));
++        assert!(!allowed('漢', '。') && !allowed('「', '漢') && allowed('。', '漢') && allowed('漢', '字'));
++        assert!(!allowed('漢', 'ー') && !allowed('か', 'っ'));
++        assert!(!allowed('漢', '︒') && !allowed('﹁', '漢'));
++        assert!(upright_in_vertical('漢') && upright_in_vertical('︒') && upright_in_vertical('Ａ'));
++        assert!(!upright_in_vertical('a') && !upright_in_vertical('ー') && !upright_in_vertical('1'));
++    }
++}
+--- a/src/text/mod.rs
++++ b/src/text/mod.rs
+@@ -4,6 +4,7 @@
+ mod font;
+ mod fonts;
+ mod index;
++pub(crate) mod kinsoku;
+ mod text_layout;
+ mod text_layout_types;
+ 
+@@ -14,6 +15,7 @@
+         SmoothHinting,
+     },
+     index::{ByteIndex, ByteRange, ByteRangeExt, CharIndex, CharRange, CharRangeExt},
++    kinsoku::{EM_BOX_MIDDLE, upright_in_vertical},
+     text_layout::*,
+     text_layout_types::*,
+ };
+--- a/src/text/text_layout.rs
++++ b/src/text/text_layout.rs
+@@ -59,11 +59,6 @@
+     pub fn round_to_pixel(&self, point: f32) -> f32 {
+         (point * self.pixels_per_point).round() / self.pixels_per_point
+     }
+-
+-    #[inline(always)]
+-    pub fn floor_to_pixel(&self, point: f32) -> f32 {
+-        (point * self.pixels_per_point).floor() / self.pixels_per_point
+-    }
+ }
+ 
+ // ----------------------------------------------------------------------------
+@@ -154,21 +149,45 @@
+ 
+     let justify = job.justify && job.wrap.max_width.is_finite();
+ 
++    // ApexDesk patch: the hanging indent of each row.
++    let indent = |i: usize| if i > 0 || job.wrap.indent_all { job.wrap.indent_rest } else { 0.0 };
+     if justify || job.halign != Align::LEFT {
+         let num_rows = rows.len();
+         for (i, placed_row) in rows.iter_mut().enumerate() {
+             let is_last_row = i + 1 == num_rows;
+             let justify_row = justify && !placed_row.ends_with_newline && !is_last_row;
++            // ApexDesk patch: a last row that took a word more by
++            // shrinking its spaces shrinks them, without stretching.
++            let squeeze = justify && job.wrap.shrink_spaces > 0.0;
+             halign_and_justify_row(
+                 point_scale,
+                 placed_row,
+                 job.halign,
+-                job.wrap.max_width,
+-                justify_row,
++                job.wrap.max_width - indent(i),
++                justify_row || squeeze,
++                !justify_row,
+                 job.keep_trailing_whitespace,
++                i == 0,
+             );
+         }
+     }
++    if job.wrap.indent_rest != 0.0 {
++        for (i, placed_row) in rows.iter_mut().enumerate() {
++            // (Centered and right-aligned rows sit in the narrower width.)
++            placed_row.pos.x += match job.halign {
++                Align::LEFT => indent(i),
++                Align::Center => indent(i) / 2.0,
++                Align::RIGHT => 0.0,
++            };
++        }
++    }
++
++    // ApexDesk patch: right-to-left text.
++    for placed_row in &mut rows {
++        if placed_row.glyphs.iter().any(|g| !g.chr.is_ascii()) || job.rtl {
++            bidi_row(Arc::make_mut(&mut placed_row.row), job.rtl);
++        }
++    }
+ 
+     // Calculate the Y positions and tessellate the text:
+     galley_from_rows(point_scale, job, rows, elided, intrinsic_size)
+@@ -205,6 +224,7 @@
+             font_height: self.font_metrics.row_height,
+             font_ascent: self.font_metrics.ascent,
+             uv_rect,
++            shaped: None,
+             section_index: self.section_index,
+             first_vertex: 0,
+         }
+@@ -212,8 +232,8 @@
+ }
+ 
+ /// Produced by [`segment_into_runs`] for text shaping.
+-#[derive(Debug)]
+-struct TextRun {
++#[derive(Clone, Debug)]
++pub(crate) struct TextRun {
+     /// Which font face should shape this run.
+     font_key: FontFaceKey,
+ 
+@@ -231,7 +251,7 @@
+     font: &mut Font<'_>,
+     run: &TextRun,
+     run_text: &str,
+-    glyph_buffer: &harfrust::GlyphBuffer,
++    (glyph_infos, glyph_positions): (&[harfrust::GlyphInfo], &[harfrust::GlyphPosition]),
+     face_metrics: &StyledMetrics,
+     ctx: &mut ShapingContext,
+     paragraph: &mut Paragraph,
+@@ -247,7 +267,7 @@
+     let mut cluster_start_byte: usize = 0;
+     let mut cluster_glyph_count: usize = 0;
+ 
+-    for (info, pos) in iter::zip(glyph_buffer.glyph_infos(), glyph_buffer.glyph_positions()) {
++    for (info, pos) in iter::zip(glyph_infos, glyph_positions) {
+         let glyph_id = skrifa::GlyphId::new(info.glyph_id);
+         let cluster = info.cluster;
+         let mut advance_width_px = pos.x_advance as f32 * px_scale;
+@@ -368,13 +388,21 @@
+ 
+             paragraph.cursor_x_px += advance_width_px;
+ 
+-            ctx.glyph(
++            let mut glyph = ctx.glyph(
+                 chr,
+                 physical_x,
+                 advance_width_px,
+                 face_metrics,
+                 glyph_alloc.uv_rect,
+-            )
++            );
++            // ApexDesk patch: contextual forms of complex scripts.
++            if chr as u32 >= 0x0590 && !is_cjk(chr) {
++                let mapped = font.fonts_by_id.get_mut(&run.font_key).and_then(|ff| ff.glyph_info(chr, face_metrics)).and_then(|g| g.id);
++                if let Some(m) = mapped.filter(|m| *m != glyph_id) {
++                    glyph.shaped = Some((m.to_u32() as u16, info.glyph_id as u16));
++                }
++            }
++            glyph
+         };
+         paragraph.glyphs.push(glyph);
+         cluster_glyph_count += 1;
+@@ -480,46 +508,162 @@
+             continue;
+         }
+ 
+-        segment_into_runs(font, segment, &mut runs);
+-
+-        let num_runs = runs.len();
+-        for (run_idx, run) in runs.iter().enumerate() {
+-            let run_text = &segment[run.byte_range.as_usize()];
+-            let Some(font_face) = font.fonts_by_id.get(&run.font_key) else {
++        let shaped;
++        (shaped, shape_buffer) = shape_segment(font, segment, &format.coords, &mut runs, shape_buffer);
++        for sr in &shaped.runs {
++            let run_text = &segment[sr.run.byte_range.as_usize()];
++            let Some(font_face) = font.fonts_by_id.get(&sr.run.font_key) else {
+                 continue;
+             };
+ 
+             let face_metrics =
+                 font_face.styled_metrics(pixels_per_point, font_size, &format.coords);
+ 
+-            // Set buffer flags for paragraph boundary context.
+-            let mut flags = harfrust::BufferFlags::empty();
+-            if run_idx == 0 {
+-                flags |= harfrust::BufferFlags::BEGINNING_OF_TEXT;
+-            }
+-            if run_idx + 1 == num_runs {
+-                flags |= harfrust::BufferFlags::END_OF_TEXT;
+-            }
+-
+-            let glyph_buffer = shape_text(font_face, run_text, &format.coords, shape_buffer, flags);
+-
+             layout_shaped_run(
+                 font,
+-                run,
++                &sr.run,
+                 run_text,
+-                &glyph_buffer,
++                (&sr.infos, &sr.positions),
+                 &face_metrics,
+                 &mut ctx,
+                 paragraph,
+             );
+-
+-            shape_buffer = glyph_buffer.clear();
+         }
+     }
+ 
+     shape_buffer
+ }
+ 
++// ----------------------------------------------------------------------------
++// ApexDesk patch: shaping cache.
++//
++// harfrust shapes in font units without a pixel size, so the result of
++// splitting a paragraph into font runs and shaping them does not depend on
++// the font size. Keeping it lets a zoom (every text laid out again at a new
++// size) skip segmentation and shaping and only redo positioning.
++
++/// One shaped run: its font, byte range and glyphs.
++struct ShapedRun {
++    run: TextRun,
++    infos: Box<[harfrust::GlyphInfo]>,
++    positions: Box<[harfrust::GlyphPosition]>,
++}
++
++struct ShapedSegment {
++    text: Box<str>,
++    coords: VariationCoords,
++    runs: Box<[ShapedRun]>,
++}
++
++/// Two generations: when the current one fills up it becomes the old one, and
++/// entries still in use move back on their next hit.
++#[derive(Default)]
++pub(crate) struct ShapeCache {
++    current: ahash::HashMap<u64, Arc<ShapedSegment>>,
++    old: ahash::HashMap<u64, Arc<ShapedSegment>>,
++    /// Approximate memory of the current generation.
++    current_bytes: usize,
++}
++
++impl core::fmt::Debug for ShapeCache {
++    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
++        write!(f, "ShapeCache({} + {})", self.current.len(), self.old.len())
++    }
++}
++
++const SHAPE_CACHE_SIZE: usize = 16_384;
++/// Memory limit of a generation: a long document shaped whole (to paginate
++/// it) would otherwise keep tens of MB of glyphs.
++const SHAPE_CACHE_BYTES: usize = 4 << 20;
++
++impl ShapedSegment {
++    fn bytes(&self) -> usize {
++        let glyph = core::mem::size_of::<harfrust::GlyphInfo>() + core::mem::size_of::<harfrust::GlyphPosition>();
++        let runs: usize = self.runs.iter().map(|r| core::mem::size_of::<ShapedRun>() + r.infos.len() * glyph).sum();
++        core::mem::size_of::<Self>() + self.text.len() + runs + 64
++    }
++}
++
++impl ShapeCache {
++    fn key(text: &str, coords: &VariationCoords) -> u64 {
++        use core::hash::{BuildHasher as _, Hash as _, Hasher as _};
++        let mut h = ahash::RandomState::with_seeds(1, 2, 3, 4).build_hasher();
++        text.hash(&mut h);
++        for (tag, value) in coords.as_ref() {
++            tag.to_be_bytes().hash(&mut h);
++            value.to_bits().hash(&mut h);
++        }
++        h.finish()
++    }
++
++    fn get(&mut self, text: &str, coords: &VariationCoords) -> Option<Arc<ShapedSegment>> {
++        let key = Self::key(text, coords);
++        let found = |s: &Arc<ShapedSegment>| &*s.text == text && s.coords == *coords;
++        if let Some(s) = self.current.get(&key).filter(|s| found(s)) {
++            return Some(s.clone());
++        }
++        let s = self.old.remove(&key).filter(|s| found(s))?;
++        self.insert(key, s.clone());
++        Some(s)
++    }
++
++    fn insert(&mut self, key: u64, s: Arc<ShapedSegment>) {
++        let bytes = s.bytes();
++        if self.current.len() >= SHAPE_CACHE_SIZE || self.current_bytes + bytes > SHAPE_CACHE_BYTES {
++            self.old = core::mem::take(&mut self.current);
++            self.current_bytes = 0;
++        }
++        self.current_bytes += bytes;
++        self.current.insert(key, s);
++    }
++}
++
++/// Shaped runs of `segment`, from the cache or shaped now.
++fn shape_segment(
++    font: &mut Font<'_>,
++    segment: &str,
++    coords: &VariationCoords,
++    runs: &mut Vec<TextRun>,
++    mut shape_buffer: harfrust::UnicodeBuffer,
++) -> (Arc<ShapedSegment>, harfrust::UnicodeBuffer) {
++    if let Some(s) = font.cached_family.shape_cache.get(segment, coords) {
++        return (s, shape_buffer);
++    }
++    segment_into_runs(font, segment, runs);
++    let num_runs = runs.len();
++    let mut shaped = Vec::with_capacity(num_runs);
++    for (run_idx, run) in runs.iter().enumerate() {
++        let run_text = &segment[run.byte_range.as_usize()];
++        let Some(font_face) = font.fonts_by_id.get(&run.font_key) else {
++            continue;
++        };
++        let mut flags = harfrust::BufferFlags::empty();
++        if run_idx == 0 {
++            flags |= harfrust::BufferFlags::BEGINNING_OF_TEXT;
++        }
++        if run_idx + 1 == num_runs {
++            flags |= harfrust::BufferFlags::END_OF_TEXT;
++        }
++        let (glyph_buffer, rtl) = shape_text(font_face, run_text, coords, shape_buffer, flags);
++        let (mut infos, mut positions): (Vec<_>, Vec<_>) = (glyph_buffer.glyph_infos().into(), glyph_buffer.glyph_positions().into());
++        // ApexDesk patch: right-to-left runs come shaped in visual order;
++        // their glyphs follow the characters (`bidi_row` turns them back).
++        if rtl {
++            infos.reverse();
++            positions.reverse();
++        }
++        shaped.push(ShapedRun {
++            run: run.clone(),
++            infos: infos.into(),
++            positions: positions.into(),
++        });
++        shape_buffer = glyph_buffer.clear();
++    }
++    let s = Arc::new(ShapedSegment { text: segment.into(), coords: coords.clone(), runs: shaped.into() });
++    font.cached_family.shape_cache.insert(ShapeCache::key(segment, coords), s.clone());
++    (s, shape_buffer)
++}
++
+ /// Iterator that either splits on `'\n'` or yields the whole string once.
+ /// Avoids `Box<dyn Iterator>` and `Vec<&str>` allocation.
+ enum SplitOrWhole<'a> {
+@@ -599,6 +743,8 @@
+         }
+ 
+         let is_last_paragraph = (i + 1) == num_paragraphs;
++        // ApexDesk patch: hanging indents (see `TextWrapping::indent_rest`).
++        let first_indent = if rows.is_empty() && !job.wrap.indent_all { 0.0 } else { job.wrap.indent_rest };
+ 
+         if paragraph.glyphs.is_empty() {
+             rows.push(PlacedRow {
+@@ -616,7 +762,7 @@
+             // `last_glyph.max_x()`, so that side-by-side galleys have the same
+             // spacing as characters within a single galley.
+             let paragraph_width = paragraph.cursor_x_px / pixels_per_point;
+-            if paragraph_width <= job.effective_wrap_width() {
++            if paragraph_width <= job.effective_wrap_width() - first_indent {
+                 // Early-out optimization: the whole paragraph fits on one row.
+                 rows.push(PlacedRow {
+                     pos: pos2(0.0, f32::NAN),
+@@ -629,7 +775,7 @@
+                     ends_with_newline: !is_last_paragraph,
+                 });
+             } else {
+-                line_break(&paragraph, job, &mut rows, elided);
++                line_break(&paragraph, job, first_indent, &mut rows, elided);
+                 let placed_row = rows.last_mut().unwrap();
+                 placed_row.ends_with_newline = !is_last_paragraph;
+             }
+@@ -642,10 +788,11 @@
+ fn line_break(
+     paragraph: &Paragraph,
+     job: &LayoutJob,
++    first_indent: f32,
+     out_rows: &mut Vec<PlacedRow>,
+     elided: &mut bool,
+ ) {
+-    let wrap_width = job.effective_wrap_width();
++    let mut wrap_width = job.effective_wrap_width() - first_indent;
+ 
+     // Keeps track of good places to insert row break if we exceed `wrap_width`.
+     let mut row_break_candidates = RowBreakCandidates::default();
+@@ -653,6 +800,9 @@
+     let mut first_row_indentation = paragraph.glyphs[0].pos.x;
+     let mut row_start_x = 0.0;
+     let mut row_start_idx = 0;
++    // ApexDesk patch: the width of the row's spaces, which may shrink.
++    let shrink = if job.justify { job.wrap.shrink_spaces } else { 0.0 };
++    let mut row_spaces = 0.0;
+ 
+     for i in 0..paragraph.glyphs.len() {
+         if job.wrap.max_rows <= out_rows.len() {
+@@ -662,7 +812,15 @@
+ 
+         let potential_row_width = paragraph.glyphs[i].max_x() - row_start_x;
+ 
+-        if wrap_width < potential_row_width {
++        // ApexDesk patch: punctuation and spaces hanging past the edge.
++        let hangs = (job.wrap.hanging_punctuation
++            && i > row_start_idx
++            && super::kinsoku::hangs(paragraph.glyphs[i].chr)
++            && paragraph.glyphs[i - 1].max_x() - row_start_x <= wrap_width)
++            || (job.wrap.hanging_spaces && paragraph.glyphs[i].chr == ' ')
++            || (potential_row_width - wrap_width <= shrink * row_spaces && !paragraph.glyphs[i].chr.is_whitespace());
++
++        if wrap_width < potential_row_width && !hangs {
+             // Row break:
+ 
+             if first_row_indentation > 0.0
+@@ -683,6 +841,7 @@
+                 row_start_x += first_row_indentation;
+                 first_row_indentation = 0.0;
+             } else if let Some(last_kept_index) = row_break_candidates.get(job.wrap.break_anywhere)
++                && last_kept_index >= row_start_idx
+             {
+                 let glyphs: Vec<Glyph> = paragraph.glyphs[row_start_idx..=last_kept_index]
+                     .iter()
+@@ -708,15 +867,28 @@
+                 });
+ 
+                 // Start a new row:
++                wrap_width = job.effective_wrap_width() - job.wrap.indent_rest;
+                 row_start_idx = last_kept_index + 1;
+                 row_start_x = paragraph.glyphs[row_start_idx].pos.x;
+                 row_break_candidates.forget_before_idx(row_start_idx);
++                row_spaces = paragraph.glyphs[row_start_idx..i].iter().filter(|g| g.chr == ' ').map(|g| g.advance_width).sum();
+             } else {
+                 // Found no place to break, so we have to overrun wrap_width.
+             }
+         }
+ 
+-        row_break_candidates.add(i, &paragraph.glyphs[i..]);
++        // ApexDesk patch: no break inside text kept together.
++        let glued = !job.wrap.keep_together.is_empty()
++            && paragraph.glyphs.get(i + 1).is_some_and(|n| {
++                let (a, b) = (paragraph.glyphs[i].section_index, n.section_index);
++                job.wrap.keep_together.iter().any(|r| r.contains(&a) && r.contains(&b))
++            });
++        if !glued {
++            row_break_candidates.add(i, &paragraph.glyphs[i..], job.wrap.kinsoku);
++        }
++        if paragraph.glyphs[i].chr == ' ' {
++            row_spaces += paragraph.glyphs[i].advance_width;
++        }
+     }
+ 
+     if row_start_idx < paragraph.glyphs.len() {
+@@ -834,6 +1006,7 @@
+                 font_height: font_metrics.row_height,
+                 font_ascent: font_metrics.ascent,
+                 uv_rect: replacement_glyph_alloc.uv_rect,
++                shaped: None,
+                 section_index,
+                 first_vertex: 0, // filled in later
+             });
+@@ -857,8 +1030,10 @@
+     placed_row: &mut PlacedRow,
+     halign: Align,
+     wrap_width: f32,
+-    justify: bool,
++    mut justify: bool,
++    shrink_only: bool,
+     keep_trailing_whitespace: bool,
++    first_row: bool,
+ ) {
+     #![expect(clippy::useless_let_if_seq)] // False positive
+ 
+@@ -895,15 +1070,22 @@
+     let original_min_x = row.glyphs[glyph_range.0].logical_rect().min.x;
+     let original_max_x = row.glyphs[glyph_range.1 - 1].logical_rect().max.x;
+     let original_width = original_max_x - original_min_x;
++    if shrink_only && original_max_x <= wrap_width {
++        justify = false;
++    }
+ 
++    // ApexDesk patch: a justified row keeps the leading space of its first
++    // section (a first-line indent), and the first row its leading spaces,
++    // unstretched; stock epaint moved them to the margin.
++    let lead = if justify && halign == Align::LEFT && (glyph_range.0 == 0 || first_row) { original_min_x.clamp(0.0, wrap_width) } else { 0.0 };
+     let target_width = if justify && num_glyphs_in_range > 1 {
+-        wrap_width
++        wrap_width - lead
+     } else {
+         original_width
+     };
+ 
+     let (target_min_x, target_max_x) = match halign {
+-        Align::LEFT => (0.0, target_width),
++        Align::LEFT => (lead, lead + target_width),
+         Align::Center => (-target_width / 2.0, target_width / 2.0),
+         Align::RIGHT => (-target_width, 0.0),
+     };
+@@ -922,25 +1104,21 @@
+ 
+     let mut extra_x_per_space = 0.0;
+     if 0 < num_spaces_in_range && num_spaces_in_range < num_glyphs_in_range {
+-        // Add an integral number of pixels between each glyph,
+-        // and add the balance to the spaces:
+-
+-        extra_x_per_glyph = point_scale.floor_to_pixel(extra_x_per_glyph);
+-
+-        extra_x_per_space = (target_width
+-            - original_width
+-            - extra_x_per_glyph * (num_glyphs_in_range as f32 - 1.0))
+-            / (num_spaces_in_range as f32);
++        // ApexDesk patch: all the space goes to the spaces, as in word
++        // processors (stock epaint put whole pixels between letters too,
++        // which spread the letters of short rows).
++        extra_x_per_glyph = 0.0;
++        extra_x_per_space = (target_width - original_width) / (num_spaces_in_range as f32);
+     }
+ 
+     placed_row.pos.x = point_scale.round_to_pixel(target_min_x);
+     let mut translate_x = -original_min_x - extra_x_per_glyph * glyph_range.0 as f32;
+ 
+-    for glyph in &mut row.glyphs {
++    for (i, glyph) in row.glyphs.iter_mut().enumerate() {
+         glyph.pos.x += translate_x;
+         glyph.pos.x = point_scale.round_to_pixel(glyph.pos.x);
+         translate_x += extra_x_per_glyph;
+-        if glyph.chr.is_whitespace() {
++        if glyph.chr.is_whitespace() && i >= glyph_range.0 {
+             translate_x += extra_x_per_space;
+         }
+     }
+@@ -965,10 +1143,17 @@
+         let row = Arc::make_mut(&mut placed_row.row);
+ 
+         first_row_min_height = 0.0;
+-        for glyph in &row.glyphs {
++        // Spaces beside other text don't make the row taller (as in Word).
++        let solid = row.glyphs.iter().any(|g| g.chr != ' ');
++        for glyph in row.glyphs.iter().filter(|g| !solid || g.chr != ' ') {
+             max_row_height = max_row_height.at_least(glyph.line_height);
+         }
+-        max_row_height = point_scale.round_to_pixel(max_row_height);
++        // Unrounded jobs (document pages) keep exact row heights so that
++        // pagination doesn't depend on the zoom; rows are snapped to pixels
++        // when tessellated.
++        if job.round_output_to_gui {
++            max_row_height = point_scale.round_to_pixel(max_row_height);
++        }
+ 
+         // Now position each glyph vertically:
+         for glyph in &mut row.glyphs {
+@@ -990,7 +1175,9 @@
+         row.size.y = max_row_height;
+ 
+         cursor_y += max_row_height;
+-        cursor_y = point_scale.round_to_pixel(cursor_y); // TODO(emilk): it would be better to do the calculations in pixels instead.
++        if job.round_output_to_gui {
++            cursor_y = point_scale.round_to_pixel(cursor_y);
++        } // TODO(emilk): it would be better to do the calculations in pixels instead.
+     }
+ 
+     let format_summary = format_summary(&job);
+@@ -1080,7 +1267,7 @@
+         add_row_hline(point_scale, row, &mut mesh, |glyph| {
+             let format = &job.sections[glyph.section_index as usize].format;
+             let stroke = format.underline;
+-            let y = glyph.logical_rect().bottom();
++            let y = glyph.underline_y();
+             (stroke, y)
+         });
+     }
+@@ -1197,6 +1384,18 @@
+                     uv: uv.right_bottom(),
+                     color,
+                 });
++            } else if job.vertical && super::kinsoku::upright_in_vertical(glyph.chr) {
++                // ApexDesk patch: turned back a quarter about the middle of
++                // its em box, to stand upright in the turned galley.
++                let size = format.font_id.size;
++                let c = pos2(glyph.pos.x + glyph.advance_width / 2.0, glyph.pos.y - super::kinsoku::EM_BOX_MIDDLE * size);
++                let turn = |p: Pos2| pos2(c.x + (p.y - c.y), c.y - (p.x - c.x));
++                let idx = mesh.vertices.len() as u32;
++                mesh.add_triangle(idx, idx + 1, idx + 2);
++                mesh.add_triangle(idx + 2, idx + 1, idx + 3);
++                for (p, t) in [(rect.left_top(), uv.left_top()), (rect.right_top(), uv.right_top()), (rect.left_bottom(), uv.left_bottom()), (rect.right_bottom(), uv.right_bottom())] {
++                    mesh.vertices.push(Vertex { pos: turn(p), uv: t, color });
++                }
+             } else {
+                 mesh.add_rect_with_uv(rect, uv, color);
+             }
+@@ -1276,14 +1475,27 @@
+     /// Breaking after just random character is some
+     /// times necessary.
+     any: Option<usize>,
++
++    /// ApexDesk patch: `any` that keeps the kinsoku rules.
++    any_kinsoku: Option<usize>,
+ }
+ 
+ impl RowBreakCandidates {
+-    fn add(&mut self, index: usize, glyphs: &[Glyph]) {
++    fn add(&mut self, index: usize, glyphs: &[Glyph], kinsoku: bool) {
+         let chr = glyphs[0].chr;
++        let next = glyphs.get(1).map(|g| g.chr);
+         const NON_BREAKING_SPACE: char = '\u{A0}';
++        // ApexDesk patch: kinsoku rules between any East Asian characters.
++        let rules_allow = !kinsoku || next.is_none_or(|n| super::kinsoku::allowed(chr, n));
++        if rules_allow {
++            self.any_kinsoku = Some(index);
++        }
+         if chr.is_whitespace() && chr != NON_BREAKING_SPACE {
+             self.space = Some(index);
++        } else if next.is_some_and(|n| super::kinsoku::breaks_freely(chr) || super::kinsoku::breaks_freely(n)) {
++            if rules_allow {
++                self.cjk = Some(index);
++            }
+         } else if is_cjk(chr) && (glyphs.len() == 1 || is_cjk_break_allowed(glyphs[1].chr)) {
+             self.cjk = Some(index);
+         } else if chr == '-' {
+@@ -1313,7 +1525,7 @@
+ 
+     fn get(&self, break_anywhere: bool) -> Option<usize> {
+         if break_anywhere {
+-            self.any
++            self.any_kinsoku.or(self.any)
+         } else {
+             self.word_boundary()
+                 .or(self.dash)
+@@ -1330,6 +1542,7 @@
+             dash,
+             punctuation,
+             any,
++            any_kinsoku,
+         } = self;
+         if space.is_some_and(|s| s < index) {
+             *space = None;
+@@ -1349,6 +1562,9 @@
+         if any.is_some_and(|s| s < index) {
+             *any = None;
+         }
++        if any_kinsoku.is_some_and(|s| s < index) {
++            *any_kinsoku = None;
++        }
+     }
+ }
+ 
+@@ -1403,7 +1619,7 @@
+     coords: &VariationCoords,
+     mut buffer: harfrust::UnicodeBuffer,
+     flags: harfrust::BufferFlags,
+-) -> harfrust::GlyphBuffer {
++) -> (harfrust::GlyphBuffer, bool) {
+     let font_ref = font_face.skrifa_font_ref();
+     let tweak = font_face.tweak();
+ 
+@@ -1429,8 +1645,35 @@
+     buffer.set_flags(flags);
+     buffer.push_str(text);
+     buffer.guess_segment_properties();
++    let rtl = buffer.direction() == harfrust::Direction::RightToLeft;
+ 
+-    shaper.shape(buffer, harfrust::ShapeOptions::new())
++    (shaper.shape(buffer, harfrust::ShapeOptions::new()), rtl)
++}
++
++/// ApexDesk patch: lays a row's right-to-left text out right to left
++/// (the Unicode bidirectional algorithm, `rtl` for a right-to-left
++/// paragraph). The glyphs keep their order and the room each takes;
++/// spaces at the end of the row stay there.
++fn bidi_row(row: &mut Row, rtl: bool) {
++    use unicode_bidi::{BidiInfo, Level};
++    let n = row.glyphs.iter().rposition(|g| !g.chr.is_whitespace()).map_or(0, |i| i + 1);
++    let is_rtl = |c: char| matches!(c as u32, 0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF);
++    if n < 2 || !rtl && !row.glyphs[..n].iter().any(|g| is_rtl(g.chr)) {
++        return;
++    }
++    let text: String = row.glyphs[..n].iter().map(|g| g.chr).collect();
++    let info = BidiInfo::new(&text, Some(if rtl { Level::rtl() } else { Level::ltr() }));
++    let levels: Vec<Level> = text.char_indices().map(|(i, _)| info.levels[i]).collect();
++    if levels.iter().all(|l| l.is_ltr()) {
++        return;
++    }
++    let order = BidiInfo::reorder_visual(&levels);
++    let room: Vec<f32> = (0..n).map(|i| if i + 1 < n { row.glyphs[i + 1].pos.x - row.glyphs[i].pos.x } else { row.glyphs[i].advance_width }).collect();
++    let mut x = row.glyphs[0].pos.x;
++    for i in order {
++        row.glyphs[i].pos.x = x;
++        x += room[i];
++    }
+ }
+ 
+ // ----------------------------------------------------------------------------
+--- a/src/text/text_layout_types.rs
++++ b/src/text/text_layout_types.rs
+@@ -94,6 +94,21 @@
+     /// If `true`, trailing whitespace is included in the row width used for alignment.
+     /// This is desirable for text editors where the user expects to see their spaces.
+     pub keep_trailing_whitespace: bool,
++
++    /// ApexDesk patch: the galley is drawn turned a quarter clockwise as
++    /// vertical East Asian text: Chinese, Japanese and Korean characters
++    /// (see [`crate::text::upright_in_vertical`]) are tessellated turned
++    /// back, so they stand upright while Latin text lies on its side.
++    ///
++    /// Default: `false`.
++    pub vertical: bool,
++
++    /// ApexDesk patch: the text runs right to left (a right-to-left
++    /// paragraph). Right-to-left words in left-to-right text are turned
++    /// whatever this says.
++    ///
++    /// Default: `false`.
++    pub rtl: bool,
+ }
+ 
+ impl Default for LayoutJob {
+@@ -109,6 +124,8 @@
+             justify: false,
+             round_output_to_gui: true,
+             keep_trailing_whitespace: false,
++            vertical: false,
++            rtl: false,
+         }
+     }
+ }
+@@ -317,9 +334,13 @@
+             justify,
+             round_output_to_gui,
+             keep_trailing_whitespace,
++            vertical,
++            rtl,
+         } = self;
+ 
+         text.hash(state);
++        vertical.hash(state);
++        rtl.hash(state);
+         sections.hash(state);
+         wrap.hash(state);
+         emath::OrderedFloat(*first_row_min_height).hash(state);
+@@ -649,6 +670,50 @@
+     ///
+     /// If not set, no character will be used (but the text will still be elided).
+     pub overflow_character: Option<char>,
++
++    /// ApexDesk patch: East Asian line breaking rules (kinsoku): no row
++    /// starts with closing punctuation or ends with an opening bracket.
++    ///
++    /// Default is `true`.
++    pub kinsoku: bool,
++
++    /// ApexDesk patch: East Asian commas and full stops may hang past
++    /// [`Self::max_width`] instead of moving to the next row with the
++    /// character before them.
++    ///
++    /// Default is `false`.
++    pub hanging_punctuation: bool,
++
++    /// ApexDesk patch: spaces may hang past [`Self::max_width`] (as in
++    /// word processors, where spaces at the end of a row never wrap).
++    ///
++    /// Default is `false`.
++    pub hanging_spaces: bool,
++
++    /// ApexDesk patch: ranges of section indices whose text a row never
++    /// breaks inside (a phonetic guide's base, combined characters).
++    ///
++    /// Default is empty.
++    pub keep_together: Vec<core::ops::Range<u32>>,
++
++    /// ApexDesk patch: rows after the first start this far in (in points)
++    /// and wrap that much sooner: a hanging indent.
++    ///
++    /// Default is `0.0`.
++    pub indent_rest: f32,
++
++    /// ApexDesk patch: [`Self::indent_rest`] applies to the first row too
++    /// (set on the later paragraphs of a job laid out one by one).
++    ///
++    /// Default is `false`.
++    pub indent_all: bool,
++
++    /// ApexDesk patch: in a justified job, a row may take a word more
++    /// when its spaces, shrunk by up to this fraction of their width, make
++    /// room for it (Word 2013 and later).
++    ///
++    /// Default is `0.0`.
++    pub shrink_spaces: f32,
+ }
+ 
+ impl core::hash::Hash for TextWrapping {
+@@ -659,11 +724,25 @@
+             max_rows,
+             break_anywhere,
+             overflow_character,
++            kinsoku,
++            hanging_punctuation,
++            hanging_spaces,
++            keep_together,
++            indent_rest,
++            indent_all,
++            shrink_spaces,
+         } = self;
+         emath::OrderedFloat(*max_width).hash(state);
+         max_rows.hash(state);
+         break_anywhere.hash(state);
+         overflow_character.hash(state);
++        kinsoku.hash(state);
++        hanging_punctuation.hash(state);
++        hanging_spaces.hash(state);
++        keep_together.hash(state);
++        emath::OrderedFloat(*indent_rest).hash(state);
++        indent_all.hash(state);
++        emath::OrderedFloat(*shrink_spaces).hash(state);
+     }
+ }
+ 
+@@ -674,6 +753,13 @@
+             max_rows: usize::MAX,
+             break_anywhere: false,
+             overflow_character: Some('…'),
++            kinsoku: true,
++            hanging_punctuation: false,
++            hanging_spaces: false,
++            keep_together: Vec::new(),
++            indent_rest: 0.0,
++            indent_all: false,
++            shrink_spaces: 0.0,
+         }
+     }
+ }
+@@ -915,6 +1001,13 @@
+     /// Position and size of the glyph in the font texture, in texels.
+     pub uv_rect: UvRect,
+ 
++    /// ApexDesk patch: a glyph the shaper picked for the char's place in
++    /// its word (Arabic letters joined to their neighbours), as the glyph
++    /// id the font maps the char to and the one drawn; `None` when they
++    /// are the same. Writers of text with the font's own glyphs (PDF)
++    /// draw the shaped one where their font is the same.
++    pub shaped: Option<(u16, u16)>,
++
+     /// Index into [`LayoutJob::sections`]. Decides color etc.
+     ///
+     /// Only used during layout, then set to an invalid value in order to
+@@ -942,6 +1035,15 @@
+     pub fn logical_rect(&self) -> Rect {
+         Rect::from_min_size(self.pos - vec2(0.0, self.font_ascent), self.size())
+     }
++
++    /// ApexDesk patch: where an underline goes, a little under the
++    /// baseline (Word's and the fonts' own place), not at the bottom of
++    /// the line: with more line spacing that was far below the text, and
++    /// on the line's edge, where the next line could hide it.
++    pub fn underline_y(&self) -> f32 {
++        let below = (self.font_height - self.font_ascent).max(0.0);
++        (self.pos.y + below * 0.4).min(self.logical_rect().bottom())
++    }
+ }
+ 
+ // ----------------------------------------------------------------------------
+@@ -1085,7 +1187,9 @@
+                 .rows
+                 .extend(galley.rows.iter().enumerate().map(|(row_idx, placed_row)| {
+                     let new_pos = placed_row.pos + current_y_offset * Vec2::Y;
+-                    let new_pos = new_pos.round_to_pixels(pixels_per_point);
++                    // ApexDesk patch: unrounded jobs (document pages) keep
++                    // exact row positions, as within one paragraph.
++                    let new_pos = if merged_galley.job.round_output_to_gui { new_pos.round_to_pixels(pixels_per_point) } else { new_pos };
+                     merged_galley.mesh_bounds |=
+                         placed_row.visuals.mesh_bounds.translate(new_pos.to_vec2());
+                     merged_galley.rect |= Rect::from_min_size(new_pos, placed_row.size);
+--- a/src/texture_atlas.rs
++++ b/src/texture_atlas.rs
+@@ -247,6 +247,9 @@
+ 
+             self.cursor = (0, self.image.height() / 3); // Restart a bit down - the top of the atlas has too many important things in it
+             self.overflowed = true; // this will signal the user that we need to recreate the texture atlas next frame.
++            // ApexDesk patch: room for what goes there, below the restart.
++            resize_to_min_height(&mut self.image, self.cursor.1 + h);
++            self.dirty = Rectu::EVERYTHING;
+         } else if resize_to_min_height(&mut self.image, required_height) {
+             self.dirty = Rectu::EVERYTHING;
+         }

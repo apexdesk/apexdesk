@@ -132,6 +132,11 @@ impl App {
         self.tabs.insert(idx + 1, Tab { id, path, format, untitled, view, link: group, window_no: n, holds: false, password, embed: None, encoding, downloaded });
         self.active = idx + 1;
         self.hold(self.active);
+        // Another window of a file in Protected View is in it too.
+        if self.is_protected(self.tabs[idx].id) {
+            self.protected.tabs.insert(id);
+            self.tabs[idx + 1].view.set_read_only(true);
+        }
     }
 
     /// After saving tab `i`: its other windows show the new file name.

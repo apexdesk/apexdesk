@@ -61,6 +61,8 @@ sha2 = "0.10"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 # The older version the signature crates use (rand_core 0.6).
 getrandom02 = { package = "getrandom", version = "0.2", features = ["js"] }
+# The newer one the elliptic curves use.
+getrandom04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 raw-window-handle = "0.6"
 web-time = "1.1"
 wasm-bindgen = "=0.2.128"

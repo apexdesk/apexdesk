@@ -77,7 +77,19 @@ impl Workbook {
     /// Paste Link: formulas that point at the cells of `src` (absolute for
     /// one cell, relative for a range, like Excel).
     pub fn paste_link(&mut self, src_sheet: usize, src: &Range, sheet: usize, at: CellRef) -> Range {
-        let end = CellRef::new((at.row + src.rows() - 1).min(MAX_ROWS - 1), (at.col + src.cols() - 1).min(MAX_COLS - 1));
+        self.link_rows(src_sheet, src, |r| src.start.row + r, src.rows(), sheet, at)
+    }
+
+    /// Paste Link for a clip of this workbook: of a filtered list, links
+    /// to the rows that were copied.
+    pub fn paste_link_clip(&mut self, src_sheet: usize, clip: &Clip, sheet: usize, at: CellRef) -> Range {
+        self.link_rows(src_sheet, &clip.source(), |r| clip.src_row(r), clip.rows.max(1), sheet, at)
+    }
+
+    /// Links to `rows` rows of `src`, one under another at `at`; `row_of`
+    /// says which row of the sheet each one is.
+    fn link_rows(&mut self, src_sheet: usize, src: &Range, row_of: impl Fn(u32) -> u32, rows: u32, sheet: usize, at: CellRef) -> Range {
+        let end = CellRef::new((at.row + rows - 1).min(MAX_ROWS - 1), (at.col + src.cols() - 1).min(MAX_COLS - 1));
         let dest = Range::new(at, end);
         if dest.cell_count() > 100_000 {
             return Range::single(at);
@@ -86,8 +98,8 @@ impl Workbook {
         let mut cells = Vec::new();
         for r in 0..dest.rows() {
             for c in 0..dest.cols() {
-                let from = CellRef::new(src.start.row + r, src.start.col + c);
-                let a1 = if src.is_single() { format!("${}${}", crate::addr::col_name(from.col), from.row + 1) } else { from.to_a1() };
+                let from = CellRef::new(row_of(r), src.start.col + c);
+                let a1 = if rows == 1 && src.cols() == 1 { format!("${}${}", crate::addr::col_name(from.col), from.row + 1) } else { from.to_a1() };
                 let Ok(expr) = crate::formula::parse_canonical(&format!("{prefix}{a1}")) else { continue };
                 let to = CellRef::new(at.row + r, at.col + c);
                 let content = Content::Formula { expr: expr.into(), value: Value::Empty };
@@ -124,14 +136,14 @@ impl Workbook {
             b.sheets.len() - 1
         });
         for (dr, dc, cell) in &clip.cells {
-            b.cells[si].insert(CellRef::new(clip.origin.row + dr, clip.origin.col + dc), cell.value().clone());
+            b.cells[si].insert(CellRef::new(clip.src_row(*dr), clip.origin.col + dc), cell.value().clone());
         }
         let name: Arc<str> = Arc::from(format!("[{}]{src_sheet}", book + 1));
         let single = clip.rows <= 1 && clip.cols <= 1;
         let mut cells = Vec::new();
         for r in 0..dest.rows() {
             for c in 0..dest.cols() {
-                let addr = crate::formula::CellAddr { row: clip.origin.row + r, col: clip.origin.col + c, row_abs: single, col_abs: single };
+                let addr = crate::formula::CellAddr { row: clip.src_row(r), col: clip.origin.col + c, row_abs: single, col_abs: single };
                 let to = CellRef::new(at.row + r, at.col + c);
                 let content = Content::Formula { expr: Expr::Ref { sheet: Some(name.clone()), addr }.into(), value: Value::Empty };
                 cells.push((to, Some(Cell::with_content(self.sheets[sheet].get(to), content).unwrap_or_else(|| Cell::new(Content::Empty, 0)))));

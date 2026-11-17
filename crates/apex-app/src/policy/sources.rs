@@ -49,17 +49,42 @@ pub fn read() -> Entries {
 }
 
 fn policy_file(path: &Path) -> Entries {
-    let Ok(text) = apex_fs::read_to_string(path) else { return Entries::new() };
-    parse_lines(&text, &path.display().to_string())
+    let data = match apex_fs::read(path) {
+        Ok(d) => d,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Entries::new(),
+        // A policy file that is there but can't be read is the
+        // administrator's mistake, never to pass unnoticed.
+        Err(e) => {
+            crate::diag::error(&format!("policy file {}: {e}", path.display()));
+            return Entries::new();
+        }
+    };
+    parse_lines(&decode(&data), &path.display().to_string())
+}
+
+/// A policy file's text: UTF-8, or else Latin-1 (what editors on older
+/// systems save), so that one accented letter doesn't lose the file.
+pub fn decode(data: &[u8]) -> String {
+    let data = data.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(data);
+    match std::str::from_utf8(data) {
+        Ok(s) => s.to_string(),
+        Err(_) => data.iter().map(|&b| b as char).collect(),
+    }
 }
 
 /// `Name = value` lines; `#` starts a comment line; a list policy repeats
-/// its name once per value.
+/// its name once per value. A known policy's name followed by `:` or a
+/// space instead of `=` is taken too: dropping the line would leave it off.
 pub fn parse_lines(text: &str, source: &str) -> Entries {
     text.lines()
-        .map(str::trim)
+        .map(|l| l.trim_start_matches('\u{feff}').trim())
         .filter(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with(';'))
-        .filter_map(|l| l.split_once('='))
+        .filter_map(|l| {
+            l.split_once('=').or_else(|| {
+                let (k, v) = l.split_once(|c: char| c == ':' || c.is_whitespace())?;
+                super::Item::by_name(k).map(|_| (k, v.trim_start().strip_prefix(':').unwrap_or(v)))
+            })
+        })
         .map(|(k, v)| (k.trim().to_string(), v.trim().to_string(), source.to_string()))
         .collect()
 }

@@ -14,7 +14,7 @@ root=$(cd "$(dirname "$0")/../../.." && pwd)
 out=${1:-$root/target/web}
 profile=${PROFILE:-release}
 cd "$root"
-cargo build -p apex-web --target wasm32-unknown-unknown --profile "$profile"
+cargo build --locked -p apex-web --target wasm32-unknown-unknown --profile "$profile"
 dir=$profile
 [ "$profile" = dev ] && dir=debug
 mkdir -p "$out/fonts"
@@ -41,6 +41,18 @@ for f in LiberationSans-Regular LiberationSans-Bold LiberationSans-Italic Libera
     if [ -n "$src" ]; then
         cp "$src" "$out/fonts/"
         echo "$f.ttf" >> "$out/fonts/index.txt"
+        # Its licence goes with it: the package's copyright file, or the
+        # licence files next to the font.
+        pkg=$(dpkg-query -S "$src" 2>/dev/null | head -n 1 | cut -d: -f1)
+        if [ -n "$pkg" ] && [ -f "/usr/share/doc/$pkg/copyright" ]; then
+            cp "/usr/share/doc/$pkg/copyright" "$out/fonts/$pkg.copyright"
+        else
+            found=
+            for l in "$(dirname "$src")"/LICENSE* "$(dirname "$src")"/OFL* "$(dirname "$src")"/COPYING*; do
+                [ -f "$l" ] && cp "$l" "$out/fonts/" && found=1
+            done
+            [ -n "$found" ] || echo "web/build.sh: no licence found for $f.ttf; add it to $out/fonts" >&2
+        fi
     else
         echo "web/build.sh: $f.ttf not found, left out" >&2
     fi

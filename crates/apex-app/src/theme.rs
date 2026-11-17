@@ -56,15 +56,23 @@ pub fn setup(ctx: &egui::Context, contrast: bool, sharp: bool) {
             v.panel_fill = Color32::from_rgb(0xF7, 0xF8, 0xFA);
         }
         v.text_options.subpixel_binning = !sharp;
+        // Labels and weak text read at 4.5:1 or more (WCAG AA) on the
+        // panels and on a selected button's fill; egui's own (140 and 60%
+        // of it on dark, 60% of 80 on light) fall short.
+        let (text, weak) = if dark { (165, 135) } else { (80, 110) };
+        v.widgets.noninteractive.fg_stroke.color = Color32::from_gray(text);
+        v.weak_text_color = Some(Color32::from_gray(weak));
         if contrast {
-            // egui's labels and buttons: 140 and 180 on dark, 80 and 60 on light.
-            let (text, button) = if dark { (175, 210) } else { (45, 30) };
+            // egui's buttons: 180 on dark, 60 on light.
+            let (text, weak, button) = if dark { (185, 155, 210) } else { (45, 85, 30) };
             v.widgets.noninteractive.fg_stroke.color = Color32::from_gray(text);
+            v.weak_text_color = Some(Color32::from_gray(weak));
             v.widgets.inactive.fg_stroke.color = Color32::from_gray(button);
         }
         ctx.set_visuals_of(if dark { egui::Theme::Dark } else { egui::Theme::Light }, v);
     }
     ctx.all_styles_mut(|s| {
+        s.spacing.scroll = scroll_style();
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
         s.spacing.button_padding = egui::vec2(6.0, 3.0);
         s.animation_time = 0.08;
@@ -76,6 +84,38 @@ pub fn setup(ctx: &egui::Context, contrast: bool, sharp: bool) {
 
 /// Seconds before a tooltip shows.
 pub const TOOLTIP_DELAY: f32 = 1.0;
+
+/// Scroll bars over the content (they take no room), a thin handle shown
+/// even when the pointer is away, so a list or a dialog's page that goes
+/// on below says so; no fade over the edges, which hid what is there.
+pub fn scroll_style() -> egui::style::ScrollStyle {
+    let mut s = egui::style::ScrollStyle::floating();
+    s.floating_width = 3.0;
+    s.dormant_handle_opacity = 0.6;
+    s.fade.strength = 0.0;
+    s
+}
+
+/// The scroll bars of the pages (documents, PDF): as wide as the sheet's,
+/// and always there while the pages are taller than the view.
+pub fn page_scroll_style() -> egui::style::ScrollStyle {
+    let mut s = scroll_style();
+    s.floating_width = 6.0;
+    s.dormant_handle_opacity = 0.7;
+    s.active_handle_opacity = 0.8;
+    s
+}
+
+/// The fill of a chosen toolbar button or tile.
+pub fn selected_fill(v: &Visuals) -> Color32 {
+    v.selection.bg_fill.gamma_multiply(0.35)
+}
+
+/// The outline of a chosen toolbar button or tile: the fill alone stands
+/// out from the panel at only 1.5:1; the accent line at 3.8:1 or more.
+pub fn selected_stroke(v: &Visuals) -> Stroke {
+    Stroke::new(1.0, v.selection.bg_fill)
+}
 
 pub fn rgb(c: u32) -> Color32 {
     Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)

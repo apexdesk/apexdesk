@@ -68,6 +68,20 @@ pub enum Expr {
     Lit(crate::value::Value),
     /// A structured reference to a table: `Table1[Sales]`, `[@Qty]`.
     Structured(Box<crate::table::StructRef>),
+    /// A formula from a file that ApexDesk can't read: written back as it
+    /// came, with the value the file had.
+    Kept(Arc<KeptFormula>),
+}
+
+/// The text of a formula ApexDesk can't read, kept for saving.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeptFormula {
+    /// As in the file, without `=` (nor `of:=` in OpenDocument).
+    pub text: Arc<str>,
+    /// The value the file had cached for it.
+    pub value: crate::value::Value,
+    /// OpenFormula syntax rather than Excel's.
+    pub odf: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1280,6 +1294,9 @@ impl Printer {
                 crate::value::Value::Error(k) => self.out.push_str(k.as_str()),
                 _ => self.out.push_str("#VALUE!"),
             },
+            // Another format's syntax can't go into this one: its value does.
+            Expr::Kept(k) if k.odf != self.odf && (self.odf || self.xlsx) => self.expr(&Expr::Lit(k.value.clone())),
+            Expr::Kept(k) => self.out.push_str(&k.text),
             Expr::Ref { sheet, addr } if self.odf => {
                 self.out.push('[');
                 match sheet.as_deref().and_then(split_3d) {

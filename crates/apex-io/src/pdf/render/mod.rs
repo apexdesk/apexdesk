@@ -260,8 +260,10 @@ enum Ink {
     Color([f32; 3]),
     /// The "None" separation: paints nothing.
     None,
-    /// A pattern (and the colour of an uncoloured one).
-    Pattern(Obj, Option<[f32; 3]>),
+    /// A pattern (and the colour of an uncoloured one). Shared: the state
+    /// is copied at each `q` and each fill, and a pattern's dictionary may
+    /// be as long as the file.
+    Pattern(Rc<Obj>, Option<[f32; 3]>),
 }
 
 #[derive(Clone)]
@@ -283,7 +285,9 @@ struct Gs {
     cap: Cap,
     join: Join,
     miter: f64,
-    dash: (Vec<f64>, f64),
+    /// Shared for the same reason as a pattern: an array of a million
+    /// dashes copied at each of a million `q`s.
+    dash: (Rc<[f64]>, f64),
     font: Option<Rc<FontEntry>>,
     size: f64,
     tc: f64,
@@ -318,7 +322,7 @@ impl Gs {
             cap: Cap::Butt,
             join: Join::Miter,
             miter: 10.0,
-            dash: (Vec::new(), 0.0),
+            dash: (Rc::from([]), 0.0),
             font: None,
             size: 0.0,
             tc: 0.0,
@@ -711,8 +715,8 @@ impl<'a, 'f> R<'a, 'f> {
                 }
                 b"M" => gs.miter = num(a, 0).max(1.0),
                 b"d" => {
-                    let pat = a.first().and_then(Obj::array).map(|v| v.iter().filter_map(Obj::num).map(f64::abs).collect()).unwrap_or_default();
-                    gs.dash = (pat, num(a, 1));
+                    let pat: Vec<f64> = a.first().and_then(Obj::array).map(|v| v.iter().filter_map(Obj::num).map(f64::abs).collect()).unwrap_or_default();
+                    gs.dash = (pat.into(), num(a, 1));
                 }
                 b"ri" | b"i" => {}
                 b"gs" => {
@@ -751,7 +755,7 @@ impl<'a, 'f> R<'a, 'f> {
                     }
                     let cs = self.space(a.first().unwrap_or(&Obj::Null), res);
                     let ink = match &*cs {
-                        Cs::Pattern(_) => Ink::Pattern(Obj::Null, None),
+                        Cs::Pattern(_) => Ink::Pattern(Rc::new(Obj::Null), None),
                         c if c.invisible() => Ink::None,
                         c => Ink::Color(c.rgb(&c.initial())),
                     };
@@ -772,7 +776,7 @@ impl<'a, 'f> R<'a, 'f> {
                     let ink = match (&*cs, a.last()) {
                         (Cs::Pattern(under), Some(Obj::Name(n))) => {
                             let pat = self.resource(res, "Pattern", n);
-                            Ink::Pattern(pat, under.as_ref().map(|u| u.rgb(&c)))
+                            Ink::Pattern(Rc::new(pat), under.as_ref().map(|u| u.rgb(&c)))
                         }
                         // A pattern named in another space: pdfium paints with
                         // it all the same (and leaves the ink when there is none).
@@ -781,9 +785,9 @@ impl<'a, 'f> R<'a, 'f> {
                                 args.clear();
                                 continue;
                             }
-                            pat => Ink::Pattern(pat, None),
+                            pat => Ink::Pattern(Rc::new(pat), None),
                         },
-                        (Cs::Pattern(_), _) => Ink::Pattern(Obj::Null, None),
+                        (Cs::Pattern(_), _) => Ink::Pattern(Rc::new(Obj::Null), None),
                         (cs, _) if cs.invisible() => Ink::None,
                         // An index truncated, as pdfium takes it; out of
                         // the table, nothing is painted.
@@ -1008,8 +1012,8 @@ impl<'a, 'f> R<'a, 'f> {
                 "ML" => gs.miter = v.num().unwrap_or(10.0).max(1.0),
                 "D" => {
                     if let Obj::Array(a) = &v {
-                        let pat = a.first().map(|o| f.nums(o)).unwrap_or_default().into_iter().map(f64::abs).collect();
-                        gs.dash = (pat, a.get(1).and_then(Obj::num).unwrap_or(0.0));
+                        let pat: Vec<f64> = a.first().map(|o| f.nums(o)).unwrap_or_default().into_iter().map(f64::abs).collect();
+                        gs.dash = (pat.into(), a.get(1).and_then(Obj::num).unwrap_or(0.0));
                     }
                 }
                 "CA" => gs.stroke_alpha = v.num().unwrap_or(1.0).clamp(0.0, 1.0) as f32,
@@ -1125,7 +1129,7 @@ impl<'a, 'f> R<'a, 'f> {
         let mut st = Stroke::new(w).with_caps(gs.cap).with_join(gs.join).with_miter_limit(gs.miter);
         let (pat, off) = &gs.dash;
         if !pat.is_empty() && pat.iter().any(|&v| v > 0.0) && pat.len() < 64 && self.dashes_for(path, pat) {
-            let mut p = pat.clone();
+            let mut p = pat.to_vec();
             if p.len() % 2 == 1 {
                 p.extend_from_within(..);
             }

@@ -91,11 +91,12 @@ mod tests {
     }
 
     /// Translations keep the base text's placeholders (date and time
-    /// patterns pick their own).
+    /// patterns pick their own); plural forms (`{n|word|words}`) name the
+    /// number they follow, and a language may have them or not.
     #[test]
     fn placeholders_match() {
         let holes = |s: &str| {
-            let mut v: Vec<String> = s.split('{').skip(1).filter_map(|x| x.split_once('}').map(|(n, _)| n.to_string())).collect();
+            let mut v: Vec<String> = s.split('{').skip(1).filter_map(|x| x.split_once('}').map(|(n, _)| n.split('|').next().unwrap_or(n).to_string())).collect();
             v.sort();
             v.dedup();
             v

@@ -48,11 +48,18 @@ fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
 }
 
 /// The library in `path`, when its macros may run.
-/// `signed_only`: the publishers trusted, when only signed macros run.
-fn load(path: &Path, signed_only: Option<&[String]>) -> Option<(Library, Vec<String>)> {
+/// `signed_only`: the publishers trusted, when only signed macros run;
+/// `revocation`: the `MacroRevocation` policy then.
+fn load(path: &Path, signed_only: Option<&[String]>, revocation: &str) -> Option<(Library, Vec<String>)> {
     let (apex_io::Loaded::Sheet(wb), _) = apex_io::open(path).ok()? else { return None };
     let bin = wb.macros.project.as_ref()?;
     if signed_only.is_some_and(|p| !super::signed_book(&wb, p)) {
+        return None;
+    }
+    // Loading makes it runnable: a revoked certificate's code isn't.
+    if let Some(p) = signed_only
+        && matches!(super::revocation_check(revocation, p, &wb.macros), super::RevocationCheck::Revoked(_) | super::RevocationCheck::Required)
+    {
         return None;
     }
     let sources = super::sources(bin).ok()?;
@@ -75,7 +82,7 @@ impl App {
         let books: Vec<(String, Arc<Vec<u8>>)> = self
             .tabs
             .iter()
-            .filter(|t| t.id != id && super::allowed(&self.settings, &self.tabs, t.id) && self.macro_run.is_enabled(t.id) && !self.is_protected(t.id))
+            .filter(|t| t.id != id && super::allowed(&self.settings, &self.tabs, t.id) && self.macro_run.is_enabled(t.id, &self.tabs) && !self.is_protected(t.id))
             .filter_map(|t| match &t.view {
                 super::View::Sheet(v) => v.wb.macros.project.clone().map(|b| (t.name(), b)),
                 _ => None,
@@ -125,6 +132,7 @@ impl App {
     fn refresh_libraries(&mut self) {
         let s = &self.settings;
         let under = (s.macros_enabled, s.macros_signed_only.then(|| s.trusted_publishers.clone()), s.addins.clone());
+        let mode = s.macro_revocation.clone();
         let libs = &mut self.macro_run.libs;
         let fresh = libs.under.as_ref() == Some(&under) && libs.checked.is_some_and(|t| t.elapsed() < RECHECK);
         if fresh {
@@ -149,10 +157,10 @@ impl App {
                     continue;
                 }
                 l.stamp = now;
-                (l.lib, l.macros) = now.and_then(|_| load(&path, signed_only.as_deref())).map_or((None, Vec::new()), |(a, b)| (Some(a), b));
+                (l.lib, l.macros) = now.and_then(|_| load(&path, signed_only.as_deref(), &mode)).map_or((None, Vec::new()), |(a, b)| (Some(a), b));
                 continue;
             }
-            let (lib, macros) = now.and_then(|_| load(&path, signed_only.as_deref())).map_or((None, Vec::new()), |(a, b)| (Some(a), b));
+            let (lib, macros) = now.and_then(|_| load(&path, signed_only.as_deref(), &mode)).map_or((None, Vec::new()), |(a, b)| (Some(a), b));
             libs.loaded.push(Loaded { path, stamp: now, lib, macros });
         }
         // Two files of the same name: the first one counts.
@@ -211,12 +219,12 @@ mod tests {
         let dir = apex_fs::temp_dir().join(format!("apexdesk-personal-{}", apex_fs::process_id()));
         let path = dir.join("personal.xlsm");
         new_personal(&path).unwrap();
-        let (lib, macros) = load(&path, None).expect("a library");
+        let (lib, macros) = load(&path, None, "check").expect("a library");
         assert_eq!(lib.name, "personal.xlsm");
         assert!(lib.sources.iter().any(|s| s.name == "Module1"));
         assert!(macros.is_empty());
         // Unsigned: not loaded when only signed macros may run.
-        assert!(load(&path, Some(&[])).is_none());
+        assert!(load(&path, Some(&[]), "check").is_none());
         let _ = apex_fs::remove_dir_all(&dir);
     }
 }

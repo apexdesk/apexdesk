@@ -138,6 +138,38 @@ mod tests {
     }
 
     #[test]
+    fn a_filtered_list_is_copied_as_shown() {
+        use apex_sheet::data::{AutoFilter, ColumnFilter, FilterKind};
+        let ctx = egui::Context::default();
+        let mut wb = Workbook::new();
+        for (i, (name, n)) in [("who", "n"), ("a", "1"), ("b", "2"), ("a", "3"), ("b", "4")].iter().enumerate() {
+            wb.set_input(0, CellRef::new(i as u32, 0), name);
+            wb.set_input(0, CellRef::new(i as u32, 1), n);
+        }
+        let mut f = AutoFilter::new(Range::new(c("A1"), c("B5")));
+        f.cols.push(ColumnFilter { col: 0, kind: FilterKind::Values { items: vec!["b".into()], blanks: false } });
+        wb.set_filter(0, Some(f), "undo.filter");
+        let mut v = SheetView::new(wb);
+        v.select_range(c("A1"), c("B5"));
+        v.copy(&ctx, false);
+        let (text, clip, ..) = v.clip.clone().unwrap();
+        assert_eq!(text, "who\tn\nb\t2\nb\t4\n");
+        assert_eq!(clip.rows, 3);
+        // The marquee still goes round the list where it is.
+        assert_eq!(clip.source(), Range::new(c("A1"), c("B5")));
+        let html = crate::sysclip::text_of(&crate::sysclip::read(&[crate::sysclip::HTML]).unwrap().1);
+        assert_eq!(html.matches("<tr>").count(), 3, "{html}");
+        v.select_range(c("D10"), c("D10"));
+        v.paste(&text);
+        let got: Vec<String> = ["D10", "D11", "E11", "D12", "E12", "D13"].iter().map(|a| v.wb.display(0, c(a)).0).collect();
+        assert_eq!(got, ["who", "b", "2", "b", "4", ""]);
+        // A cut moves the block whole: the rows out of view go with it.
+        v.select_range(c("A1"), c("B5"));
+        v.copy(&ctx, true);
+        assert_eq!(v.clip.as_ref().unwrap().1.rows, 5);
+    }
+
+    #[test]
     fn cells_reach_other_programs_and_other_apexdesks_formatted() {
         use crate::sysclip::{CELLS, HTML, TEXT};
         let ctx = egui::Context::default();

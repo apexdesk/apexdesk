@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn transforms() {
         let (r, t) = parse_transform("rotate (-0.5235987755983) translate (0.928cm 0.241cm)");
-        assert!((r + 0.5236).abs() < 1e-4);
+        assert!((r + std::f32::consts::FRAC_PI_6).abs() < 1e-4);
         let (x, y) = t.unwrap();
         assert!((x - 0.928 / 2.54 * 96.0).abs() < 0.01 && (y - 0.241 / 2.54 * 96.0).abs() < 0.01);
         assert_eq!(parse_transform("junk(").0, 0.0);

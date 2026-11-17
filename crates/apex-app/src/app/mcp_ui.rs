@@ -83,7 +83,7 @@ impl App {
         match tool {
             "read_macros" => {
                 let modules: Vec<Value> = self.read_modules(id)?.into_iter().map(|(name, kind, code)| json!({ "module": name, "kind": kind, "code": code })).collect();
-                let enabled = super::macro_run::allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id);
+                let enabled = super::macro_run::allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id, &self.tabs);
                 return Ok(to_text(&json!({ "modules": modules, "macros_enabled": enabled })));
             }
             "write_macro" => {
@@ -202,11 +202,29 @@ mod tests {
         app.macro_run_take_queue_for_test();
         assert!(call(&mut app, "run_macro", json!({ "macro": "PERSONAL.XLSB!Fill" })).is_err());
         call(&mut app, "write_macro", json!({ "module": "Tools", "code": "Sub Fill()\nEnd Sub\n" })).unwrap();
-        assert!(!app.macro_run.is_enabled(id));
+        assert!(!app.macro_run.is_enabled(id, &app.tabs));
         assert!(call(&mut app, "run_macro", json!({ "macro": "Fill" })).is_err());
         // Undone as one step.
         assert_eq!(call(&mut app, "undo", json!({})).unwrap()["done"], true);
         let r = call(&mut app, "read_macros", json!({})).unwrap();
         assert!(r["modules"].as_array().unwrap().iter().any(|m| m["code"].as_str().unwrap().contains("= 7")));
+        // The user enables the code they have; redo brings back what the
+        // assistant wrote, which isn't enabled by that.
+        app.enable_macros(id);
+        assert!(app.macro_run.is_enabled(id, &app.tabs));
+        assert_eq!(call(&mut app, "redo", json!({})).unwrap()["done"], true);
+        let r = call(&mut app, "read_macros", json!({})).unwrap();
+        assert!(!r["modules"].as_array().unwrap().iter().any(|m| m["code"].as_str().unwrap().contains("= 7")));
+        assert_eq!(r["macros_enabled"], false);
+        assert!(call(&mut app, "run_macro", json!({ "macro": "Fill" })).unwrap_err().contains("enable"));
+        // Undone again: the code the user enabled runs.
+        call(&mut app, "undo", json!({})).unwrap();
+        assert!(app.macro_run.is_enabled(id, &app.tabs));
+        assert_eq!(call(&mut app, "run_macro", json!({ "macro": "Fill" })).unwrap()["started"], true);
+        // A run asked for, then other code written before it starts: it
+        // doesn't start (the user is asked).
+        call(&mut app, "write_macro", json!({ "module": "Tools", "code": "Sub Fill()\nEnd Sub\n" })).unwrap();
+        assert_eq!(app.queued_may_start_for_test(), Some(false));
+        app.macro_run_take_queue_for_test();
     }
 }

@@ -16,6 +16,9 @@ use crate::Error;
 pub fn get(url: &str) -> Result<Vec<u8>, Error> {
     use web_time::Duration;
     let url = url.trim();
+    if disguised(url) {
+        return Err(Error::Network(format!("{url}: an address written in an unusual form")));
+    }
     // An address the user gave on this computer or network stays usable:
     // one written as such (an address, localhost, a local name), not a name
     // whose DNS, the file maker's own, says so.
@@ -59,7 +62,7 @@ pub fn get(url: &str) -> Result<Vec<u8>, Error> {
         if hops > 10 {
             return Err(Error::Network(format!("{url}: too many redirections")));
         }
-        let into = if direct { resolves_inside(&next) != Some(false) } else { names_inside(&next) || resolves_inside(&next) == Some(true) };
+        let into = disguised(&next) || if direct { resolves_inside(&next) != Some(false) } else { names_inside(&next) || resolves_inside(&next) == Some(true) };
         if !lan && into {
             return Err(Error::Network(format!("{url}: redirected into the local network ({next})")));
         }
@@ -147,6 +150,33 @@ fn names_inside(url: &str) -> bool {
     host == "localhost" || host.ends_with(".localhost") || !host.contains('.') || [".local", ".lan", ".internal", ".intranet", ".corp", ".home.arpa"].iter().any(|s| host.ends_with(s))
 }
 
+/// A host of numbers that isn't a plain address (`2130706433`, `0x7f.1`,
+/// `0177.0.0.1`): the system reads it as one, a person reading it can't.
+#[cfg(feature = "web")]
+fn numeric(host: &str) -> bool {
+    let is_part = |p: &str| !p.is_empty() && (p.bytes().all(|b| b.is_ascii_digit()) || p.strip_prefix("0x").is_some_and(|h| h.bytes().all(|b| b.is_ascii_hexdigit())));
+    host.split('.').all(is_part) && host.parse::<std::net::Ipv4Addr>().is_err()
+}
+
+/// An IPv6 address carrying an IPv4 one of this computer or network
+/// (`::ffff:7f00:1`): it reads as anything but local.
+#[cfg(feature = "web")]
+fn hidden_v4(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V6(v) => !v.is_loopback() && !v.is_unspecified() && near(ip) && v.segments()[0] & 0xfe00 != 0xfc00 && v.segments()[0] & 0xffc0 != 0xfe80,
+        std::net::IpAddr::V4(_) => false,
+    }
+}
+
+/// Whether `url`'s host hides where it leads: numbers in an unusual form,
+/// or a local IPv4 address inside an IPv6 one. Never fetched.
+#[cfg(feature = "web")]
+fn disguised(url: &str) -> bool {
+    let host = host_of(url).0.to_ascii_lowercase();
+    let host = host.trim_end_matches('.');
+    numeric(host) || host.parse::<std::net::IpAddr>().is_ok_and(hidden_v4)
+}
+
 /// `url`'s host (without brackets) and port.
 #[cfg(feature = "web")]
 fn host_of(url: &str) -> (String, u16) {
@@ -199,6 +229,17 @@ mod tests {
             assert!(names_inside(inside), "{inside}");
         }
         assert!(!names_inside("http://[64:ff9b::808:808]/") && !names_inside("http://[2002:808:808::]/"));
+    }
+
+    #[test]
+    fn disguised_addresses_are_refused() {
+        for bad in ["http://2130706433/", "http://0x7f000001/x", "http://0x7f.1/", "http://0177.0.0.1/", "http://127.1/", "http://10.0.0.010/", "http://2130706433./", "http://[::ffff:7f00:1]/", "http://[::ffff:192.168.1.1]:8080/", "http://[64:ff9b::a00:1]/", "http://user@3232235777/"] {
+            assert!(disguised(bad), "{bad}");
+            assert!(get(bad).is_err(), "{bad}");
+        }
+        for ok in ["http://127.0.0.1/", "http://192.168.1.1./", "http://[::1]/", "http://[fe80::1]/", "https://8.8.8.8/", "http://1e100.net/", "http://123.example.com/", "http://intranet/"] {
+            assert!(!disguised(ok), "{ok}");
+        }
     }
 
     #[test]

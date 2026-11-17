@@ -847,6 +847,11 @@ pub(crate) fn md_write(out: &mut String, eq: &Equation, display: bool) {
     out.push_str(d);
 }
 
+/// Longest equation read from Markdown: the equation reader takes
+/// longer than the length to read one (a line of a million parentheses
+/// would take minutes); longer ones stay as text.
+const MAX_MD_MATH: usize = 1 << 16;
+
 /// An equation at the start of `s`: `$$...$$`, or `$...$` with pandoc's
 /// rules (no space just inside the dollars, no digit right after the
 /// closing one, so that prices stay text). Its length and equation.
@@ -855,6 +860,9 @@ pub(crate) fn md_write(out: &mut String, eq: &Equation, display: bool) {
 pub(crate) fn md_math(s: &str) -> Result<(usize, Equation), usize> {
     if let Some(r) = s.strip_prefix("$$") {
         let Some(end) = r.find("$$") else { return Err(s.len()) };
+        if end > MAX_MD_MATH {
+            return Err(end + 2);
+        }
         let body = r[..end].trim();
         return if body.is_empty() { Err(0) } else { Ok((end + 4, Equation::new(&math::latex_to_linear(body)))) };
     }
@@ -864,6 +872,9 @@ pub(crate) fn md_math(s: &str) -> Result<(usize, Equation), usize> {
     }
     let mut prev = '\0';
     for (i, c) in r.char_indices() {
+        if i > MAX_MD_MATH {
+            return Err(i + 1);
+        }
         if c == '$' && prev != '\\' {
             if prev.is_whitespace() || r[i + 1..].starts_with(|c: char| c.is_ascii_digit()) {
                 return Err(i + 1);

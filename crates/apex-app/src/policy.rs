@@ -95,6 +95,31 @@ impl Item {
         matches!(self.name, "MacroSecurity" | "TrustedLocations" | "TrustedPublishers" | "MacroRevocation" | "DisableGetData" | "CertificateRoots" | "SignatureLevel" | "TimestampURL" | "Renderer" | "LinkSecurity" | "ProtectedView")
     }
 
+    /// Whether `value` (normalized) only takes something away from the
+    /// user: a restriction never needs a license, as an organization that
+    /// turns something off must never find it on because of licensing.
+    pub fn restricts(&self, value: &str) -> bool {
+        self.free()
+            || matches!(
+                (self.name, value),
+                ("DisableMacroEditor" | "OnlySharedTemplates", "1") | ("AllowAIAssistants" | "AllowAutomationAPI", "0") | ("CheckBeforeSharing", "warn" | "block")
+            )
+    }
+
+    /// The safest value of a policy that guards against something, taken
+    /// when the value set can't be read: an unreadable restriction is
+    /// still a restriction.
+    pub fn strictest(&self) -> Option<&'static str> {
+        Some(match self.name {
+            "MacroSecurity" => "disabled",
+            "MacroRevocation" => "require",
+            "DisableMacroEditor" | "DisableGetData" | "ProtectedView" => "1",
+            "AllowAIAssistants" | "AllowAutomationAPI" => "0",
+            "LinkSecurity" => "block",
+            _ => return None,
+        })
+    }
+
     pub fn by_name(name: &str) -> Option<&'static Item> {
         ITEMS.iter().find(|i| i.name.eq_ignore_ascii_case(name.trim()))
     }
@@ -112,8 +137,8 @@ impl Item {
         let v = v.trim();
         match self.kind {
             Kind::Bool => match v.to_ascii_lowercase().as_str() {
-                "1" | "true" | "yes" | "on" => Some("1".into()),
-                "0" | "false" | "no" | "off" => Some("0".into()),
+                "1" | "true" | "yes" | "on" | "enabled" => Some("1".into()),
+                "0" | "false" | "no" | "off" | "disabled" => Some("0".into()),
                 _ => None,
             },
             Kind::Number(lo, hi) => v.parse::<u32>().ok().filter(|n| (lo..=hi).contains(n)).map(|n| n.to_string()),
@@ -187,7 +212,8 @@ pub struct Policy {
 
 impl Policy {
     /// From `(name, value, source)` entries, highest precedence first;
-    /// without `licensed`, only the free policies (see [`Item::free`]).
+    /// without `licensed`, only the free policies and the restrictions
+    /// (see [`Item::restricts`]).
     pub fn from_entries(entries: Vec<(String, String, String)>, licensed: bool) -> Policy {
         let mut p = Policy::default();
         for (name, value, source) in entries {
@@ -195,11 +221,22 @@ impl Policy {
                 p.ignored.push(format!("{source}: {name}"));
                 continue;
             };
-            let Some(v) = item.normalize(&value) else {
-                p.ignored.push(format!("{source}: {name} = {value}"));
-                continue;
+            let v = match item.normalize(&value) {
+                Some(v) => v,
+                // A safeguard set to something unreadable is taken at its
+                // safest rather than dropped, which would leave it off.
+                None => match item.strictest() {
+                    Some(s) => {
+                        p.ignored.push(format!("{source}: {name} = {value} (taken as {s})"));
+                        s.to_string()
+                    }
+                    None => {
+                        p.ignored.push(format!("{source}: {name} = {value}"));
+                        continue;
+                    }
+                },
             };
-            if !licensed && !item.free() {
+            if !licensed && !item.restricts(&v) {
                 if !p.unlicensed.iter().any(|n| n == item.name) {
                     p.unlicensed.push(item.name.to_string());
                 }
@@ -233,7 +270,18 @@ static CURRENT: OnceLock<Policy> = OnceLock::new();
 
 /// The policies in force (read on first use).
 pub fn current() -> &'static Policy {
-    CURRENT.get_or_init(|| Policy::from_entries(sources::read(), crate::license::has("management")))
+    let p = CURRENT.get_or_init(|| Policy::from_entries(sources::read(), crate::license::has("management")));
+    // Logged once it is in place: the log's folder may itself ask for it.
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| {
+        for i in &p.ignored {
+            crate::diag::warning(&format!("policy ignored or not valid: {i}"));
+        }
+        for n in &p.unlicensed {
+            crate::diag::warning(&format!("policy not applied, it needs a business license: {n}"));
+        }
+    });
+    p
 }
 
 /// Whether the policy `name` (see `ITEMS`) is set.
@@ -295,6 +343,40 @@ mod tests {
         let p = Policy::from_entries(entries(), true);
         assert_eq!(p.get("UILanguage").unwrap().value(), "es");
         assert!(p.unlicensed.is_empty());
+    }
+
+    #[test]
+    fn restrictions_apply_without_a_license() {
+        let p = Policy::from_entries(vec![e("DisableMacroEditor", "1", "f"), e("AllowAutomationAPI", "0", "f"), e("AllowAIAssistants", "1", "f"), e("OnlySharedTemplates", "0", "f")], false);
+        assert_eq!(p.get("DisableMacroEditor").unwrap().value(), "1");
+        assert_eq!(p.get("AllowAutomationAPI").unwrap().value(), "0");
+        assert!(p.get("AllowAIAssistants").is_none() && p.get("OnlySharedTemplates").is_none());
+        assert_eq!(p.unlicensed, ["AllowAIAssistants", "OnlySharedTemplates"]);
+    }
+
+    #[test]
+    fn unreadable_safeguards_are_taken_at_their_safest() {
+        let p = Policy::from_entries(vec![e("MacroSecurity", "off", "f"), e("ProtectedView", "enabled", "f"), e("LinkSecurity", "nope", "f"), e("AllowAutomationAPI", "maybe", "f"), e("AutosaveMinutes", "x", "f")], false);
+        assert_eq!(p.get("MacroSecurity").unwrap().value(), "disabled");
+        assert_eq!(p.get("ProtectedView").unwrap().value(), "1");
+        assert_eq!(p.get("LinkSecurity").unwrap().value(), "block");
+        assert_eq!(p.get("AllowAutomationAPI").unwrap().value(), "0");
+        assert!(p.get("AutosaveMinutes").is_none());
+        assert_eq!(p.ignored.len(), 4);
+    }
+
+    #[test]
+    fn malformed_policy_files_still_restrict() {
+        let read = |data: &[u8]| Policy::from_entries(sources::parse_lines(&sources::decode(data), "f"), false);
+        // Latin-1 comment, UTF-8 byte order mark, `:` and space separators.
+        let p = read(b"# Pol\xedtica\nMacroSecurity = disabled\n");
+        assert_eq!(p.get("MacroSecurity").unwrap().value(), "disabled");
+        let p = read(b"\xEF\xBB\xBFMacroSecurity = disabled\nProtectedView = 1\n");
+        assert_eq!(p.get("MacroSecurity").unwrap().value(), "disabled");
+        let p = read(b"LinkSecurity: block\nmacrosecurity disabled\nbroken line\n");
+        assert_eq!(p.get("LinkSecurity").unwrap().value(), "block");
+        assert_eq!(p.get("MacroSecurity").unwrap().value(), "disabled");
+        assert!(p.ignored.is_empty());
     }
 
     #[test]

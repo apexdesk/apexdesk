@@ -201,6 +201,89 @@ fn encode(s: &str) -> String {
     out
 }
 
+/// The signal that asked the window to end (SIGTERM, SIGHUP), 0 for none.
+static ENDING: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// Whether the system asked the program to end (a logout, `kill`): the
+/// window keeps copies of its unsaved changes and closes.
+pub fn ending() -> bool {
+    ENDING.load(std::sync::atomic::Ordering::SeqCst) != 0
+}
+
+/// Write end of the pipe the signal handler wakes the window with.
+#[cfg(all(unix, not(target_arch = "wasm32")))]
+static WAKE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
+
+/// Only what may be done in a signal handler: note it and wake the
+/// thread that tells the window. A second signal ends the process.
+#[cfg(all(unix, not(target_arch = "wasm32")))]
+extern "C" fn on_signal(sig: libc::c_int) {
+    ENDING.store(sig, std::sync::atomic::Ordering::SeqCst);
+    let fd = WAKE.load(std::sync::atomic::Ordering::SeqCst);
+    // SAFETY: signal() and write() are async-signal-safe.
+    unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+        if fd >= 0 {
+            libc::write(fd, [1u8].as_ptr().cast(), 1);
+        }
+    }
+}
+
+/// Catches SIGTERM and SIGHUP so the window (repainted through `ctx`)
+/// writes recovery copies before ending, instead of dying with them.
+/// A window that doesn't end within a few seconds is ended by the signal.
+pub fn watch_signals(ctx: eframe::egui::Context) {
+    #[cfg(all(unix, not(target_arch = "wasm32")))]
+    {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            let mut fds = [0 as libc::c_int; 2];
+            // SAFETY: plain calls with valid pointers.
+            if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+                return;
+            }
+            let read = fds[0];
+            WAKE.store(fds[1], std::sync::atomic::Ordering::SeqCst);
+            let started = std::thread::Builder::new().name("signals".into()).spawn(move || {
+                let mut b = [0u8; 1];
+                loop {
+                    // SAFETY: reads one byte into `b`.
+                    let n = unsafe { libc::read(read, b.as_mut_ptr().cast(), 1) };
+                    if n == 1 {
+                        break;
+                    }
+                    if n < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                        continue;
+                    }
+                    return;
+                }
+                ctx.request_repaint();
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                // Still here: the window is stuck. The signal does what it
+                // would have done.
+                // SAFETY: the handler put the default action back.
+                unsafe {
+                    libc::raise(ENDING.load(std::sync::atomic::Ordering::SeqCst));
+                }
+            });
+            if started.is_err() {
+                return;
+            }
+            for sig in [libc::SIGTERM, libc::SIGHUP] {
+                // SAFETY: `on_signal` only does what a handler may.
+                unsafe {
+                    // Ignored (nohup): it stays ignored.
+                    if libc::signal(sig, on_signal as extern "C" fn(libc::c_int) as libc::sighandler_t) == libc::SIG_IGN {
+                        libc::signal(sig, libc::SIG_IGN);
+                    }
+                }
+            }
+        });
+    }
+    #[cfg(not(all(unix, not(target_arch = "wasm32"))))]
+    let _ = ctx;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

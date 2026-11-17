@@ -38,6 +38,8 @@ mod doc_view;
 mod edit_drag;
 mod shape_text;
 mod file_dialog;
+#[cfg(target_os = "macos")]
+mod finder;
 mod fonts;
 mod cjk_fonts;
 mod formula_help;
@@ -134,9 +136,13 @@ fn main() -> eframe::Result<()> {
     if let Some(code) = cli::run(&args) {
         std::process::exit(code);
     }
+    let files: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    // A mistyped command or option is said, not opened as a file.
+    if let Some(code) = cli::check_window_args(&files) {
+        std::process::exit(code);
+    }
     // Crash reports stay on this computer (File > Diagnostics).
     diag::install();
-    let files: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
     // Scripted runs stay independent of any open window.
     let scripted = std::env::var_os("APEXDESK_SCRIPT").is_some();
     // A tab taken to a new window opens there, not back in this one.
@@ -154,8 +160,15 @@ fn main() -> eframe::Result<()> {
     if prefs.gpu_high {
         high_performance_gpu();
     }
+    // The Finder sends the files to open as an event, not as arguments.
+    #[cfg(target_os = "macos")]
+    if !scripted {
+        finder::install();
+    }
     let result = eframe::run_native("ApexDesk", options(size, renderer, &prefs, scripted), Box::new(move |cc| {
         let incoming = if scripted { None } else { instance::listen(cc.egui_ctx.clone()) };
+        #[cfg(target_os = "macos")]
+        let incoming = if scripted { None } else { finder::join(incoming, &cc.egui_ctx) };
         Ok(Box::new(app::App::new(cc, files, incoming, started)))
     }));
     instance::cleanup();

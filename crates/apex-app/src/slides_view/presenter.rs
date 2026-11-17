@@ -684,8 +684,11 @@ fn transition_tile(ui: &mut egui::Ui, kind: TransKind, on: bool) -> egui::Respon
     crate::widgets::name(&resp, egui::WidgetType::Button, tr(kind.key()), Some(on));
     let p = ui.painter();
     let v = ui.visuals();
-    if on || resp.hovered() {
-        p.rect_filled(rect, 3.0, if on { v.selection.bg_fill } else { v.widgets.hovered.weak_bg_fill });
+    // The name reads on the chosen tile's fill (not on the accent itself, 1.3:1).
+    if on {
+        p.rect(rect, 3.0, theme::selected_fill(v), theme::selected_stroke(v), egui::StrokeKind::Inside);
+    } else if resp.hovered() {
+        p.rect_filled(rect, 3.0, v.widgets.hovered.weak_bg_fill);
     }
     let r = Rect::from_center_size(rect.center_top() + vec2(0.0, 20.0), vec2(38.0, 26.0));
     let old = |p: &egui::Painter, r: Rect| {

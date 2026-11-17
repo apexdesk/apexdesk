@@ -1,0 +1,412 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -205,6 +205,21 @@
+ 	pub fn file_list(self) -> Result<Vec<PathBuf>, Error> {
+ 		self.platform.file_list()
+ 	}
++
++	// ApexDesk patch: formats by name.
++
++	/// Completes the "get" operation by fetching the first of `names` the clipboard holds, with
++	/// the name it was found under. Names are MIME types: `text/plain`, `text/html` (on Windows
++	/// the fragment, without the header), `text/rtf`, `image/png` or any other.
++	pub fn format(self, names: &[&str]) -> Result<(String, Vec<u8>), Error> {
++		self.platform.format(names)
++	}
++
++	/// Completes the "get" operation by listing the formats the clipboard holds, as MIME types
++	/// where the system names them otherwise.
++	pub fn formats(self) -> Result<Vec<String>, Error> {
++		self.platform.formats()
++	}
+ }
+ 
+ /// A builder for an operation that sets a value to the clipboard.
+@@ -251,6 +266,13 @@
+ 	pub fn file_list(self, file_list: &[impl AsRef<Path>]) -> Result<(), Error> {
+ 		self.platform.file_list(file_list)
+ 	}
++
++	/// Completes the "set" operation by placing the same content in several formats at once,
++	/// each under its MIME type (see [`Get::format`]). `text/html` is a fragment: on Windows it
++	/// gets the header of offsets. (ApexDesk patch.)
++	pub fn formats(self, formats: &[(&str, &[u8])]) -> Result<(), Error> {
++		self.platform.formats(formats)
++	}
+ }
+ 
+ /// A builder for an operation that clears the data from the clipboard.
+--- a/src/platform/linux/mod.rs
++++ b/src/platform/linux/mod.rs
+@@ -188,6 +188,22 @@
+ 			Clipboard::WlDataControl(clipboard) => clipboard.get_file_list(self.selection),
+ 		}
+ 	}
++
++	pub(crate) fn format(self, names: &[&str]) -> Result<(String, Vec<u8>), Error> {
++		match self.clipboard {
++			Clipboard::X11(clipboard) => clipboard.get_format(names, self.selection),
++			#[cfg(feature = "wayland-data-control")]
++			Clipboard::WlDataControl(_) => Err(Error::ClipboardNotSupported),
++		}
++	}
++
++	pub(crate) fn formats(self) -> Result<Vec<String>, Error> {
++		match self.clipboard {
++			Clipboard::X11(clipboard) => clipboard.get_formats(self.selection),
++			#[cfg(feature = "wayland-data-control")]
++			Clipboard::WlDataControl(_) => Err(Error::ClipboardNotSupported),
++		}
++	}
+ }
+ 
+ /// Linux-specific extensions to the [`Get`](super::Get) builder.
+@@ -277,6 +293,16 @@
+ 		}
+ 	}
+ 
++	pub(crate) fn formats(self, formats: &[(&str, &[u8])]) -> Result<(), Error> {
++		match self.clipboard {
++			Clipboard::X11(clipboard) => {
++				clipboard.set_formats(formats, self.selection, self.wait, self.exclude_from_history)
++			}
++			#[cfg(feature = "wayland-data-control")]
++			Clipboard::WlDataControl(_) => Err(Error::ClipboardNotSupported),
++		}
++	}
++
+ 	pub(crate) fn file_list(self, file_list: &[impl AsRef<Path>]) -> Result<(), Error> {
+ 		match self.clipboard {
+ 			Clipboard::X11(clipboard) => clipboard.set_file_list(
+--- a/src/platform/linux/x11.rs
++++ b/src/platform/linux/x11.rs
+@@ -616,6 +616,8 @@
+ 						// add all equivalent formats to the supported targets
+ 						targets.push(self.atoms.UTF8_MIME_0);
+ 						targets.push(self.atoms.UTF8_MIME_1);
++						// ApexDesk patch: the bare name too (served below).
++						targets.push(self.atoms.TEXT_MIME_UNKNOWN);
+ 					}
+ 
+ 					if data.format == self.atoms.X_KDE_PASSWORDMANAGERHINT {
+@@ -660,7 +662,38 @@
+ 			trace!("Handling request for (probably) the clipboard contents.");
+ 			let data = self.selection_of(selection).data.read();
+ 			if let Some(data_list) = &*data {
+-				success = match data_list.iter().find(|d| d.format == event.target) {
++				// ApexDesk patch: text is served under each of its names (KWin asks for
++				// `text/plain` as TEXT), as Latin-1 for STRING.
++				let text_alias = [
++					self.atoms.UTF8_MIME_0,
++					self.atoms.UTF8_MIME_1,
++					self.atoms.TEXT_MIME_UNKNOWN,
++					self.atoms.TEXT,
++					self.atoms.STRING,
++				]
++				.contains(&event.target);
++				let latin1;
++				success = match data_list.iter().find(|d| {
++					d.format == event.target || (text_alias && d.format == self.atoms.UTF8_STRING)
++				}) {
++					Some(data) if event.target == self.atoms.STRING => {
++						latin1 = String::from_utf8_lossy(&data.bytes)
++							.chars()
++							.map(|c| if (c as u32) < 256 { c as u8 } else { b'?' })
++							.collect::<Vec<u8>>();
++						self.server
++							.conn
++							.change_property8(
++								PropMode::REPLACE,
++								event.requestor,
++								event.property,
++								event.target,
++								&latin1,
++							)
++							.map_err(into_unknown)?;
++						self.server.conn.flush().map_err(into_unknown)?;
++						true
++					}
+ 					Some(data) => {
+ 						self.server
+ 							.conn
+@@ -982,6 +1015,89 @@
+ 		self.inner.write(data, selection, wait)
+ 	}
+ 
++	/// The atom of a format named by its MIME type; text is `UTF8_STRING`.
++	fn format_atom(&self, name: &str) -> Result<Atom> {
++		if name == "text/plain" {
++			return Ok(self.inner.atoms.UTF8_STRING);
++		}
++		let conn = &self.inner.server.conn;
++		Ok(conn.intern_atom(false, name.as_bytes()).map_err(into_unknown)?.reply().map_err(into_unknown)?.atom)
++	}
++
++	pub(crate) fn get_format(
++		&self,
++		names: &[&str],
++		selection: LinuxClipboardKind,
++	) -> Result<(String, Vec<u8>)> {
++		// Text is asked for under each of its names.
++		let mut atoms = Vec::new();
++		for &name in names {
++			if name == "text/plain" {
++				for a in [
++					self.inner.atoms.UTF8_STRING,
++					self.inner.atoms.UTF8_MIME_0,
++					self.inner.atoms.UTF8_MIME_1,
++					self.inner.atoms.TEXT_MIME_UNKNOWN,
++				] {
++					atoms.push((name, a));
++				}
++			} else {
++				atoms.push((name, self.format_atom(name)?));
++			}
++		}
++		// Only the formats the owner offers: asking for others makes some wait for nothing.
++		let offered = self.get_format_atoms(selection).unwrap_or_default();
++		atoms.retain(|(_, a)| offered.is_empty() || offered.contains(a));
++		let list: Vec<Atom> = atoms.iter().map(|(_, a)| *a).collect();
++		let result = self.inner.read(&list, selection)?;
++		let name = atoms.iter().find(|(_, a)| *a == result.format).map_or("", |(n, _)| *n);
++		Ok((name.to_string(), result.bytes))
++	}
++
++	fn get_format_atoms(&self, selection: LinuxClipboardKind) -> Result<Vec<Atom>> {
++		if self.inner.is_owner(selection)? {
++			let data = self.inner.selection_of(selection).data.read();
++			return Ok(data.iter().flatten().map(|d| d.format).collect());
++		}
++		let reader = XContext::new()?;
++		let bytes = self.inner.read_single(&reader, selection, self.inner.atoms.TARGETS)?;
++		Ok(bytes.chunks_exact(4).map(|c| u32::from_ne_bytes([c[0], c[1], c[2], c[3]])).collect())
++	}
++
++	pub(crate) fn get_formats(&self, selection: LinuxClipboardKind) -> Result<Vec<String>> {
++		let atoms = self.get_format_atoms(selection)?;
++		let a = &self.inner.atoms;
++		let mut names = Vec::new();
++		for atom in atoms {
++			let name = if [a.UTF8_STRING, a.UTF8_MIME_0, a.UTF8_MIME_1, a.TEXT_MIME_UNKNOWN, a.STRING, a.TEXT]
++				.contains(&atom)
++			{
++				"text/plain".to_string()
++			} else {
++				self.inner.atom_name(atom)?
++			};
++			if !names.contains(&name) {
++				names.push(name);
++			}
++		}
++		Ok(names)
++	}
++
++	pub(crate) fn set_formats(
++		&self,
++		formats: &[(&str, &[u8])],
++		selection: LinuxClipboardKind,
++		wait: WaitConfig,
++		exclude_from_history: bool,
++	) -> Result<()> {
++		let mut data = Vec::with_capacity(formats.len() + 1);
++		for (name, bytes) in formats {
++			data.push(ClipboardData { bytes: bytes.to_vec(), format: self.format_atom(name)? });
++		}
++		self.add_clipboard_exclusions(exclude_from_history, &mut data);
++		self.inner.write(data, selection, wait)
++	}
++
+ 	pub(crate) fn get_html(&self, selection: LinuxClipboardKind) -> Result<String> {
+ 		let formats = [self.inner.atoms.HTML];
+ 		let result = self.inner.read(&formats, selection)?;
+@@ -1026,7 +1142,7 @@
+ 		let bytes = self.inner.read(&formats, selection)?.bytes;
+ 
+ 		let cursor = std::io::Cursor::new(&bytes);
+-		let mut reader = image::io::Reader::new(cursor);
++		let mut reader = image::ImageReader::new(cursor);
+ 		reader.set_format(image::ImageFormat::Png);
+ 		let image = match reader.decode() {
+ 			Ok(img) => img.into_rgba8(),
+--- a/src/platform/osx.rs
++++ b/src/platform/osx.rs
+@@ -213,6 +213,32 @@
+ 		unsafe { self.clipboard.string_from_type(NSPasteboardTypeHTML) }
+ 	}
+ 
++	// ApexDesk patch: text and HTML by name; other formats are not read on macOS yet.
++	pub(crate) fn format(self, names: &[&str]) -> Result<(String, Vec<u8>), Error> {
++		for &name in names {
++			let read = match name {
++				"text/plain" => unsafe { self.clipboard.string_from_type(NSPasteboardTypeString) },
++				"text/html" => unsafe { self.clipboard.string_from_type(NSPasteboardTypeHTML) },
++				_ => continue,
++			};
++			if let Ok(s) = read {
++				return Ok((name.to_string(), s.into_bytes()));
++			}
++		}
++		Err(Error::ContentNotAvailable)
++	}
++
++	pub(crate) fn formats(self) -> Result<Vec<String>, Error> {
++		let mut names = Vec::new();
++		if unsafe { self.clipboard.string_from_type(NSPasteboardTypeHTML) }.is_ok() {
++			names.push("text/html".to_string());
++		}
++		if unsafe { self.clipboard.string_from_type(NSPasteboardTypeString) }.is_ok() {
++			names.push("text/plain".to_string());
++		}
++		Ok(names)
++	}
++
+ 	#[cfg(feature = "image-data")]
+ 	pub(crate) fn image(self) -> Result<ImageData<'static>, Error> {
+ 		use objc2_app_kit::NSPasteboardTypeTIFF;
+@@ -298,6 +324,16 @@
+ 		}
+ 	}
+ 
++	// ApexDesk patch: text and HTML; other formats are left out on macOS yet.
++	pub(crate) fn formats(self, formats: &[(&str, &[u8])]) -> Result<(), Error> {
++		let get = |n: &str| formats.iter().find(|f| f.0 == n).map(|f| String::from_utf8_lossy(f.1));
++		match (get("text/html"), get("text/plain")) {
++			(Some(html), alt) => self.html(html, alt),
++			(None, Some(text)) => self.text(text),
++			(None, None) => Err(Error::ContentNotAvailable),
++		}
++	}
++
+ 	pub(crate) fn html(self, html: Cow<'_, str>, alt: Option<Cow<'_, str>>) -> Result<(), Error> {
+ 		self.clipboard.clear();
+ 		// Text goes to the clipboard as UTF-8 but may be interpreted as Windows Latin 1.
+--- a/src/platform/windows.rs
++++ b/src/platform/windows.rs
+@@ -643,6 +643,54 @@
+ 		image_data::read_cf_dibv5(&mut data)
+ 	}
+ 
++	pub(crate) fn format(self, names: &[&str]) -> Result<(String, Vec<u8>), Error> {
++		let _clipboard_assertion = self.clipboard?;
++		for &name in names {
++			let Some(id) = format_id(name) else { continue };
++			if !clipboard_win::is_format_avail(id) {
++				continue;
++			}
++			let mut out = Vec::new();
++			// "HTML Format" is read whole, header and context included:
++			// `get_html` fails on a memory block whose bytes past the
++			// zero aren't UTF-8, and leaves out the tags around the
++			// fragment (the lists and tables it is in). (ApexDesk patch.)
++			let read = match name {
++				"text/plain" => clipboard_win::raw::get_string(&mut out),
++				_ => clipboard_win::raw::get_vec(id, &mut out),
++			};
++			if read.is_err() {
++				continue;
++			}
++			// Text formats end where the zero is; the memory block may be longer.
++			if name.starts_with("text/") || name == "application/rtf" {
++				if let Some(end) = out.iter().position(|&b| b == 0) {
++					out.truncate(end);
++				}
++			}
++			return Ok((name.to_string(), out));
++		}
++		Err(Error::ContentNotAvailable)
++	}
++
++	pub(crate) fn formats(self) -> Result<Vec<String>, Error> {
++		let _clipboard_assertion = self.clipboard?;
++		let mut names = Vec::new();
++		for id in clipboard_win::EnumFormats::new() {
++			let name = match id {
++				clipboard_win::formats::CF_UNICODETEXT | clipboard_win::formats::CF_TEXT => "text/plain".to_string(),
++				_ => match clipboard_win::raw::format_name_big(id) {
++					Some(n) => mime_of(&n),
++					None => continue,
++				},
++			};
++			if !names.contains(&name) {
++				names.push(name);
++			}
++		}
++		Ok(names)
++	}
++
+ 	pub(crate) fn file_list(self) -> Result<Vec<PathBuf>, Error> {
+ 		let _clipboard_assertion = self.clipboard?;
+ 
+@@ -685,6 +733,38 @@
+ 		)
+ 	}
+ 
++	pub(crate) fn formats(self, formats: &[(&str, &[u8])]) -> Result<(), Error> {
++		let open_clipboard = self.clipboard?;
++		clipboard_win::raw::empty().map_err(|e| Error::unknown(e.to_string()))?;
++		for &(name, bytes) in formats {
++			let Some(id) = format_id(name) else { continue };
++			let set = match name {
++				"text/plain" => clipboard_win::raw::set_string_with(
++					&String::from_utf8_lossy(bytes),
++					clipboard_win::options::NoClear,
++				),
++				"text/html" => {
++					let html = wrap_html(&String::from_utf8_lossy(bytes));
++					clipboard_win::raw::set_without_clear(id, html.as_bytes())
++				}
++				// Readers of RTF look for its closing zero.
++				_ if name.starts_with("text/") || name == "application/rtf" => {
++					let mut z = bytes.to_vec();
++					z.push(0);
++					clipboard_win::raw::set_without_clear(id, &z)
++				}
++				_ => clipboard_win::raw::set_without_clear(id, bytes),
++			};
++			set.map_err(|e| Error::unknown(e.to_string()))?;
++		}
++		add_clipboard_exclusions(
++			open_clipboard,
++			self.exclude_from_monitoring,
++			self.exclude_from_cloud,
++			self.exclude_from_history,
++		)
++	}
++
+ 	pub(crate) fn html(self, html: Cow<'_, str>, alt: Option<Cow<'_, str>>) -> Result<(), Error> {
+ 		let open_clipboard = self.clipboard?;
+ 
+@@ -895,6 +975,33 @@
+ 	}
+ }
+ 
++/// The registered name of a format named by its MIME type. (ApexDesk patch.)
++fn system_name(mime: &str) -> &str {
++	match mime {
++		"text/html" => "HTML Format",
++		"text/rtf" | "application/rtf" => "Rich Text Format",
++		"image/png" => "PNG",
++		other => other,
++	}
++}
++
++fn mime_of(system: &str) -> String {
++	match system {
++		"HTML Format" => "text/html",
++		"Rich Text Format" => "text/rtf",
++		"PNG" => "image/png",
++		other => other,
++	}
++	.to_string()
++}
++
++fn format_id(mime: &str) -> Option<u32> {
++	if mime == "text/plain" {
++		return Some(clipboard_win::formats::CF_UNICODETEXT);
++	}
++	clipboard_win::register_format(system_name(mime)).map(|f| f.get())
++}
++
+ fn wrap_html(ctn: &str) -> String {
+ 	let h_version = "Version:0.9";
+ 	let h_start_html = "\r\nStartHTML:";

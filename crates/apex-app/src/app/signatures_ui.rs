@@ -513,8 +513,8 @@ impl App {
         }
         let Some(choice) = choice else { return };
         let Some(p) = self.sig.prompt.take() else { return };
-        if choice && self.macros_fit(idx, &p.path, p.fmt) {
-            self.save_to(idx, p.path, p.fmt);
+        if choice {
+            self.save_from(idx, p.path, p.fmt, super::SaveStep::Macros);
         }
     }
 

@@ -130,8 +130,11 @@ impl Validation {
 
     /// What the answers say of `chain` (leaf first): every certificate
     /// but a self-issued root needs one. A revoked one wins; else the
-    /// oldest of the newest answers dates the check.
-    pub fn assess(&self, chain: &[Cert]) -> Revocation {
+    /// oldest of the newest answers dates the check. A "good" answer
+    /// counts only when it is current at `at` (the time the signature is
+    /// judged at); a revocation always counts.
+    pub fn assess(&self, chain: &[Cert], at: i64) -> Revocation {
+        let now = crate::time::now();
         let mut oldest = i64::MAX;
         let mut checked = 0;
         for (i, c) in chain.iter().enumerate() {
@@ -143,7 +146,7 @@ impl Validation {
             if let Some(t) = ev.iter().find_map(|e| if let CertStatus::Revoked(t) = e.status { Some(t) } else { None }) {
                 return Revocation::Revoked(t);
             }
-            let Some(newest) = ev.iter().map(|e| e.this_update).max() else { return Revocation::NotChecked };
+            let Some(newest) = ev.iter().filter(|e| e.current_at(at, now)).map(|e| e.this_update).max() else { return Revocation::NotChecked };
             oldest = oldest.min(newest);
             checked += 1;
         }

@@ -23,8 +23,9 @@ pub(super) enum Offer {
     Done,
 }
 
-/// The groups ticked at first: all but PDF, which has a viewer of its own
-/// on most systems.
+/// The groups ticked at first in File > Options (the first start's
+/// question ticks none): all but PDF, which has a viewer of its own on
+/// most systems.
 pub(super) fn first_choice() -> [bool; 4] {
     GROUPS.map(|g| g != Group::Pdf)
 }
@@ -63,12 +64,14 @@ impl App {
                 self.default_offer = Offer::Checking(rx);
             }
             Offer::Checking(rx) => match rx.try_recv() {
-                Ok(true) => self.default_offer = Offer::Open(first_choice()),
+                // Nothing ticked: the user picks, it isn't picked for them.
+                Ok(true) => self.default_offer = Offer::Open([false; 4]),
                 Ok(false) | Err(mpsc::TryRecvError::Disconnected) => self.default_offer = Offer::Done,
                 Err(mpsc::TryRecvError::Empty) => ctx.request_repaint_after(web_time::Duration::from_millis(100)),
             },
             Offer::Open(ticked) => {
-                let res = widgets::dialog(ctx, "default_apps", tr("default_apps.title"), 420.0, |ui| {
+                let any = ticked.iter().any(|t| *t);
+                let res = widgets::choice_dialog(ctx, "default_apps", tr("default_apps.title"), 420.0, tr("default_apps.button"), any, tr("default_apps.not_now"), |ui| {
                     ui.label(tr("default_apps.question"));
                     ui.add_space(6.0);
                     group_boxes(ui, ticked);

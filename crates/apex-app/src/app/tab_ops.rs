@@ -186,16 +186,22 @@ impl App {
         // its own (and a notebook is open in one place only).
         self.remove_tab(idx);
         self.sync_locks();
-        let spawned = std::env::current_exe().and_then(|exe| {
-            let mut cmd = std::process::Command::new(exe);
-            cmd.env(crate::instance::NEW_WINDOW, "1").env_remove(super::recovery::HANDOFF);
-            match (&handoff, &path) {
-                (Some(info), _) => cmd.env(super::recovery::HANDOFF, info),
-                (None, Some(p)) => cmd.arg(p),
-                (None, None) => &mut cmd,
-            };
-            cmd.spawn()
-        });
+        // A test's program is the test runner: started again it would run
+        // every test, each of them starting it once more.
+        let spawned = if cfg!(test) {
+            Ok(())
+        } else {
+            std::env::current_exe().and_then(|exe| {
+                let mut cmd = std::process::Command::new(exe);
+                cmd.env(crate::instance::NEW_WINDOW, "1").env_remove(super::recovery::HANDOFF);
+                match (&handoff, &path) {
+                    (Some(info), _) => cmd.env(super::recovery::HANDOFF, info),
+                    (None, Some(p)) => cmd.arg(p),
+                    (None, None) => &mut cmd,
+                };
+                cmd.spawn().map(|_| ())
+            })
+        };
         if let Err(e) = spawned {
             self.notify(Notice::error(format!("{}: {e}", tr("tab.new_window"))));
             match (handoff, path) {

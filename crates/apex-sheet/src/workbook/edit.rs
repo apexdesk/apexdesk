@@ -157,7 +157,7 @@ impl Workbook {
                 let old_style = old.as_ref().map_or(0, |x| x.style);
                 let src_style = s.map_or(0, |x| x.style);
                 // Source position of this cell, for relative references.
-                let (sr, sc) = if o.transpose { (clip.origin.row + c, clip.origin.col + r) } else { (clip.origin.row + r, clip.origin.col + c) };
+                let (sr, sc) = if o.transpose { (clip.src_row(c), clip.origin.col + r) } else { (clip.src_row(r), clip.origin.col + c) };
                 let moved = s.map(|x| offset_formula(x.clone(), dst.row as i64 - sr as i64, dst.col as i64 - sc as i64));
                 let mut content = match o.what {
                     PasteWhat::Formats | PasteWhat::Comments => old.as_ref().map_or(Content::Empty, |x| x.content.clone()),

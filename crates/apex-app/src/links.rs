@@ -30,25 +30,9 @@ pub enum Verdict {
     Block(&'static str),
 }
 
-/// Extensions of files that run something when opened.
-const RUNS: &[&str] = &[
-    "exe", "com", "scr", "pif", "cpl", "msi", "msp", "mst", "msc", "msix", "msixbundle", "appx", "appxbundle", "appinstaller", "application", "appref-ms", "gadget", "bat", "cmd", "ps1", "ps1xml", "ps2", "psc1", "psd1", "psm1", "vb", "vbe", "vbs", "js", "jse", "ws", "wsc", "wsf", "wsh", "hta", "jar", "lnk", "url", "scf", "inf", "reg", "settingcontent-ms", "library-ms", "search-ms", "searchconnector-ms", "diagcab", "diagcfg", "diagpkg", "iso", "img", "vhd", "vhdx", "chm", "hlp", "xll", "xlam", "ppam", "dll", "ocx", "sys", "drv", "py", "pyw", "pyc", "pl", "rb", "php", "sh", "bash", "zsh", "csh", "ksh", "fish", "command", "tool", "desktop", "run", "bin", "appimage", "deb", "rpm", "snap", "flatpakref", "flatpakrepo", "pkg", "mpkg", "dmg", "app", "action", "workflow", "scpt", "applescript", "terminal", "kext", "prefpane",
-    // Office files with macros, Access databases and files Office or
-    // Windows act on when opened (queries, remote desktop, themes, web
-    // archives, sandboxes, notebooks, Java Web Start, updates, scriptlets).
-    "docm", "dotm", "xlsm", "xltm", "xlsb", "xla", "pptm", "potm", "ppsm", "sldm", "ppa", "accdb", "accde", "accda", "mdb", "mde", "ade", "adp", "mda", "iqy", "slk", "dqy", "rqy", "oqy", "rdp", "theme", "themepack", "deskthemepack", "mht", "mhtml", "wsb", "one", "onepkg", "jnlp", "msu", "xbap", "website", "sct", "cab", "cer", "crt", "der",
-    // Python zip apps, Excel 4 macro sheets, Citrix and Office add-in
-    // installers, Monad shell scripts, Windows scrap files and the macOS
-    // links that open their target.
-    "pyz", "pyzw", "xlm", "ica", "vsto", "msh", "msh1", "msh2", "mshxml", "msh1xml", "msh2xml", "ps2xml", "psc2", "shs", "shb", "fileloc", "inetloc", "webloc",
-    // AutoHotkey and AutoIt scripts, Tcl, macOS configuration profiles.
-    "ahk", "au3", "a3x", "tcl", "tk", "mobileconfig", "lua", "vbscript",
-    // More of what Windows blocks as attachments.
-    "ins", "isp", "its", "job", "prf", "xnk", "printerexport", "mam", "maq", "mar", "mas", "mat", "mav", "maw", "maf", "htc", "bas", "mcf", "vsmacros", "plg", "osd", "mdt", "mdw", "mdz",
-    // Windows contacts (their links run things) and playlists or data
-    // links that reach out to other machines when opened.
-    "contact", "vcf", "wab", "m3u", "m3u8", "asx", "wax", "wvx", "wpl", "udl",
-];
+// Extensions of files that run something when opened: one list with what
+// macros never write.
+use apex_vba::files::RUNS;
 
 /// Schemes whose handlers run code or fetch and open things silently.
 const BAD_SCHEMES: &[&str] = &["javascript", "vbscript", "data", "blob", "ms-msdt", "search-ms", "search", "ms-search", "ms-officecmd", "ms-appinstaller", "ms-cxh", "ms-cxh-full", "shell", "hcp", "ms-its", "its", "mk", "mhtml", "jar", "vscode", "vscode-insiders", "ms-excel", "ms-word", "ms-powerpoint", "ms-access", "ms-visio", "ms-project", "ms-publisher", "ms-infopath", "ms-spd", "ms-settings", "ms-windows-store", "microsoft-edge", "ssh", "telnet", "smb", "cifs", "nfs", "afp", "webdav", "davs", "dav"];

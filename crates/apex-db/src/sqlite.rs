@@ -13,6 +13,8 @@
 //! and descriptions of fields.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::config::DbConfig;
@@ -447,9 +449,27 @@ fn document_sql(c: AuthContext<'_>) -> Authorization {
     }
 }
 
+/// What the connection's hooks go by. SQLite sets a hook through the only
+/// reference to its connection, and a read has a shared one: the hooks are
+/// set once, when the file opens, and told from here what to do.
+#[derive(Clone, Default)]
+struct Watch {
+    /// When the statements running now must stop.
+    end: Arc<Mutex<Option<web_time::Instant>>>,
+    /// Whether the SQL running now came with the file.
+    document: Arc<AtomicBool>,
+}
+
+impl Watch {
+    fn set_end(&self, end: Option<web_time::Instant>) {
+        *self.end.lock().unwrap_or_else(|e| e.into_inner()) = end;
+    }
+}
+
 /// An open database file.
 pub struct Db {
     conn: Connection,
+    watch: Watch,
     pub path: PathBuf,
 }
 
@@ -458,7 +478,7 @@ impl Db {
     pub fn open(path: &Path) -> Result<Db, Error> {
         check_journal(path)?;
         let conn = Connection::open(path).map_err(err)?;
-        let db = Db { conn, path: path.to_path_buf() };
+        let db = Db::watched(conn, path.to_path_buf())?;
         db.setup()?;
         Ok(db)
     }
@@ -477,16 +497,27 @@ impl Db {
         let flags = F::SQLITE_OPEN_READ_WRITE | F::SQLITE_OPEN_CREATE | F::SQLITE_OPEN_NOFOLLOW | F::SQLITE_OPEN_URI | F::SQLITE_OPEN_NO_MUTEX;
         check_journal(path)?;
         let conn = Connection::open_with_flags(path, flags).map_err(err)?;
-        let db = Db { conn, path: path.to_path_buf() };
+        let db = Db::watched(conn, path.to_path_buf())?;
         db.setup()?;
         Ok(db)
     }
 
     /// A database in memory (tests, previews).
     pub fn in_memory() -> Result<Db, Error> {
-        let db = Db { conn: Connection::open_in_memory().map_err(err)?, path: PathBuf::new() };
+        let db = Db::watched(Connection::open_in_memory().map_err(err)?, PathBuf::new())?;
         db.setup()?;
         Ok(db)
+    }
+
+    /// `conn` with its hooks set: the time limit of [`Self::bounded`] and
+    /// the checks of [`Self::guarded`], both off until those ask for them.
+    fn watched(mut conn: Connection, path: PathBuf) -> Result<Db, Error> {
+        let watch = Watch::default();
+        let end = watch.end.clone();
+        conn.progress_handler(100_000, Some(move || end.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|end| web_time::Instant::now() > end))).map_err(err)?;
+        let document = watch.document.clone();
+        conn.authorizer(Some(move |c: AuthContext<'_>| if document.load(Ordering::Relaxed) { document_sql(c) } else { Authorization::Allow })).map_err(err)?;
+        Ok(Db { conn, watch, path })
     }
 
     fn setup(&self) -> Result<(), Error> {
@@ -530,9 +561,9 @@ impl Db {
     /// query, an imported design): a single statement each, and nothing
     /// that attaches files, changes settings or ends the transaction.
     fn guarded<T>(&self, f: impl FnOnce(&Connection) -> Result<T, Error>) -> Result<T, Error> {
-        self.conn.authorizer(Some(document_sql)).map_err(err)?;
+        self.watch.document.store(true, Ordering::Relaxed);
         let r = f(&self.conn);
-        let _ = self.conn.authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
+        self.watch.document.store(false, Ordering::Relaxed);
         r
     }
 
@@ -763,7 +794,7 @@ impl Db {
     /// The columns (and their kinds) of a source.
     pub fn columns(&self, src: &RowSource) -> Result<(Vec<String>, Vec<FieldType>), Error> {
         let st = self.conn.prepare(&format!("{} LIMIT 0", src.from_sql(false))).map_err(err)?;
-        let cols = st.columns();
+        let cols: Vec<_> = st.columns().collect();
         Ok((cols.iter().map(|c| c.name().to_string()).collect(), cols.iter().map(|c| c.decl_type().map(|d| FieldType::from_decl(d).0).unwrap_or(FieldType::Text)).collect()))
     }
 
@@ -786,9 +817,9 @@ impl Db {
     /// [`Self::bounded`] with a limit of `secs`.
     pub(crate) fn bounded_for<T>(&self, secs: u64, f: impl FnOnce(&Connection) -> Result<T, Error>) -> Result<T, Error> {
         let end = web_time::Instant::now() + web_time::Duration::from_secs(secs);
-        let _ = self.conn.progress_handler(100_000, Some(move || web_time::Instant::now() > end));
+        self.watch.set_end(Some(end));
         let r = f(&self.conn);
-        let _ = self.conn.progress_handler(0, None::<fn() -> bool>);
+        self.watch.set_end(None);
         r
     }
 
@@ -1066,7 +1097,7 @@ impl Db {
     pub fn select(&self, sql: &str, params: &[Value]) -> Result<Page, Error> {
         self.bounded(|conn| {
             let mut st = conn.prepare(sql).map_err(err)?;
-            let cols = st.columns();
+            let cols: Vec<_> = st.columns().collect();
             let mut page = Page {
                 columns: cols.iter().map(|c| c.name().to_string()).collect(),
                 types: cols.iter().map(|c| c.decl_type().map(|d| FieldType::from_decl(d).0).unwrap_or(FieldType::Text)).collect(),
@@ -1098,7 +1129,7 @@ impl Db {
     /// The query runs on a copy of the database in memory, never on the
     /// file, and is held to [`Db::run_action`]'s checks.
     pub fn preview_action(&mut self, sql: &str) -> Result<usize, Error> {
-        let copy = Db { conn: self.snapshot()?, path: PathBuf::new() };
+        let copy = Db::watched(self.snapshot()?, PathBuf::new())?;
         harden(&copy.conn)?;
         copy.conn.execute_batch("PRAGMA foreign_keys = ON;").map_err(err)?;
         copy.action(sql, false)

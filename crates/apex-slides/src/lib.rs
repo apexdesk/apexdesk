@@ -474,4 +474,34 @@ mod tests {
         assert!(p.redo());
         assert_eq!(p.slides.len(), n + 1);
     }
+
+    #[test]
+    fn undo_steps_share_picture_bytes() {
+        let mut deck = build::new_deck(0);
+        let bytes: Arc<[u8]> = vec![7u8; 1 << 20].into();
+        let mut pic = object::Picture::default();
+        pic.image.data = bytes.clone();
+        let mut o = object::Object::new(500, "Picture", ObjKind::Picture(Box::new(pic)));
+        o.sp.frame = Some(Frame::default());
+        Arc::make_mut(&mut deck.slides[0]).objects.push(o);
+        let other = deck.slides.len() > 1;
+        let mut p = Presentation::new(deck);
+        for i in 0..UNDO_LIMIT + 10 {
+            let frame = p.edit("slides.undo.move").object_mut(0, 500).unwrap().sp.frame.as_mut().unwrap();
+            frame.x = i as f32;
+        }
+        // Every step holds the same picture: moving it copies only the
+        // slide's structure, never its bytes.
+        let data = |d: &Deck| match &d.slides[0].find(500).unwrap().kind {
+            ObjKind::Picture(p) => p.image.data.clone(),
+            _ => unreachable!(),
+        };
+        assert_eq!(p.undo.len(), UNDO_LIMIT);
+        for (d, _, _) in &p.undo {
+            assert!(Arc::ptr_eq(&data(d), &bytes));
+            if other {
+                assert!(Arc::ptr_eq(&d.slides[1], &p.deck.slides[1]));
+            }
+        }
+    }
 }

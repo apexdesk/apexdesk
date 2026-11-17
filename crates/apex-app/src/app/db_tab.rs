@@ -108,12 +108,25 @@ impl App {
     /// As writes a copy.
     pub(super) fn save_db(&mut self, idx: usize, save_as: bool) -> bool {
         crate::file_dialog::set_owner(self.tabs[idx].id);
-        let View::Db(v) = &mut self.tabs[idx].view else { return false };
-        if save_as {
-            v.backup();
-        } else {
+        let View::Db(v) = &self.tabs[idx].view else { return false };
+        if !save_as {
             self.notify(Notice::info(tr("db.always_saved")));
+            return true;
         }
+        // The tab stays on its file: what is written is a copy, and the
+        // dialog says so.
+        let stem = v.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let ext = v.path.extension().map_or_else(|| "apexdb".to_string(), |e| e.to_string_lossy().into_owned());
+        let name = format!("{stem} ({}).{ext}", tr("nb.copy"));
+        let id = self.tabs[idx].id;
+        crate::file_dialog::FileDialog::new().set_title(tr("dialog.save_copy_title")).set_file_name(name).save_file(move |app, path| {
+            let path = with_db_ext(path);
+            let Some(View::Db(v)) = app.tab_view_mut(id) else { return };
+            match v.db.backup_to(&path) {
+                Ok(()) => v.notices.push(Notice::info(trf("notice.saved_copy", &[("file", &file_name(&path))]))),
+                Err(e) => v.error(e),
+            }
+        });
         true
     }
 

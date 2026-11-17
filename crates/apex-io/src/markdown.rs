@@ -382,6 +382,10 @@ fn parse_inline(src: &str) -> Paragraph {
     let mut i = 0;
     let (mut tick, mut bracket, mut link, mut link_gt, mut paren, mut gt, mut data) =
         (Ahead::new("`"), Ahead::new("]"), Ahead::new("]("), Ahead::new(">"), Ahead::new(")"), Ahead::new(">"), Ahead::new("](data:"));
+    // A footnote label holds no `[`, an autolink no `<`: an opener with
+    // another before its closer is none, found without reading what lies
+    // between (a line of them before one closer would be read once each).
+    let (mut open_bracket, mut lt) = (Ahead::new("["), Ahead::new("<"));
     // The picture that didn't read, not to be decoded again from every `![` before it.
     let mut bad_image = None;
     // Where the last `$` and `$$` that didn't start an equation would have
@@ -458,7 +462,11 @@ fn parse_inline(src: &str) -> Paragraph {
             }
         }
         // Footnote references stay as text (see `attach_notes`).
-        if rest.starts_with("[^") && let Some(end) = bracket.next(src, i).map(|e| e - i) && !rest[2..end].contains(char::is_whitespace) {
+        if rest.starts_with("[^")
+            && let Some(end) = bracket.next(src, i).map(|e| e - i)
+            && open_bracket.next(src, i + 1).is_none_or(|o| o > i + end)
+            && !rest[2..end].contains(char::is_whitespace)
+        {
             text.push_str(&rest[..end + 1]);
             i += end + 1;
             continue;
@@ -481,7 +489,9 @@ fn parse_inline(src: &str) -> Paragraph {
             }
         }
         if b[i] == b'<' {
-            if let Some(end) = gt.next(src, i).map(|e| e - i) {
+            if let Some(end) = gt.next(src, i).map(|e| e - i)
+                && lt.next(src, i + 1).is_none_or(|o| o > i + end)
+            {
                 let inner = &rest[1..end];
                 // CommonMark autolinks need a scheme (or are e-mail addresses).
                 let target = apex_doc::autolink_target(inner).filter(|_| !inner.contains(char::is_whitespace) && !inner.to_ascii_lowercase().starts_with("www."));
@@ -833,6 +843,18 @@ mod tests {
         // The equations still read.
         assert!(!read("a $x$ b").paragraphs[0].text.contains('$'));
         assert!(!read("a $$x$$ b").paragraphs[0].text.contains('$'));
+    }
+
+    #[test]
+    fn openers_before_one_closer_read_once() {
+        let t = web_time::Instant::now();
+        for line in ["<http://a".repeat(40_000) + " >", "[^".repeat(100_000) + " ]", format!("${}$", "(".repeat(200_000))] {
+            assert!(!read(&line).paragraphs.is_empty());
+        }
+        assert!(t.elapsed() < web_time::Duration::from_secs(5), "{:?}", t.elapsed());
+        // Each still reads on its own.
+        assert_eq!(read("<http://a.b>").paragraphs[0].runs[0].attrs.link.as_deref(), Some("http://a.b"));
+        assert!(read("a [^n]\n\n[^n]: note").paragraphs[0].text.contains(OBJECT));
     }
 
     #[test]

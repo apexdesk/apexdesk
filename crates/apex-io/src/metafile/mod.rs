@@ -35,7 +35,8 @@ pub struct Picture {
 const MAX_RECORDS: usize = 2_000_000;
 /// Points the paths of one file may hold, all told.
 const MAX_POINTS: usize = 20_000_000;
-/// Pixels of the bitmaps one file may draw, all told.
+/// Pixels of the bitmaps one file (and the metafiles inside it) may
+/// decode, all told.
 const MAX_BITMAP_PIXELS: u64 = 200_000_000;
 /// Glyphs one file may draw.
 const MAX_GLYPHS: usize = 2_000_000;
@@ -43,6 +44,55 @@ const MAX_GLYPHS: usize = 2_000_000;
 const MAX_CLIPS: usize = 64;
 /// Longest side of the pixels drawn.
 const MAX_SIDE: f64 = 4000.0;
+/// Metafiles drawn one inside another (as the PNG or JPEG of a bitmap
+/// record, decoded by the app back into this module) before the inner
+/// ones are left out.
+const MAX_NESTING: u32 = 4;
+
+thread_local! {
+    /// How deep the metafile being drawn is nested, and the bitmap pixels
+    /// it and those around it have left: a picture inside a picture must
+    /// neither recurse without end nor get a fresh budget each time.
+    static NEST: std::cell::Cell<(u32, u64)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// Takes `n` pixels from the bitmap budget of the drawing, before they
+/// are allocated; `false` (nothing taken) when they don't fit.
+fn take_pixels(n: u64) -> bool {
+    NEST.with(|c| {
+        let (depth, left) = c.get();
+        let ok = n <= left;
+        if ok {
+            c.set((depth, left - n));
+        }
+        ok
+    })
+}
+
+/// One level of nesting, given back when the drawing ends (or unwinds).
+struct Nested(u32);
+
+impl Nested {
+    fn enter() -> Option<Nested> {
+        NEST.with(|c| {
+            let (depth, left) = c.get();
+            if depth >= MAX_NESTING {
+                return None;
+            }
+            c.set((depth + 1, if depth == 0 { MAX_BITMAP_PIXELS } else { left }));
+            Some(Nested(depth))
+        })
+    }
+}
+
+impl Drop for Nested {
+    fn drop(&mut self) {
+        NEST.with(|c| {
+            let left = if self.0 == 0 { 0 } else { c.get().1 };
+            c.set((self.0, left));
+        });
+    }
+}
 
 /// Whether the bytes are an EMF or WMF file [`render`] draws.
 pub fn drawable(data: &[u8]) -> bool {
@@ -80,6 +130,11 @@ pub fn render(data: &[u8], scale: f64, fallback: Fallback) -> Option<Picture> {
     let (w, hh) = ((wpt * s).round().clamp(1.0, MAX_SIDE) as u16, (hpt * s).round().clamp(1.0, MAX_SIDE) as u16);
     let f = h.frame;
     if f.width() == 0.0 || f.height() == 0.0 {
+        return None;
+    }
+    let nested = Nested::enter()?;
+    // The canvas of a picture drawn inside another is one of its bitmaps.
+    if nested.0 > 0 && !take_pixels(w as u64 * hh as u64) {
         return None;
     }
     let base = Affine::scale_non_uniform(w as f64 / f.width(), hh as f64 / f.height()) * Affine::translate((-f.x0, -f.y0));
@@ -330,7 +385,6 @@ struct Gdi<'f> {
     faces: HashMap<(String, bool, bool), Option<Rc<std::cell::RefCell<Face>>>>,
     points: usize,
     glyphs: usize,
-    bitmap_pixels: u64,
 }
 
 impl<'f> Gdi<'f> {
@@ -357,7 +411,6 @@ impl<'f> Gdi<'f> {
             faces: HashMap::new(),
             points: 0,
             glyphs: 0,
-            bitmap_pixels: 0,
         }
     }
 
@@ -814,7 +867,11 @@ impl<'f> Gdi<'f> {
         let (s, w) = (start.to_radians(), sweep.to_radians());
         let y_down = self.full().determinant() > 0.0;
         let k = if y_down { -1.0 } else { 1.0 };
-        let a = KArc::new(c, (radius, radius), k * s, k * w, 0.0);
+        // Past a full turn the arc only goes over itself again; the
+        // segments it is drawn with grow with the sweep.
+        let tau = std::f64::consts::TAU;
+        let (s, w) = (if s.is_finite() { s } else { 0.0 }, if w.is_finite() { w } else { 0.0 });
+        let a = KArc::new(c, (radius, radius), k * s, k * w.clamp(-tau, tau), 0.0);
         let first = c + Vec2::new(radius * (k * s).cos(), radius * (k * s).sin());
         self.line_to(first);
         let t = self.full();
@@ -1006,10 +1063,6 @@ impl<'f> Gdi<'f> {
         if dest.width() == 0.0 || dest.height() == 0.0 || src.width() == 0.0 || src.height() == 0.0 {
             return;
         }
-        self.bitmap_pixels = self.bitmap_pixels.saturating_add(bmp.width as u64 * bmp.height as u64);
-        if self.bitmap_pixels > MAX_BITMAP_PIXELS {
-            return;
-        }
         let mut px = bmp.pixels;
         match rop {
             // A mask (white shows through) and the picture drawn over it
@@ -1044,7 +1097,7 @@ impl<'f> Gdi<'f> {
         for ix in idx {
             let v: Vec<_> = ix.iter().filter_map(|&i| verts.get(i as usize)).collect();
             if mode == 2 {
-                if v.len() == 3 {
+                if v.len() == 3 && self.count(3) {
                     let mut c = [0.0; 3];
                     for q in &v {
                         for k in 0..3 {
@@ -1065,6 +1118,10 @@ impl<'f> Gdi<'f> {
             }
             let (a, b) = (v[0], v[1]);
             const STEPS: usize = 64;
+            // Each band is a path of its own, as the points of any other.
+            if !self.count(STEPS * 4) {
+                return;
+            }
             for s in 0..STEPS {
                 let (f0, f1) = (s as f64 / STEPS as f64, (s + 1) as f64 / STEPS as f64);
                 let m = (f0 + f1) / 2.0;
@@ -1294,14 +1351,16 @@ fn dib(bmi: &[u8], bits: &[u8]) -> Option<Bitmap> {
     // JPEG or PNG inside.
     if comp == 4 || comp == 5 {
         let (pw, ph, rgba) = crate::picture::decode(bits)?;
-        if pw == 0 || ph == 0 || pw > 30_000 || ph > 30_000 || rgba.len() < pw as usize * ph as usize * 4 {
+        if pw == 0 || ph == 0 || pw > 30_000 || ph > 30_000 || rgba.len() < pw as usize * ph as usize * 4 || !take_pixels(pw as u64 * ph as u64) {
             return None;
         }
         let pixels = rgba.chunks_exact(4).map(|p| premul(p[0], p[1], p[2], p[3])).collect();
         return Some(Bitmap { width: pw as u16, height: ph as u16, pixels });
     }
     let (aw, ah) = (w.unsigned_abs(), h.unsigned_abs());
-    if aw == 0 || ah == 0 || aw > 30_000 || ah > 30_000 || aw * ah > 100_000_000 {
+    // Charged before the pixels are allocated: a header may ask for far
+    // more than the record holds.
+    if aw == 0 || ah == 0 || aw > 30_000 || ah > 30_000 || aw * ah > 100_000_000 || !take_pixels(aw * ah) {
         return None;
     }
     let (aw, ah) = (aw as usize, ah as usize);

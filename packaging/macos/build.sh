@@ -17,7 +17,7 @@ cd "$root"
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 bins=""
 for a in $archs; do
-    cargo build --release -p apex-app --target "$a-apple-darwin"
+    cargo build --release --locked -p apex-app --target "$a-apple-darwin"
     bins="$bins target/$a-apple-darwin/release/apexdesk"
 done
 
@@ -60,4 +60,5 @@ for try in 1 2 3 4 5; do
     [ "$try" = 5 ] && exit 1
     sleep 10
 done
+"$root/scripts/sha256.sh" "$root/dist/$name.dmg"
 echo "dist/$name.dmg"

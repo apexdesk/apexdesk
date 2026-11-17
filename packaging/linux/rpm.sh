@@ -16,7 +16,7 @@ dist=${DIST:-$root/dist}
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
 bin=${APEXDESK_BIN:-}
 if [ -z "$bin" ]; then
-    (cd "$root" && cargo build --release -p apex-app)
+    (cd "$root" && cargo build --release --locked -p apex-app)
     bin=$root/target/release/apexdesk
 fi
 
@@ -34,4 +34,4 @@ rpmbuild -bb --quiet \
     --define "apex_src $src" \
     "$here/apexdesk.spec"
 mkdir -p "$dist"
-find "$top/RPMS" -name '*.rpm' -exec cp {} "$dist/" \; -exec sh -c 'echo "$1/$(basename "$2")"' _ "$dist" {} \;
+find "$top/RPMS" -name '*.rpm' -exec cp {} "$dist/" \; -exec sh -c '"$3" "$1/$(basename "$2")" && echo "$1/$(basename "$2")"' _ "$dist" {} "$root/scripts/sha256.sh" \;

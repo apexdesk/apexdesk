@@ -26,6 +26,10 @@ pub enum Hidden {
     Comments,
     Revisions,
     Properties,
+    /// The sensitivity label of the organization (Microsoft Purview). On
+    /// its own, so that it is seen and goes only when asked: it names the
+    /// organization, and taking it off is the organization's call.
+    SensitivityLabel,
     Signatures,
     /// Data connections, Power Query queries, the data model and the Get
     /// Data queries.
@@ -65,6 +69,7 @@ impl Hidden {
             Hidden::Comments => "comments",
             Hidden::Revisions => "revisions",
             Hidden::Properties => "properties",
+            Hidden::SensitivityLabel => "sensitivity-label",
             Hidden::Signatures => "signatures",
             Hidden::Connections => "connections",
             Hidden::PivotCaches => "pivot-caches",
@@ -79,7 +84,7 @@ impl Hidden {
         }
     }
 
-    pub const ALL: [Hidden; 20] = [
+    pub const ALL: [Hidden; 21] = [
         Hidden::Macros,
         Hidden::ExternalLinks,
         Hidden::HiddenSheets,
@@ -89,6 +94,7 @@ impl Hidden {
         Hidden::Comments,
         Hidden::Revisions,
         Hidden::Properties,
+        Hidden::SensitivityLabel,
         Hidden::Signatures,
         Hidden::Connections,
         Hidden::PivotCaches,
@@ -128,6 +134,41 @@ fn properties(m: &apex_doc::Meta) -> Vec<String> {
     let mut out: Vec<String> = fields.iter().filter(|(_, v)| !v.trim().is_empty()).map(|(n, v)| format!("{n}: {v}")).collect();
     out.extend(m.custom.iter().filter(|p| !apex_doc::kept::is_label_prop(&p.name)).map(|p| format!("{}: {}", p.name, p.value.text())));
     out
+}
+
+/// The sensitivity labels on the file (they name the organization's
+/// tenant).
+fn labels(k: &KeptParts, m: &apex_doc::Meta) -> Vec<String> {
+    let mut out: Vec<String> = k.labels.iter().map(|l| format!("sensitivity label: {}", if l.name.is_empty() { &l.id } else { &l.name })).collect();
+    if out.is_empty() && m.custom.iter().any(|p| apex_doc::kept::is_label_prop(&p.name)) {
+        out.push("sensitivity label".into());
+    }
+    out
+}
+
+/// Takes the sensitivity labels off: the label list part and the
+/// properties that name them.
+fn drop_labels(k: &mut KeptParts, m: &mut apex_doc::Meta) {
+    let gone: Vec<String> = k.package_links.iter().filter(|l| l.rel_type.ends_with("/classificationlabels")).map(|l| l.target.clone()).collect();
+    k.parts.retain(|p| !gone.contains(&p.path));
+    k.package_links.retain(|l| !gone.contains(&l.target));
+    k.labels.clear();
+    m.custom.retain(|p| !apex_doc::kept::is_label_prop(&p.name));
+}
+
+/// Whether formula text holds the path of a file on a disk or a share
+/// (`'C:\Users\…\[book.xlsx]Sheet1'!A1`, `"/home/…/plan.docx"`).
+fn has_local_path(s: &str) -> bool {
+    let b = s.as_bytes();
+    s.contains("\\\\")
+        || s.to_ascii_lowercase().contains("file:")
+        || b.windows(3).any(|w| w[0].is_ascii_alphabetic() && w[1] == b':' && (w[2] == b'\\' || w[2] == b'/'))
+        || ["/home/", "/Users/", "/mnt/", "/media/", "/Volumes/", "/tmp/"].iter().any(|p| s.contains(p))
+}
+
+/// Defined names holding the path of a file.
+fn path_names(wb: &Workbook) -> Vec<String> {
+    wb.names.iter().map(|n| (n, n.expr.to_canonical())).filter(|(_, t)| has_local_path(t)).map(|(n, t)| format!("{}: {t}", n.name)).collect()
 }
 
 fn macros(m: &apex_doc::Macros) -> Vec<String> {
@@ -202,6 +243,7 @@ pub fn workbook(wb: &Workbook) -> Vec<Found> {
             links.push(t);
         }
     }
+    links.extend(path_names(wb));
     out.extend(found(Hidden::ExternalLinks, links));
     out.extend(found(Hidden::HiddenSheets, wb.sheets.iter().filter(|s| s.hidden).map(|s| s.name.clone()).collect()));
     let mut rows = Vec::new();
@@ -224,6 +266,7 @@ pub fn workbook(wb: &Workbook) -> Vec<Found> {
     }
     out.extend(found(Hidden::Comments, notes));
     out.extend(found(Hidden::Properties, properties(&wb.meta)));
+    out.extend(found(Hidden::SensitivityLabel, labels(&wb.kept, &wb.meta)));
     let data = crate::external_data(wb);
     let mut conns: Vec<String> = data.connections.iter().map(|c| if c.source.is_empty() { c.name.clone() } else { format!("{}: {}", c.name, c.source) }).collect();
     conns.extend(data.queries.iter().map(|q| format!("Power Query: {}", q.name)));
@@ -274,7 +317,7 @@ fn drop_connections(p: &mut FileParts) {
 pub fn clean_workbook(wb: &mut Workbook, what: Hidden, show: bool) -> bool {
     let mut ops = Vec::new();
     match what {
-        Hidden::Macros | Hidden::Properties | Hidden::CustomXml | Hidden::Connections | Hidden::PivotCaches => {
+        Hidden::Macros | Hidden::Properties | Hidden::SensitivityLabel | Hidden::CustomXml | Hidden::Connections | Hidden::PivotCaches => {
             let mut p = wb_parts(wb);
             match what {
                 Hidden::PivotCaches => {
@@ -288,6 +331,12 @@ pub fn clean_workbook(wb: &mut Workbook, what: Hidden, show: bool) -> bool {
                 }
                 Hidden::Macros => p.macros = Default::default(),
                 Hidden::Properties => p.meta = cleared_meta(&p.meta),
+                Hidden::SensitivityLabel => {
+                    if labels(&p.kept, &p.meta).is_empty() {
+                        return false;
+                    }
+                    drop_labels(&mut p.kept, &mut p.meta);
+                }
                 Hidden::CustomXml => drop_custom_xml(&mut p.kept, false),
                 _ => {
                     drop_connections(&mut p);
@@ -318,9 +367,28 @@ pub fn clean_workbook(wb: &mut Workbook, what: Hidden, show: bool) -> bool {
             if links {
                 wb.execute_as(Op::Batch(cells.into_iter().map(|(sheet, cells)| Op::SetCells { sheet, cells }).collect()), "undo.inspect");
             }
+            // Names holding a file's path go, and the formulas using them
+            // keep their values (as when a link to a book is broken).
+            let gone: Vec<String> = wb.names.iter().filter(|d| has_local_path(&d.expr.to_canonical())).map(|d| d.name.to_lowercase()).collect();
+            if !gone.is_empty() {
+                let mut ops = Vec::new();
+                for (si, sh) in wb.sheets.iter().enumerate() {
+                    let uses = |f: &apex_sheet::CellFormula| {
+                        let mut any = false;
+                        f.expr().visit_names(&mut |n| any |= gone.iter().any(|g| n.eq_ignore_ascii_case(g) || n.to_lowercase().ends_with(&format!("!{g}"))));
+                        any
+                    };
+                    let cells: Vec<(CellRef, Option<apex_sheet::Cell>)> = sh.iter().filter(|(_, c)| c.formula().is_some_and(uses)).map(|(at, c)| (at, apex_sheet::Cell::with_content(Some(c), apex_sheet::Content::Value(c.value().clone())))).collect();
+                    if !cells.is_empty() {
+                        ops.push(Op::SetCells { sheet: si, cells });
+                    }
+                }
+                ops.push(Op::Names(wb.names.iter().filter(|d| !has_local_path(&d.expr.to_canonical())).cloned().collect()));
+                wb.execute_as(Op::Batch(ops), "undo.inspect");
+            }
             let done = wb.undo_len() - steps;
             wb.merge_undo(done, "undo.inspect");
-            return n > 0 || links;
+            return n > 0 || links || !gone.is_empty();
         }
         Hidden::HiddenSheets => {
             let hidden: Vec<usize> = (0..wb.sheets.len()).filter(|&i| wb.sheets[i].hidden).collect();
@@ -397,6 +465,7 @@ pub fn document(d: &Document) -> Vec<Found> {
     let revs = d.changes();
     out.extend(found(Hidden::Revisions, revs.iter().map(|r| r.rev.author.to_string()).collect()));
     out.extend(found(Hidden::Properties, properties(&d.meta).into_iter().chain(d.property_fields()).collect()));
+    out.extend(found(Hidden::SensitivityLabel, labels(&d.kept, &d.meta)));
     out.extend(found(Hidden::CustomXml, custom_xml(&d.kept)));
     out.extend(found(Hidden::Embedded, d.ole_objects()));
     if f.hidden > 0 {
@@ -422,6 +491,7 @@ pub fn clean_document(d: &mut Document, what: Hidden) -> bool {
     match what {
         Hidden::Macros if !d.macros.is_empty() => d.edit_parts(|p| p.macros = Default::default()),
         Hidden::Properties => d.remove_inspected(Inspect::Properties, sel),
+        Hidden::SensitivityLabel if !labels(&d.kept, &d.meta).is_empty() => d.edit_parts(|p| drop_labels(&mut p.kept, &mut p.meta)),
         Hidden::CustomXml if !custom_xml(&d.kept).is_empty() => d.edit_parts(|p| drop_custom_xml(&mut p.kept, true)),
         Hidden::ExternalLinks => return d.remove_file_links(),
         Hidden::Embedded => return d.remove_ole(),
@@ -697,6 +767,59 @@ mod tests {
         assert!(clean_workbook(&mut wb, Hidden::HiddenRows, true));
         assert!(clean_workbook(&mut wb, Hidden::HiddenSheets, true));
         assert!(!wb.sheets[1].hidden && wb.sheets[0].row_heights.get(&0).is_none());
+    }
+
+    /// The sensitivity label and names holding a file's path are listed,
+    /// and removing everything leaves no kept part in the saved file.
+    #[test]
+    fn labels_paths_and_kept_parts_are_cleaned() {
+        let ct = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="bin" ContentType="application/octet-stream"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/><Override PartName="/docMetadata/LabelInfo.xml" ContentType="application/vnd.ms-office.classificationlabels+xml"/><Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>"#;
+        let rels = |x: &str| format!(r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{x}</Relationships>"#);
+        let r = |id: &str, ty: &str, t: &str| format!(r#"<Relationship Id="{id}" Type="{ty}" Target="{t}"/>"#);
+        const OD: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
+        let parts = [
+            ("[Content_Types].xml", ct.to_string()),
+            ("_rels/.rels", rels(&(r("rId1", &format!("{OD}officeDocument"), "xl/workbook.xml") + &r("rId5", "http://schemas.microsoft.com/office/2020/02/relationships/classificationlabels", "docMetadata/LabelInfo.xml") + &r("rId6", &format!("{OD}custom-properties"), "docProps/custom.xml")))),
+            ("xl/workbook.xml", r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="Src">'C:\Users\ana\Secret\[budget.xlsx]Sheet1'!$A$1</definedName><definedName name="Doc">"/home/ana/plan.docx"</definedName><definedName name="Here">Sheet1!$A$1</definedName></definedNames></workbook>"#.to_string()),
+            ("xl/_rels/workbook.xml.rels", rels(&(r("rId1", &format!("{OD}worksheet"), "worksheets/sheet1.xml") + &r("rId2", &format!("{OD}customXml"), "../customXml/item1.xml")))),
+            ("xl/worksheets/sheet1.xml", r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>Doc</f><v>0</v></c></row></sheetData></worksheet>"#.to_string()),
+            ("customXml/item1.xml", r#"<secret xmlns="urn:x">internal</secret>"#.to_string()),
+            ("customXml/itemProps1.xml", r#"<ds:datastoreItem ds:itemID="{11111111-1111-1111-1111-111111111111}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"/>"#.to_string()),
+            ("customXml/_rels/item1.xml.rels", rels(&(r("rId1", &format!("{OD}customXmlProps"), "itemProps1.xml") + &r("rId2", "urn:any", "../extra/blob.bin")))),
+            ("extra/blob.bin", "BLOB".to_string()),
+            ("docMetadata/LabelInfo.xml", r#"<clbl:labelList xmlns:clbl="http://schemas.microsoft.com/office/2020/mipLabelMetadata"><clbl:label id="{aaaa}" enabled="1" method="Privileged" siteId="{tenant}" removed="0"/></clbl:labelList>"#.to_string()),
+            ("docProps/custom.xml", r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="MSIP_Label_aaaa_Enabled"><vt:lpwstr>true</vt:lpwstr></property></Properties>"#.to_string()),
+        ];
+        let mut z = crate::zip::ZipWriter::new();
+        for (n, x) in &parts {
+            z.add(n, x.as_bytes(), true);
+        }
+        let mut wb = crate::xlsx::read(&z.finish()).unwrap();
+        // Saved as OpenDocument, the kept parts would go: the caller can say so.
+        assert!(crate::kept_left_out(&wb.kept, crate::Format::Ods).iter().any(|p| p.starts_with("customXml/")));
+        assert!(crate::kept_left_out(&wb.kept, crate::Format::Xlsx).is_empty());
+        let f = workbook(&wb);
+        let items = |k: Hidden| f.iter().find(|f| f.what == k).map(|f| f.items.join("|")).unwrap_or_default();
+        // The label has an entry of its own: taking the properties off
+        // leaves it (and not who set it), until it is taken off itself.
+        assert!(items(Hidden::SensitivityLabel).contains("sensitivity label") && !items(Hidden::Properties).contains("label"), "{f:?}");
+        let mut only_props = wb.clone();
+        assert!(clean_workbook(&mut only_props, Hidden::Properties, false));
+        assert!(workbook(&only_props).iter().any(|f| f.what == Hidden::SensitivityLabel));
+        assert!(String::from_utf8_lossy(&crate::xlsx::write(&only_props)).contains("docMetadata/LabelInfo.xml"));
+        assert!(items(Hidden::ExternalLinks).contains("Src: ") && items(Hidden::ExternalLinks).contains("Doc: ") && !items(Hidden::ExternalLinks).contains("Here"), "{f:?}");
+        for k in f.iter().map(|f| f.what).collect::<Vec<_>>() {
+            assert!(clean_workbook(&mut wb, k, false), "{k:?}");
+        }
+        assert!(workbook(&wb).is_empty(), "{:?}", workbook(&wb));
+        assert_eq!(wb.names.iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["Here"]);
+        assert!(wb.sheets[0].get(CellRef::new(0, 1)).is_some_and(|c| c.formula().is_none()));
+        let out = crate::xlsx::write(&wb);
+        let zr = crate::zip::ZipReader::new(&out).unwrap();
+        let names: Vec<&str> = zr.names().collect();
+        assert!(names.iter().all(|n| n.starts_with("xl/") || n.starts_with("docProps/core") || n.starts_with("docProps/app") || n.starts_with("_rels/") || n.starts_with("[Content")), "{names:?}");
+        let all: String = names.iter().map(|n| zr.read_string(n).unwrap_or_default()).collect();
+        assert!(!all.contains("MSIP_Label") && !all.contains("tenant") && !all.contains("Secret") && !all.contains("BLOB"), "{all}");
     }
 
     #[test]

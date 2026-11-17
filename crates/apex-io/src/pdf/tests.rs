@@ -263,3 +263,16 @@ fn text_in_layers_off_is_not_read() {
     let links: Vec<&str> = pages[0].links.iter().map(|l| &*l.1).collect();
     assert_eq!(links, ["http://c.example/"]);
 }
+
+#[test]
+fn long_dashes_saved_again_and_again_draw_quickly() {
+    // A dash array of 20000 numbers, and the state saved 200000 times.
+    let mut c = format!("[{}] 0 d ", "1 ".repeat(20_000));
+    c.push_str(&"q Q ".repeat(200_000));
+    c.push_str("0 0 m 100 100 l S");
+    let d = pdf(&[c]);
+    let t = std::time::Instant::now();
+    let no_fonts = |_: &Style, _: &str| -> Option<(std::sync::Arc<[u8]>, u32)> { None };
+    assert!(render::render(&d, None, 0, 100, &no_fonts).is_some());
+    assert!(t.elapsed().as_secs() < 20, "{:?}", t.elapsed());
+}

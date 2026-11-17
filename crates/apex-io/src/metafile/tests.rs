@@ -128,3 +128,64 @@ fn broken_metafiles_are_not_drawn() {
     d.truncate(100);
     let _ = render(&d, 1.0, &no_fonts);
 }
+
+/// StretchDIBits of a 1×1 picture whose bits are `inner` (as BI_PNG).
+fn nest(inner: &[u8]) -> Vec<u8> {
+    let mut bmi = ints(&[40, 1, 1]);
+    bmi.extend(1u16.to_le_bytes());
+    bmi.extend(32u16.to_le_bytes());
+    bmi.extend(ints(&[5, 0, 0, 0, 0, 0]));
+    let mut body = ints(&[0, 0, 0, 0, 0, 0, 0, 0, 1, 1]);
+    body.extend(ints(&[80, 40, 120, inner.len() as i32, 0, 0x00CC0020, 100, 50]));
+    body.extend(&bmi);
+    body.extend(inner);
+    body.resize(body.len().next_multiple_of(4), 0);
+    emf(&[rec(81, &body)])
+}
+
+#[test]
+fn metafiles_nested_deep_stop_at_a_few_levels() {
+    // A metafile inside a bitmap is drawn by the picture decoder, which
+    // comes back here.
+    crate::picture::set_decoder(|b| render(b, 1.0, &no_fonts).map(|p| (p.width, p.height, p.rgba)));
+    let mut d = emf(&[rec(43, &ints(&[0, 0, 50, 50]))]);
+    let once = render(&nest(&d), 1.0, &no_fonts).unwrap();
+    assert!(pixel(&once, 10, 10)[3] > 0, "one level in is drawn");
+    for _ in 0..500 {
+        d = nest(&d);
+    }
+    assert!(render(&d, 1.0, &no_fonts).is_some());
+    assert_eq!(NEST.get(), (0, 0), "the nesting is given back");
+}
+
+#[test]
+fn bitmaps_are_charged_before_they_are_allocated() {
+    let _n = Nested::enter().unwrap();
+    let mut bmi = ints(&[40, 10, 10]);
+    bmi.extend(1u16.to_le_bytes());
+    bmi.extend(24u16.to_le_bytes());
+    bmi.extend(ints(&[0, 0, 0, 0, 0, 0]));
+    NEST.set((1, 99));
+    assert!(dib(&bmi, &[]).is_none());
+    assert_eq!(NEST.get(), (1, 99), "nothing taken for a bitmap refused");
+    NEST.set((1, 100));
+    assert!(dib(&bmi, &[]).is_some());
+    assert_eq!(NEST.get(), (1, 0));
+}
+
+#[test]
+fn hostile_arcs_and_gradients_draw_quickly() {
+    let t = std::time::Instant::now();
+    // AngleArc of 3e38 degrees.
+    let mut arc = ints(&[50, 25, 20]);
+    arc.extend(0f32.to_le_bytes());
+    arc.extend(3.0e38f32.to_le_bytes());
+    assert!(render(&emf(&[rec(41, &arc)]), 1.0, &no_fonts).is_some());
+    // GradientFill claiming 65536 rectangles it doesn't hold.
+    let mut grad = ints(&[0, 0, 0, 0, 2, 65536, 0]);
+    grad.extend(ints(&[0, 0, 0, 0, 100, 50]));
+    grad.extend([0xFF00u16, 0, 0, 0].iter().flat_map(|x| x.to_le_bytes()));
+    let recs: Vec<_> = (0..200).map(|_| rec(118, &grad)).collect();
+    assert!(render(&emf(&recs), 1.0, &no_fonts).is_some());
+    assert!(t.elapsed().as_secs() < 10, "{:?}", t.elapsed());
+}

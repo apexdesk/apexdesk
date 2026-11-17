@@ -1,0 +1,7 @@
+# The Rust every build uses (CI installs the same one): a newer compiler
+# can reject or change what compiles today. scripts/check-version.sh
+# checks that CI agrees.
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

@@ -1,0 +1,41 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -296,6 +296,9 @@
+ [dependencies.tokio-rustls]
+ version = "0.26.4"
+ optional = true
++# ApexDesk patch: ring, not aws-lc (a C library).
++default-features = false
++features = ["logging", "tls12", "ring"]
+ 
+ [dependencies.tokio-util]
+ version = "0.7"
+--- a/src/client/tls_stream/rustls_tls_stream.rs
++++ b/src/client/tls_stream/rustls_tls_stream.rs
+@@ -21,7 +21,7 @@
+             danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+             WantsClientCert,
+         },
+-        crypto::{aws_lc_rs, CryptoProvider},
++        crypto::{ring as aws_lc_rs, CryptoProvider},
+         pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer, ServerName, UnixTime},
+         ClientConfig, ConfigBuilder, DigitallySignedStruct, Error as RustlsError, RootCertStore,
+         SignatureScheme,
+@@ -267,7 +267,7 @@
+ 
+ /// Resolve the rustls `CryptoProvider`: honour a process-installed default
+ /// (`CryptoProvider::install_default`) if present, otherwise fall back to
+-/// aws-lc-rs.
++/// ring (ApexDesk patch: aws-lc-rs before).
+ fn resolve_crypto_provider(installed: Option<Arc<CryptoProvider>>) -> Arc<CryptoProvider> {
+     match installed {
+         Some(provider) => {
+@@ -280,7 +280,7 @@
+         None => {
+             event!(
+                 Level::DEBUG,
+-                "No process-installed CryptoProvider; using the aws-lc-rs default"
++                "No process-installed CryptoProvider; using the ring default"
+             );
+             Arc::new(aws_lc_rs::default_provider())
+         }

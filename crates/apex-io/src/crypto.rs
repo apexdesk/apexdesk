@@ -229,19 +229,21 @@ fn hmac(hash: Hash, key: &[u8], data: &[u8]) -> Vec<u8> {
     hash.digest(&[&opad, &inner])
 }
 
+/// Bytes from the system's secure randomness (keys, salts, IVs). Without
+/// it nothing is encrypted at all: a key from anything weaker could be
+/// guessed, and the file would look protected when it isn't.
 pub(crate) fn random(n: usize) -> Vec<u8> {
     let mut v = vec![0u8; n];
-    if getrandom::fill(&mut v).is_err() {
-        // No system randomness: still unique per file, if weaker.
-        use std::hash::{BuildHasher, Hasher};
-        for (i, chunk) in v.chunks_mut(8).enumerate() {
-            let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-            h.write_usize(i);
-            h.write_u128(web_time::SystemTime::now().duration_since(web_time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
-            chunk.copy_from_slice(&h.finish().to_le_bytes()[..chunk.len()]);
-        }
+    if let Err(e) = getrandom::fill(&mut v) {
+        panic!("no secure randomness from the system to encrypt with: {e}");
     }
     v
+}
+
+/// Whether two digests are equal, in a time that doesn't tell how many of
+/// their first bytes match.
+pub(crate) fn same_digest(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
 }
 
 pub(crate) fn b64(data: &[u8]) -> String {
@@ -364,7 +366,7 @@ fn decrypt_agile(xml: &[u8], package: &[u8], password: &str) -> Result<Vec<u8>, 
     let salt_len = key.salt.len().min(input.len());
     let check = kh.digest(&[&input[..salt_len]]);
     let hash_len = key.hash_size.min(check.len()).min(value.len());
-    if hash_len == 0 || check[..hash_len] != value[..hash_len] {
+    if hash_len == 0 || !same_digest(&check[..hash_len], &value[..hash_len]) {
         return Err(CryptoError::WrongPassword);
     }
     let mut secret = cbc_decrypt(&derive(&KEY_VALUE), &iv, &key.key_value)?;
@@ -379,7 +381,7 @@ fn decrypt_agile(xml: &[u8], package: &[u8], password: &str) -> Result<Vec<u8>, 
     // one would let a guess pass.
     let mac = hmac(data.hash()?, &hmac_key[..data.hash_size.min(hmac_key.len())], package);
     expected.truncate(mac.len());
-    if data.hash_size != mac.len() || expected != mac {
+    if data.hash_size != mac.len() || !same_digest(&expected, &mac) {
         return Err(altered());
     }
     let size = u64::from_le_bytes(package[..8].try_into().unwrap_or_default()) as usize;
@@ -429,7 +431,7 @@ fn decrypt_standard(info: &[u8], package: &[u8], password: &str) -> Result<Vec<u
     };
     let verifier = ecb(enc_verifier);
     let hash = ecb(enc_hash);
-    if Hash::Sha1.digest(&[&verifier])[..] != hash[..20] {
+    if hash.len() < 20 || !same_digest(&Hash::Sha1.digest(&[&verifier]), &hash[..20]) {
         return Err(CryptoError::WrongPassword);
     }
     let size = u64::from_le_bytes(package[..8].try_into().unwrap_or_default()) as usize;

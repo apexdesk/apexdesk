@@ -31,6 +31,7 @@ fn names(h: Hidden) -> (&'static str, &'static str) {
         Hidden::Comments => ("fi.comments", "fi.comments_hint"),
         Hidden::Revisions => ("fi.revisions", "fi.revisions_hint"),
         Hidden::Properties => ("fi.props", "fi.props_hint"),
+        Hidden::SensitivityLabel => ("fi.label", "fi.label_hint"),
         Hidden::Signatures => ("fi.sigs", "fi.sigs_hint"),
         Hidden::Connections => ("fi.conns", "fi.conns_hint"),
         Hidden::PivotCaches => ("fi.pivots", "fi.pivots_hint"),

@@ -16,7 +16,7 @@ setlocal enabledelayedexpansion
 set here=%~dp0
 pushd "%here%..\.."
 for /f "tokens=2 delims== " %%v in ('findstr /b "version" Cargo.toml') do if not defined version set version=%%~v
-cargo build --release -p apex-app || exit /b 1
+cargo build --release --locked -p apex-app || exit /b 1
 set stage=%CD%\target\msix-stage
 if exist "%stage%" rmdir /s /q "%stage%"
 mkdir "%stage%\Assets"
@@ -38,6 +38,8 @@ makeappx pack /o /d "%stage%" /p "%out%" || exit /b 1
 if defined APEXDESK_SIGN_CERT (
   signtool sign /fd SHA256 /f "%APEXDESK_SIGN_CERT%" /p "%APEXDESK_SIGN_PASSWORD%" /tr http://timestamp.digicert.com /td SHA256 "%out%" || exit /b 1
 )
+rem Its SHA-256 next to it, as scripts/sha256.sh writes it (after signing).
+powershell -NoProfile -Command "$h = (Get-FileHash -Algorithm SHA256 -LiteralPath '%out%').Hash.ToLower(); Set-Content -NoNewline -LiteralPath '%out%.sha256' -Value ($h + '  ' + (Split-Path -Leaf '%out%') + [char]10)" || exit /b 1
 echo %out%
 popd
 exit /b 0

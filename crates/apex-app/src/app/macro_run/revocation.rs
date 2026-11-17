@@ -71,8 +71,12 @@ pub(crate) fn verdict(chain: &[Cert]) -> Verdict {
     let spawned = apex_fs::thread::Builder::new().name("macro-revocation".into()).spawn(move || {
         let _ = tx.send(revocation::fetch(&apex_sign::net::Http, &cert, &issuer, &pool));
     });
+    let now = apex_sign::time::now();
     let v = match spawned.ok().and_then(|_| rx.recv_timeout(WAIT).ok()) {
         Some(Ok((_, _, e))) => match e.status {
+            // An old "good" replayed by someone between us and the
+            // authority says nothing of today.
+            CertStatus::Good if !e.current_at(now, now) => Verdict::NoAnswer,
             CertStatus::Good => Verdict::Good,
             CertStatus::Revoked(_) => Verdict::Revoked,
             CertStatus::Unknown => Verdict::NoAnswer,

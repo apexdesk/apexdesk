@@ -273,11 +273,17 @@ impl DocView {
         self.focus = true;
     }
 
-    /// The document to keep a copy of: the body while a header or footer
-    /// is edited (its changes join it when the editing ends).
+    /// The document to keep a copy of: while a header or footer is
+    /// edited, the body with that story as typed so far in it.
     pub fn backup_doc(&self) -> Document {
         match &self.hf_edit {
-            Some(e) => e.body.doc.clone(),
+            Some(e) => {
+                let mut body = e.body.doc.clone();
+                if self.doc.revision != e.revision {
+                    store_story(&mut body, e.section, e.slot, self.doc.paragraphs.clone(), e.body.sel);
+                }
+                body
+            }
             // Changed code is part of it.
             None => self.code_backup().unwrap_or_else(|| self.doc.clone()),
         }
@@ -296,9 +302,10 @@ impl DocView {
         std::borrow::Cow::Owned(body)
     }
 
-    /// Changes to the document kept by `backup_doc`.
+    /// Changes to the document kept by `backup_doc` (the header or footer
+    /// being edited counts).
     pub fn backup_revision(&self) -> u64 {
-        self.hf_edit.as_ref().map_or(self.doc.revision, |e| e.body.doc.revision) ^ self.code_revision()
+        self.hf_edit.as_ref().map_or(self.doc.revision, |e| e.body.doc.revision ^ self.doc.revision.rotate_left(32)) ^ self.code_revision()
     }
 
     /// Stores the header or footer being edited in the document and goes
@@ -508,10 +515,14 @@ mod tests {
         // Only editing: the document is as it was.
         assert_eq!((&v.whole_doc().paragraphs, &v.whole_doc().headers), (&before.paragraphs, &before.headers));
         // Typed in the header: there, not in the body.
+        let rev = v.backup_revision();
         let sel = v.sel;
         v.doc.insert_text(sel, "Head", None);
         let whole = v.whole_doc().into_owned();
         assert_eq!(whole.paragraphs, before.paragraphs);
         assert_eq!(whole.hf_story(0, HfSlot::Header).map(|s| s[0].text.clone()), Some("Head".to_string()));
+        // The recovery copy has it too, before the editing ends.
+        assert_ne!(v.backup_revision(), rev);
+        assert_eq!(v.backup_doc().hf_story(0, HfSlot::Header).map(|s| s[0].text.clone()), Some("Head".to_string()));
     }
 }

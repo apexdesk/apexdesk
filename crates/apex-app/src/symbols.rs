@@ -126,8 +126,9 @@ pub struct Special {
     pub ch: char,
     /// i18n key of its name.
     pub key: &'static str,
-    /// Word's shortcut; "Shift" and "Space" are translated when shown and
-    /// `{q}` stands for a double quote.
+    /// The keys that type it in a document, when it has some: "Shift" and
+    /// "Space" are translated when shown. The other programs' keys for the
+    /// rest do something else here (Ctrl+- zooms out).
     pub shortcut: Option<&'static str>,
 }
 
@@ -136,25 +137,25 @@ const fn sp(ch: char, key: &'static str, shortcut: Option<&'static str>) -> Spec
 }
 
 pub const SPECIALS: &[Special] = &[
-    sp('\u{2014}', "symbol.sp.em_dash", Some("Alt+Ctrl+Num -")),
-    sp('\u{2013}', "symbol.sp.en_dash", Some("Ctrl+Num -")),
-    sp('\u{2011}', "symbol.sp.nb_hyphen", Some("Ctrl+Shift+_")),
-    sp('\u{00AD}', "symbol.sp.opt_hyphen", Some("Ctrl+-")),
+    sp('\u{2014}', "symbol.sp.em_dash", None),
+    sp('\u{2013}', "symbol.sp.en_dash", None),
+    sp('\u{2011}', "symbol.sp.nb_hyphen", None),
+    sp('\u{00AD}', "symbol.sp.opt_hyphen", None),
     sp('\u{2003}', "symbol.sp.em_space", None),
     sp('\u{2002}', "symbol.sp.en_space", None),
     sp('\u{2005}', "symbol.sp.quarter_space", None),
     sp('\u{00A0}', "symbol.sp.nbsp", Some("Ctrl+Shift+Space")),
     sp('\u{202F}', "symbol.sp.narrow_nbsp", None),
-    sp('\u{00A9}', "symbol.sp.copyright", Some("Alt+Ctrl+C")),
-    sp('\u{00AE}', "symbol.sp.registered", Some("Alt+Ctrl+R")),
-    sp('\u{2122}', "symbol.sp.trademark", Some("Alt+Ctrl+T")),
+    sp('\u{00A9}', "symbol.sp.copyright", None),
+    sp('\u{00AE}', "symbol.sp.registered", None),
+    sp('\u{2122}', "symbol.sp.trademark", None),
     sp('\u{00A7}', "symbol.sp.section", None),
     sp('\u{00B6}', "symbol.sp.paragraph", None),
-    sp('\u{2026}', "symbol.sp.ellipsis", Some("Alt+Ctrl+.")),
-    sp('\u{2018}', "symbol.sp.single_open", Some("Ctrl+`,`")),
-    sp('\u{2019}', "symbol.sp.single_close", Some("Ctrl+','")),
-    sp('\u{201C}', "symbol.sp.double_open", Some("Ctrl+`,{q}")),
-    sp('\u{201D}', "symbol.sp.double_close", Some("Ctrl+',{q}")),
+    sp('\u{2026}', "symbol.sp.ellipsis", None),
+    sp('\u{2018}', "symbol.sp.single_open", None),
+    sp('\u{2019}', "symbol.sp.single_close", None),
+    sp('\u{201C}', "symbol.sp.double_open", None),
+    sp('\u{201D}', "symbol.sp.double_close", None),
     sp('\u{00AB}', "symbol.sp.angle_open", None),
     sp('\u{00BB}', "symbol.sp.angle_close", None),
     sp('\u{00BF}', "symbol.sp.inv_question", None),
@@ -177,7 +178,7 @@ pub const SPECIALS: &[Special] = &[
 ];
 
 fn shortcut_text(s: &str) -> String {
-    s.replace("Shift", tr("symbol.key_shift")).replace("Space", tr("symbol.key_space")).replace("{q}", "\u{22}")
+    s.replace("Shift", tr("symbol.key_shift")).replace("Space", tr("symbol.key_space"))
 }
 
 // --- dialog ------------------------------------------------------------------------------
@@ -205,9 +206,18 @@ pub struct SymbolDialog {
     offset: f32,
     /// Side of a cell of the grid: smaller on a phone, so the row fits.
     cell: f32,
+    /// Shows the keys that type a character: the editor it inserts into
+    /// has them.
+    keys: bool,
 }
 
 impl SymbolDialog {
+    /// The dialog of the document editor, whose keys type some of the
+    /// special characters.
+    pub fn with_keys() -> Self {
+        Self { keys: true, ..Self::default() }
+    }
+
     /// Opens the dialog (it stays open after inserting, like Word's).
     pub fn open(&mut self) {
         self.open = true;
@@ -291,12 +301,13 @@ impl SymbolDialog {
                     Tab::Symbols => self.sel.is_some(),
                     Tab::Special => true,
                 };
-                if ui.add_enabled(can, egui::Button::new(RichText::new(tr("symbol.insert")).strong())).clicked() {
+                if ui.add_enabled(can, crate::widgets::primary_button(tr("symbol.insert"))).clicked() {
                     insert = true;
                 }
             });
         });
-        if ctx.input(|i| i.key_pressed(Key::Escape)) || modal.should_close() && ctx.input(|i| i.pointer.any_click()) {
+        // A click outside does nothing (see `widgets::dialog`).
+        if ctx.input(|i| i.key_pressed(Key::Escape)) || modal.response.should_close() {
             close = true;
         }
         if close {
@@ -512,9 +523,11 @@ impl SymbolDialog {
         ui.horizontal(|ui| {
             ui.add_sized(vec2(char_w, 18.0), egui::Label::new(RichText::new(tr("symbol.character")).small().weak()));
             ui.label(RichText::new(tr("symbol.name")).small().weak());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_sized(vec2(key_w, 18.0), egui::Label::new(RichText::new(tr("symbol.shortcut")).small().weak()));
-            });
+            if self.keys {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_sized(vec2(key_w, 18.0), egui::Label::new(RichText::new(tr("symbol.shortcut")).small().weak()));
+                });
+            }
         });
         let drawable: Vec<bool> = ui.ctx().fonts_mut(|f| SPECIALS.iter().map(|s| visible(s.ch) && f.has_glyph(&font, s.ch)).collect());
         let view_h = GRID_ROWS as f32 * self.cell + 80.0;
@@ -545,7 +558,7 @@ impl SymbolDialog {
                         ui.painter().text(egui::pos2(rect.min.x + char_w / 2.0, y), egui::Align2::CENTER_CENTER, s.ch, font.clone(), fg);
                     }
                     ui.painter().text(egui::pos2(rect.min.x + char_w, y), egui::Align2::LEFT_CENTER, tr(s.key), FontId::proportional(14.0), fg);
-                    if let Some(k) = s.shortcut {
+                    if let Some(k) = s.shortcut.filter(|_| self.keys) {
                         ui.painter().text(egui::pos2(rect.max.x - key_w, y), egui::Align2::LEFT_CENTER, shortcut_text(k), FontId::proportional(13.0), fg);
                     }
                     if resp.clicked() {

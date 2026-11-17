@@ -106,7 +106,7 @@ impl App {
                 true
             }
             Err(e) => {
-                self.notify(Notice::error(trf("error.save", &[("error", &e.to_string())])));
+                self.notify(Notice::alert(trf("error.save", &[("error", &e.to_string())])));
                 false
             }
         }

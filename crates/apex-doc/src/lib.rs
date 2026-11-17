@@ -1175,6 +1175,10 @@ struct Edit {
     /// Properties, macros and kept parts before the step, when it changed
     /// them (the file inspector).
     parts: Option<Box<inspect::FileParts>>,
+    /// Track Changes before the step, when it may have changed it (a
+    /// macro). The protection is not undone: that would lift it without
+    /// its password.
+    review: Option<bool>,
 }
 
 /// What an undo step did, for the undo history list.
@@ -1738,7 +1742,7 @@ impl Document {
                 }
             }
         }
-        self.undo.push(Edit { start, before, after_len, sel_before, sel_after, kind, merge_closed: false, styles: None, comments: None, page: None, parts: None });
+        self.undo.push(Edit { start, before, after_len, sel_before, sel_after, kind, merge_closed: false, styles: None, comments: None, page: None, parts: None, review: None });
         if self.undo.len() > 1000 {
             self.undo.remove(0);
         }
@@ -2440,7 +2444,8 @@ impl Document {
         self.modified = true;
         let styles = e.styles.map(|s| Box::new(std::mem::replace(&mut self.styles, *s)));
         let parts = e.parts.map(|p| Box::new(self.swap_parts(*p)));
-        Edit { start: e.start, before: removed, after_len: restored, sel_before: e.sel_before, sel_after: e.sel_after, kind: e.kind, merge_closed: true, styles, comments, page, parts }
+        let review = e.review.map(|track| std::mem::replace(&mut self.track_changes, track));
+        Edit { start: e.start, before: removed, after_len: restored, sel_before: e.sel_before, sel_after: e.sel_after, kind: e.kind, merge_closed: true, styles, comments, page, parts, review }
     }
 }
 

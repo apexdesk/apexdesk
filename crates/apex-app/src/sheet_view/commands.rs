@@ -104,7 +104,7 @@ impl SheetView {
         };
         let at = self.sel().start;
         let r = match src_sheet {
-            Some(s) => self.wb.paste_link(s, &clip_range(&clip), self.sheet, at),
+            Some(s) => self.wb.paste_link_clip(s, &clip, self.sheet, at),
             // Copied in another workbook: a link to its file.
             None => {
                 let target = clip.source.as_ref().map(|s| super::links_ui::target_for(std::path::Path::new(&s.file), self.file_dir.as_deref()));
@@ -128,7 +128,9 @@ impl SheetView {
             return;
         };
         let Some(ctx) = self.ctx.clone() else { return };
-        let src = clip_range(&clip);
+        // In this workbook the picture is of the cells where they are; a
+        // filter's rows have no height there.
+        let src = if src_sheet.is_some() { clip.source() } else { clip_range(&clip) };
         // Cells copied in another workbook are drawn from a sheet made of
         // them: their values, formats and sizes where they were.
         let other = src_sheet.is_none().then(|| {
@@ -945,7 +947,7 @@ fn tr_key(key: &str) -> &'static str {
     crate::i18n::lookup(key).unwrap_or("")
 }
 
-/// The cells a clip was copied from.
+/// The cells of a clip pasted where it was copied.
 fn clip_range(clip: &Clip) -> Range {
     Range::new(clip.origin, CellRef::new(clip.origin.row + clip.rows.max(1) - 1, clip.origin.col + clip.cols.max(1) - 1))
 }

@@ -379,13 +379,14 @@ impl DocView {
                 if ui.add_enabled(existing.is_some(), egui::Button::new(tr("bookmark.delete"))).clicked() {
                     delete = true;
                 }
-                if ui.add_enabled(!b.name.trim().is_empty(), egui::Button::new(RichText::new(tr("bookmark.add")).strong())).clicked() {
+                if ui.add_enabled(!b.name.trim().is_empty(), widgets::primary_button(tr("bookmark.add"))).clicked() {
                     add = true;
                 }
             });
         });
         if res == DialogResult::None {
-            if ctx.input(|i| i.key_pressed(Key::Escape)) || m.should_close() && ctx.input(|i| i.pointer.any_click()) {
+            // A click outside keeps the name typed (see `widgets::dialog`).
+            if ctx.input(|i| i.key_pressed(Key::Escape)) || m.response.should_close() {
                 res = DialogResult::Cancel;
             } else if ctx.input(|i| i.key_pressed(Key::Enter)) && !b.name.trim().is_empty() {
                 add = true;
@@ -525,7 +526,8 @@ impl DocView {
         let strip = Rect::from_min_max(pos2(page_l, rect.min.y + 3.0), pos2(page_l + page.width * pt, rect.max.y - 3.0));
         let margin = if v.dark_mode { Color32::from_gray(70) } else { Color32::from_gray(205) };
         let paper = if v.dark_mode { Color32::from_gray(40) } else { Color32::WHITE };
-        let ink = v.weak_text_color();
+        // The text color: weak text on the margins' gray reads at under 3:1.
+        let ink = v.text_color();
         let drag = self.ruler_drag;
         let d = |part: RulerPart| drag.filter(|d| d.part == part).map_or(0.0, |d| d.delta);
         // Page margins (content edges) in screen x.

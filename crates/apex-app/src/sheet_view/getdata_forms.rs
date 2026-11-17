@@ -611,9 +611,9 @@ pub(crate) fn new_source(key: &str) -> Source {
         "getdata.src.pdf" => Source::Pdf { location: loc, index: 0, header: true },
         "getdata.src.sqlite" => Source::Sqlite { path: loc, sql: String::new() },
         "getdata.src.dbfile" => Source::DbFile { path: loc, table: String::new() },
-        "getdata.src.postgres" => Source::Database { kind: DbKind::Postgres, host: "localhost".into(), port: 5432, database: String::new(), user: String::new(), sql: String::new(), tls: false },
-        "getdata.src.mysql" => Source::Database { kind: DbKind::MySql, host: "localhost".into(), port: 3306, database: String::new(), user: String::new(), sql: String::new(), tls: false },
-        "getdata.src.sqlserver" => Source::Database { kind: DbKind::SqlServer, host: "localhost".into(), port: 1433, database: String::new(), user: String::new(), sql: String::new(), tls: false },
+        "getdata.src.postgres" => Source::Database { kind: DbKind::Postgres, host: "localhost".into(), port: 5432, database: String::new(), user: String::new(), sql: String::new(), tls: true },
+        "getdata.src.mysql" => Source::Database { kind: DbKind::MySql, host: "localhost".into(), port: 3306, database: String::new(), user: String::new(), sql: String::new(), tls: true },
+        "getdata.src.sqlserver" => Source::Database { kind: DbKind::SqlServer, host: "localhost".into(), port: 1433, database: String::new(), user: String::new(), sql: String::new(), tls: true },
         "getdata.src.query" => Source::Query { name: String::new() },
         _ => Source::Table { name: String::new() },
     }

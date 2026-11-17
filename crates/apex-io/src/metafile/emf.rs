@@ -377,7 +377,10 @@ fn record(g: &mut Gdi, t: u32, r: &[u8]) {
         // GradientFill: vertices, then rectangles or triangles.
         118 => {
             let (nv, nt, mode) = (u(24) as usize, u(28) as usize, u(32));
-            if nv > 1 << 16 || nt > 1 << 16 {
+            // The counts are taken at their word only as far as the record
+            // holds them: past it every index would be a zero.
+            let per = if mode == 2 { 3 } else { 2 };
+            if nv > 1 << 16 || nt > 1 << 16 || 36 + nv * 16 + nt * per * 4 > r.len() {
                 return;
             }
             let verts: Vec<(Point, [f64; 4])> = (0..nv)
@@ -388,7 +391,6 @@ fn record(g: &mut Gdi, t: u32, r: &[u8]) {
                 })
                 .collect();
             let at = 36 + nv * 16;
-            let per = if mode == 2 { 3 } else { 2 };
             let idx: Vec<Vec<u32>> = (0..nt).map(|k| (0..per).map(|j| u(at + (k * per + j) * 4)).collect()).collect();
             g.gradient(&verts, &idx, mode);
         }

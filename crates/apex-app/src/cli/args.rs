@@ -11,8 +11,10 @@ pub struct Spec {
     pub flags: &'static [&'static str],
 }
 
-/// Short aliases shared by every subcommand.
-const SHORT: &[(char, &str)] = &[('o', "output"), ('d', "out"), ('t', "to"), ('s', "sheet"), ('r', "range"), ('f', "format"), ('q', "quiet"), ('h', "help"), ('p', "password"), ('w', "width")];
+/// Short aliases shared by every subcommand. A letter may stand for two
+/// options no command takes together (`-f`: `--format`, or `--force` for
+/// `convert`); the one the command takes wins.
+const SHORT: &[(char, &str)] = &[('o', "output"), ('d', "out"), ('t', "to"), ('s', "sheet"), ('r', "range"), ('f', "format"), ('f', "force"), ('q', "quiet"), ('h', "help"), ('p', "password"), ('w', "width")];
 
 #[derive(Debug, Default)]
 pub struct Parsed {
@@ -64,8 +66,9 @@ pub fn parse(args: &[String], spec: &Spec) -> Result<Parsed, String> {
                 // "-o file", "-ofile" is not supported: short options stand alone.
                 let mut chars = a[1..].chars();
                 let (Some(c), None) = (chars.next(), chars.next()) else { return Err(format!("unknown option '{a}'")) };
-                match SHORT.iter().find(|(s, _)| *s == c) {
-                    Some((_, long)) => (long.to_string(), None),
+                let mut aliases = SHORT.iter().filter(|(s, _)| *s == c).map(|(_, long)| *long);
+                match aliases.clone().find(|long| find(long).is_some()).or_else(|| aliases.next()) {
+                    Some(long) => (long.to_string(), None),
                     None => return Err(format!("unknown option '{a}'")),
                 }
             }
@@ -112,5 +115,15 @@ mod tests {
         assert!(parse(&a(&["--quiet=1"]), &spec).is_err());
         // Aliases of options the command doesn't take are unknown.
         assert!(parse(&a(&["-r", "A1"]), &spec).is_err());
+    }
+
+    #[test]
+    fn short_alias_follows_the_command() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let convert = Spec { values: &["to"], flags: &["force"] };
+        assert!(parse(&a(&["x.xlsx", "-f"]), &convert).unwrap().flag("force"));
+        let cat = Spec { values: &["format"], flags: &[] };
+        assert_eq!(parse(&a(&["x.xlsx", "-f", "csv"]), &cat).unwrap().value("format"), Some("csv"));
+        assert!(parse(&a(&["-f"]), &Spec { values: &[], flags: &[] }).is_err());
     }
 }

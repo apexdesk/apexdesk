@@ -182,7 +182,7 @@ pub fn sqlite(path: &Path, sql: &str) -> Result<DataTable, Error> {
         return Err(Error::Io(format!("{}: not found", path.display())));
     }
     apex_db::sqlite::check_journal(path).map_err(|e| Error::Database(e.to_string()))?;
-    let conn = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(err)?;
+    let mut conn = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(err)?;
     // Read only covers this file; VACUUM INTO and ATTACH could still make
     // others.
     conn.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_ATTACHED, 0).map_err(err)?;
@@ -194,9 +194,9 @@ pub fn sqlite(path: &Path, sql: &str) -> Result<DataTable, Error> {
     let end = web_time::Instant::now() + web_time::Duration::from_secs(60);
     conn.progress_handler(100_000, Some(move || web_time::Instant::now() > end)).map_err(err)?;
     let mut st = conn.prepare(&select_sql(sql, '"')).map_err(err)?;
-    let names: Vec<String> = st.column_names().iter().map(|s| s.to_string()).collect();
+    let names: Vec<String> = st.column_names().map(str::to_string).collect();
     // Dates are text (or numbers) in SQLite: the declared type tells.
-    let dates: Vec<bool> = st.columns().iter().map(|c| c.decl_type().is_some_and(|t| t.to_ascii_uppercase().contains("DATE") || t.to_ascii_uppercase().contains("TIME"))).collect();
+    let dates: Vec<bool> = st.columns().map(|c| c.decl_type().is_some_and(|t| t.to_ascii_uppercase().contains("DATE") || t.to_ascii_uppercase().contains("TIME"))).collect();
     let n = names.len();
     let mut t = DataTable::new(unique_names(names));
     let mut rows = st.query([]).map_err(err)?;

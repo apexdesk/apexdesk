@@ -85,7 +85,16 @@ pub struct Shell {
 
 /// The Zoom group: zoom, 100 % and zoom in/out.
 pub fn zoom_group(ui: &mut egui::Ui, zoom: &mut f32, accent: egui::Color32) {
+    zoom_group_with(ui, zoom, accent, true);
+}
+
+/// [`zoom_group`]; `keys` false where Ctrl++ and Ctrl+- do something else
+/// (in a sheet they insert and delete cells).
+pub fn zoom_group_with(ui: &mut egui::Ui, zoom: &mut f32, accent: egui::Color32, keys: bool) {
     use crate::toolstrip;
+    let tip = |ui: &egui::Ui, name: &str, key: egui::Key| {
+        if keys { format!("{name} ({})", ui.ctx().format_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key))) } else { name.to_string() }
+    };
     toolstrip::large_menu(ui, Icon::ZoomIn, tr("toolbar.zoom"), "", accent, |ui| {
         for p in [50.0, 75.0, 100.0, 125.0, 150.0, 200.0, 300.0] {
             if ui.radio((*zoom * 100.0 - p).abs() < 0.5, format!("{p:.0}%")).clicked() {
@@ -98,10 +107,10 @@ pub fn zoom_group(ui: &mut egui::Ui, zoom: &mut f32, accent: egui::Color32) {
         *zoom = 1.0;
     }
     toolstrip::column(ui, |ui| {
-        if toolstrip::small(ui, Some(Icon::ZoomIn), tr("menu.zoom_in"), &format!("{} (Ctrl++)", tr("menu.zoom_in")), accent, false).clicked() {
+        if toolstrip::small(ui, Some(Icon::ZoomIn), tr("menu.zoom_in"), &tip(ui, tr("menu.zoom_in"), egui::Key::Plus), accent, false).clicked() {
             *zoom = ((*zoom * 10.0).round() / 10.0 + 0.1).min(4.0);
         }
-        if toolstrip::small(ui, Some(Icon::ZoomOut), tr("menu.zoom_out"), &format!("{} (Ctrl+-)", tr("menu.zoom_out")), accent, false).clicked() {
+        if toolstrip::small(ui, Some(Icon::ZoomOut), tr("menu.zoom_out"), &tip(ui, tr("menu.zoom_out"), egui::Key::Minus), accent, false).clicked() {
             *zoom = ((*zoom * 10.0).round() / 10.0 - 0.1).max(0.25);
         }
     });

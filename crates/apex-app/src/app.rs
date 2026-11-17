@@ -43,7 +43,7 @@ mod control_ui;
 mod mcp_ui;
 mod policy_ui;
 mod diag_ui;
-mod customize;
+pub(crate) mod customize;
 mod mail_ui;
 mod macro_run;
 mod macros_ui;
@@ -58,6 +58,7 @@ mod macro_props;
 mod macro_trial;
 mod protected;
 mod locks;
+mod lossy_ui;
 mod objects;
 mod options;
 mod passwords;
@@ -102,24 +103,35 @@ const EULA_ES: &str = EULA;
 pub struct Notice {
     pub text: String,
     pub error: bool,
+    /// Stays until it is closed: an error that went by unread would be
+    /// lost.
+    pub stays: bool,
+    /// Shown in a dialog: what must not go unnoticed (a failed save).
+    pub alert: bool,
 }
 
 impl Notice {
     pub fn info(text: impl Into<String>) -> Self {
-        Notice { text: text.into(), error: false }
+        Notice { text: text.into(), error: false, stays: false, alert: false }
     }
 
     pub fn error(text: impl Into<String>) -> Self {
         let text = text.into();
         crate::diag::error(&text);
-        Notice { text, error: true }
+        Notice { text, error: true, stays: true, alert: false }
+    }
+
+    /// An error in a dialog of its own, which must be closed: the
+    /// document wasn't saved.
+    pub fn alert(text: impl Into<String>) -> Self {
+        Notice { alert: true, ..Notice::error(text) }
     }
 
     /// What was asked can't be done with what was given (a formula
     /// mistyped, no data chosen): shown as an error, but not one of the
-    /// program's (not logged).
+    /// program's (not logged), and gone after a while like the others.
     pub fn refused(text: impl Into<String>) -> Self {
-        Notice { text: text.into(), error: true }
+        Notice { text: text.into(), error: true, stays: false, alert: false }
     }
 }
 
@@ -216,16 +228,32 @@ impl Tab {
     }
 }
 
+/// The questions asked before saving, in their order (see `save_from`).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SaveStep {
+    Lossy,
+    Signature,
+    Macros,
+    Props,
+    Write,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Closing {
     Tab(u64),
     /// Closing the window: tabs are checked one by one.
     App,
+    /// Closing the window, all changes saved: the next modified tab.
+    SaveAll,
+    /// A save of [`Closing::SaveAll`] under way (asking where, say).
+    Saving,
 }
 
 struct Toast {
     notice: Notice,
     at: Instant,
+    /// Tells it from the others (its buttons' ids).
+    n: u64,
 }
 
 pub struct App {
@@ -340,6 +368,8 @@ pub struct App {
     sig: signatures_ui::SigUi,
     /// Lock files, read-only files and files changed on disk.
     locks: locks::Locks,
+    /// The question before saving in a format that loses something.
+    lossy: lossy_ui::Lossy,
     /// Tabs of downloaded files in Protected View.
     protected: protected::Protected,
     /// A diagram of a document or workbook being edited, and its tab.
@@ -372,6 +402,7 @@ impl App {
         let ctx = &cc.egui_ctx;
         let settings = Settings::load();
         init(ctx, &settings, started);
+        crate::diag::watch_signals(ctx.clone());
         let mut app = App::blank(ctx, settings, incoming, started);
         for f in files {
             app.open_arg(&f);
@@ -462,6 +493,7 @@ impl App {
             macro_run: macro_run::MacroRun::default(),
             sig: Default::default(),
             locks: Default::default(),
+            lossy: Default::default(),
             protected: Default::default(),
             diagram_editor: None,
             ctx: ctx.clone(),
@@ -480,7 +512,9 @@ impl App {
     }
 
     pub(crate) fn notify(&mut self, n: Notice) {
-        self.toasts.push(Toast { notice: n, at: Instant::now() });
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let k = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.toasts.push(Toast { notice: n, at: Instant::now(), n: k });
     }
 
     fn push_tab(&mut self, view: View, path: Option<PathBuf>, format: Option<Format>) {
@@ -593,6 +627,7 @@ impl App {
             self.open_pdf_tab(&canon, password, mode);
             return;
         }
+        #[cfg(target_os = "android")]
         let t0 = Instant::now();
         match apex_io::open_with(&canon, password.as_deref()) {
             Ok((loaded, fmt)) => {
@@ -656,17 +691,15 @@ impl App {
                 }
                 self.settings.add_recent(canon.clone());
                 self.settings.save();
-                let ms = t0.elapsed().as_secs_f32() * 1000.0;
-                // For `adb logcat -s ApexDesk`.
+                // For `adb logcat -s ApexDesk` (only there: a notice of
+                // it on every open would be noise).
                 #[cfg(target_os = "android")]
-                crate::android::log(&format!("opened {} in {ms:.0} ms", canon.display()));
+                crate::android::log(&format!("opened {} in {:.0} ms", canon.display(), t0.elapsed().as_secs_f32() * 1000.0));
                 if truncated {
                     self.opened_in_part(&canon);
                 } else if fmt == apex_io::Format::Pdf {
                     // Rebuilt from how the pages are drawn: say so.
                     self.notify(Notice::info(tr("notice.pdf_opened")));
-                } else {
-                    self.notify(Notice::info(trf("notice.opened", &[("ms", &format!("{ms:.0}"))])));
                 }
             }
             Err(e) if e.needs_password() || e.wrong_password() => {
@@ -751,20 +784,37 @@ impl App {
 
     /// Saves tab `idx` at `path` unless a question comes first.
     fn save_checked(&mut self, idx: usize, path: PathBuf, fmt: Format) -> bool {
+        self.save_from(idx, path, fmt, SaveStep::Lossy)
+    }
+
+    /// Saves tab `idx` at `path`, asking the questions from `step` on: a
+    /// save that waited for an answer goes on with the next question.
+    fn save_from(&mut self, idx: usize, path: PathBuf, fmt: Format, step: SaveStep) -> bool {
         self.hold(idx);
+        // A format that can't keep what the file has: ask first.
+        if step <= SaveStep::Lossy && !self.lossy_fits(idx, &path, fmt) {
+            return false;
+        }
         // Saving changes drops a signature: ask first.
-        if !self.signature_fits(idx, &path, fmt) {
+        if step <= SaveStep::Signature && !self.signature_fits(idx, &path, fmt) {
             return false;
         }
         // A macro-free format would drop the VBA project: ask first.
-        if !self.macros_fit(idx, &path, fmt) {
+        if step <= SaveStep::Macros && !self.macros_fit(idx, &path, fmt) {
             return false;
         }
         // The properties a policy requires: ask for them.
-        if !self.props_fit(idx, &path, fmt) {
+        if step <= SaveStep::Props && !self.props_fit(idx, &path, fmt) {
             return false;
         }
         self.save_to(idx, path, fmt)
+    }
+
+    /// Whether Save As on tab `idx` writes a copy and leaves the tab on
+    /// what it shows: a database or notebook (their changes are in their
+    /// file already) and an object of another file (it goes back there).
+    fn saves_copy(&self, idx: usize) -> bool {
+        self.tabs.get(idx).is_some_and(|t| matches!(t.view, View::Db(_) | View::Note(_))) || self.edits_object(idx)
     }
 
     /// Saves tab `idx` at `path` in `fmt`.
@@ -797,13 +847,24 @@ impl App {
         // every copy saved from it (the mark is lost when the file is
         // replaced, and a new name never had it).
         let downloaded = self.tabs[idx].downloaded();
+        // An object of another file saved elsewhere is a copy: its changes
+        // still have to go back into that file.
+        let object_changed = self.edits_object(idx) && self.tabs[idx].view.modified();
         let res = if let Some(enc) = encoding {
             self.save_text_encoded(idx, &path, fmt, enc)
         } else {
             self.write_tab(idx, &path, fmt, original, pw.as_deref())
         };
+        if res.is_ok() && object_changed {
+            macros_ui::mark_modified(&mut self.tabs[idx].view, false);
+        }
         if res.is_ok() && downloaded {
             apex_io::safe_path::mark_untrusted(&path);
+        }
+        // What the user wrote here is theirs: it doesn't open in Protected
+        // View for the folder it is in, or the file it began as.
+        if res.is_ok() && !self.is_protected(self.tabs[idx].id) {
+            protected::vouch(&path);
         }
         if res.is_ok() && !kept {
             let id = self.tabs[idx].id;
@@ -867,6 +928,23 @@ impl App {
         if res.is_ok() && encrypted && !apex_io::can_encrypt(fmt) {
             self.notify(Notice::info(tr("password.not_saved_formats")));
         }
+        // As the file is known when opened, so that opening it again finds
+        // this tab.
+        let path = if res.is_ok() { path.fs_canonicalize().unwrap_or(path) } else { path };
+        // A copy of an object of another file: the tab stays that object.
+        if res.is_ok() && self.edits_object(idx) {
+            self.settings.add_recent(path.clone());
+            self.settings.save();
+            self.notify(Notice::info(trf("notice.saved_copy", &[("file", &path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())])));
+            return true;
+        }
+        // What was carried along from the file as it was read, and this
+        // format has no place for.
+        let left_out = match &self.tabs[idx].view {
+            View::Sheet(v) => !apex_io::kept_left_out(&v.wb.kept, fmt).is_empty(),
+            View::Doc(v) => !apex_io::kept_left_out(&v.doc.kept, fmt).is_empty(),
+            _ => false,
+        };
         let tab = &mut self.tabs[idx];
         match res {
             Ok(()) => {
@@ -880,6 +958,8 @@ impl App {
                 tab.format = Some(fmt);
                 self.share_path(idx);
                 self.saved_file(idx, &path);
+                // Its recovery copy is described again with its new file.
+                self.copy_renamed(idx);
                 self.settings.add_recent(path);
                 self.settings.save();
                 if lossy {
@@ -890,13 +970,16 @@ impl App {
                         (Kind::Slides, _) => "notice.saved_lossy_slides",
                     };
                     self.notify(Notice::info(trf(key, &[("format", &fmt.extension().to_uppercase())])));
+                } else if left_out {
+                    // It stays until read: what went is not seen in the document.
+                    self.notify(Notice { stays: true, ..Notice::info(trf("notice.saved_left_out", &[("format", &fmt.extension().to_uppercase())])) });
                 } else {
                     self.notify(Notice::info(tr("notice.saved")));
                 }
                 true
             }
             Err(e) => {
-                self.notify(Notice::error(trf("error.save", &[("error", &e)])));
+                self.notify(Notice::alert(trf("error.save", &[("error", &e)])));
                 false
             }
         }
@@ -981,7 +1064,7 @@ impl App {
             None => tab.untitled.clone(),
         };
         let mut dlg = crate::file_dialog::FileDialog::new()
-            .set_title(tr("dialog.save_title"))
+            .set_title(tr(if self.saves_copy(idx) { "dialog.save_copy_title" } else { "dialog.save_title" }))
             .set_file_name(format!("{stem}.{default_ext}"));
         if let Some(dir) = tab.path.as_ref().and_then(|p| p.parent()) {
             dlg = dlg.set_directory(dir);
@@ -1558,12 +1641,12 @@ impl App {
         } else if act(&SHORTCUT_NEXT_TAB) && !self.tabs.is_empty() {
             self.active = (self.active + 1) % self.tabs.len();
         }
-        // Zoom needs the exact modifiers: the spreadsheet uses Ctrl+Shift+Plus
-        // (insert cells) and Ctrl+Shift+0 (unhide columns), and Ctrl+Minus
-        // deletes cells there, as in other spreadsheets.
+        // Zoom needs the exact modifiers: the spreadsheet uses Ctrl+Shift+0
+        // (unhide columns). There Ctrl++ inserts cells and Ctrl+- deletes
+        // them, as in other spreadsheets: it zooms with Ctrl+wheel.
         let sheet = self.tabs.get(self.active).is_some_and(|t| t.view.kind() == Kind::Sheet);
         let exact = |s: &KeyboardShortcut| ctx.input_mut(|i| i.modifiers.matches_exact(s.modifiers) && i.consume_shortcut(s));
-        if exact(&SHORTCUT_ZOOM_IN) || exact(&SHORTCUT_ZOOM_IN2) {
+        if !sheet && (exact(&SHORTCUT_ZOOM_IN) || exact(&SHORTCUT_ZOOM_IN2)) {
             self.zoom(Some(1.1));
         }
         if !sheet && exact(&SHORTCUT_ZOOM_OUT) {
@@ -1872,18 +1955,37 @@ impl App {
         }
         let idx = match closing {
             Closing::Tab(id) => self.tabs.iter().position(|t| t.id == id),
-            Closing::App => self.tabs.iter().position(|t| t.view.modified()),
+            Closing::App | Closing::SaveAll => self.tabs.iter().position(|t| t.view.modified()),
+            Closing::Saving => return,
         };
         let Some(idx) = idx else {
             // Nothing (left) to ask about.
             self.closing = None;
-            if closing == Closing::App {
+            if !matches!(closing, Closing::Tab(_)) {
                 self.quit_confirmed = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             return;
         };
         self.active = idx;
+        if closing == Closing::SaveAll {
+            // One after the other; a save not done (cancelled, failed)
+            // stops closing, and so does one that leaves the tab modified,
+            // which would be saved again and again.
+            let id = self.tabs[idx].id;
+            self.closing = Some(Closing::Saving);
+            self.save_then(idx, false, move |app, saved| {
+                let done = saved && app.tab_index(id).is_none_or(|i| !app.tabs[i].view.modified());
+                app.closing = done.then_some(Closing::SaveAll);
+            });
+            return;
+        }
+        // Several files to close: one question for them all.
+        let modified: Vec<String> = self.tabs.iter().filter(|t| t.view.modified()).map(|t| t.name()).collect();
+        if closing == Closing::App && modified.len() > 1 {
+            self.unsaved_all(ctx, &modified);
+            return;
+        }
         let name = self.tabs[idx].name();
         let mut choice = None;
         egui::Modal::new(egui::Id::new("unsaved")).show(ctx, |ui| {
@@ -1893,7 +1995,7 @@ impl App {
             ui.label(trf("unsaved.body", &[("file", &name)]));
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                if ui.button(RichText::new(tr("unsaved.save")).strong()).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
+                if ui.add(widgets::primary_button(tr("unsaved.save"))).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
                     choice = Some(0);
                 }
                 if ui.button(tr("unsaved.discard")).clicked() {
@@ -1922,7 +2024,7 @@ impl App {
                 match closing {
                     Closing::Tab(_) => self.closing = None,
                     // Other windows of the workbook must not ask again.
-                    Closing::App => {
+                    Closing::App | Closing::SaveAll | Closing::Saving => {
                         if let View::Sheet(v) = &mut self.tabs[idx].view {
                             v.wb.modified = false;
                         }
@@ -1935,32 +2037,117 @@ impl App {
         }
     }
 
+    /// The question when the window closes with several files changed:
+    /// save them all, none, or don't close (not one question per file).
+    fn unsaved_all(&mut self, ctx: &egui::Context, names: &[String]) {
+        let mut choice = None;
+        egui::Modal::new(egui::Id::new("unsaved_all")).show(ctx, |ui| {
+            ui.set_max_width(380.0);
+            ui.heading(tr("unsaved.title"));
+            ui.add_space(6.0);
+            ui.label(tr("unsaved.body_many"));
+            ui.add_space(6.0);
+            egui::ScrollArea::vertical().max_height(160.0).show(ui, |ui| {
+                for n in names {
+                    ui.label(format!("•  {n}"));
+                }
+            });
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.add(widgets::primary_button(tr("unsaved.save_all"))).clicked() || ui.input(|i| i.key_pressed(Key::Enter)) {
+                    choice = Some(0);
+                }
+                if ui.button(tr("unsaved.discard")).clicked() {
+                    choice = Some(1);
+                }
+                if ui.button(tr("unsaved.cancel")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                    choice = Some(2);
+                }
+            });
+        });
+        match choice {
+            Some(0) => self.closing = Some(Closing::SaveAll),
+            Some(1) => {
+                let ids: Vec<u64> = self.tabs.iter().filter(|t| t.view.modified()).map(|t| t.id).collect();
+                for id in ids {
+                    let Some(i) = self.tab_index(id) else { continue };
+                    // Other windows of the workbook must not ask again.
+                    if let View::Sheet(v) = &mut self.tabs[i].view {
+                        v.wb.modified = false;
+                    }
+                    self.remove_tab(i);
+                }
+            }
+            Some(_) => self.closing = None,
+            None => {}
+        }
+    }
+
     fn toasts(&mut self, ctx: &egui::Context) {
         const LIFE: f32 = 4.0;
-        self.toasts.retain(|t| t.at.elapsed().as_secs_f32() < LIFE + if t.notice.error { 4.0 } else { 0.0 });
-        if self.toasts.is_empty() {
+        // Errors stay until closed; the rest go after a while.
+        self.toasts.retain(|t| t.notice.stays || t.at.elapsed().as_secs_f32() < LIFE + if t.notice.error { 4.0 } else { 0.0 });
+        // A failed save in a dialog, which must be closed: the first one.
+        if let Some(i) = self.toasts.iter().position(|t| t.notice.alert) {
+            let text = self.toasts[i].notice.text.clone();
+            let closed = widgets::info_dialog(ctx, &format!("alert{}", self.toasts[i].n), tr("error.save_title"), 420.0, |ui| {
+                ui.add(egui::Label::new(RichText::new(&text).color(ui.visuals().error_fg_color)).wrap());
+                ui.add_space(6.0);
+                if ui.button(tr("edit.copy")).clicked() {
+                    ui.ctx().copy_text(text.clone());
+                }
+            });
+            if closed {
+                self.toasts.remove(i);
+            }
+        }
+        let shown: Vec<usize> = self.toasts.iter().enumerate().filter(|(_, t)| !t.notice.alert).map(|(i, _)| i).collect();
+        if shown.is_empty() {
             return;
         }
+        let mut closed = None;
         egui::Area::new(egui::Id::new("toasts"))
             .anchor(Align2::RIGHT_BOTTOM, egui::vec2(-16.0, -36.0))
-            .interactable(false)
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                for t in self.toasts.iter().rev().take(4).collect::<Vec<_>>().into_iter().rev() {
+                for &i in shown.iter().rev().take(4).rev() {
+                    let t = &self.toasts[i];
                     let (bg, fg) = if t.notice.error {
                         (Color32::from_rgb(0xB3, 0x26, 0x1E), Color32::WHITE)
                     } else {
                         (Color32::from_rgb(0x32, 0x36, 0x3B), Color32::WHITE)
                     };
-                    egui::Frame::new().fill(bg).corner_radius(6).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+                    let r = egui::Frame::new().fill(bg).corner_radius(6).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
                         // A phone's screen is narrower.
                         ui.set_max_width(420.0f32.min(ctx.content_rect().width() - 56.0));
                         ui.label(RichText::new(&t.notice.text).color(fg));
+                        if t.notice.stays {
+                            // Closed by hand, and copied whole (to search
+                            // for it, or to send it to support).
+                            ui.horizontal(|ui| {
+                                let button = |s: &str| egui::Button::new(RichText::new(s).color(fg)).fill(Color32::from_black_alpha(70));
+                                if ui.add(button(tr("edit.copy"))).clicked() {
+                                    ui.ctx().copy_text(t.notice.text.clone());
+                                }
+                                if ui.add(button(tr("dialog.close"))).clicked() {
+                                    closed = Some(i);
+                                }
+                            });
+                        }
                     });
+                    // The others go with a click on them too.
+                    if !t.notice.stays && ui.interact(r.response.rect, egui::Id::new(("toast", t.n)), egui::Sense::click()).clicked() {
+                        closed = Some(i);
+                    }
                     ui.add_space(4.0);
                 }
             });
-        ctx.request_repaint_after(Duration::from_millis(250));
+        if let Some(i) = closed {
+            self.toasts.remove(i);
+        }
+        if self.toasts.iter().any(|t| !t.notice.stays) {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
     }
 
     fn dialogs(&mut self, ctx: &egui::Context) {
@@ -2088,6 +2275,16 @@ impl App {
     }
 }
 
+impl Drop for App {
+    fn drop(&mut self) {
+        // A crash unwinding out of the window: the changes not saved are
+        // kept as recovery copies (the crash report is the panic hook's).
+        if std::thread::panicking() && !cfg!(test) {
+            self.keep_copies_now(false);
+        }
+    }
+}
+
 impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         let start = web_time::Instant::now();
@@ -2099,7 +2296,16 @@ impl eframe::App for App {
             saved.window_size = self.settings.window_size;
             saved.save();
         }
-        self.recovery.clear();
+        // The user answered for every change (or there were none): the
+        // copies go. Otherwise the window went away unasked (the session
+        // ended, the display server is gone, a signal): they stay, up to
+        // date, for the next start to offer.
+        let unanswered = !self.quit_confirmed && (0..self.tabs.len()).any(|i| self.tab_modified(i));
+        if unanswered || self.recovery.keep {
+            self.keep_copies_now(true);
+        } else {
+            self.recovery.clear();
+        }
         self.release_locks();
         crate::objects::clean_temp();
         // The tabs write what they keep on closing (a notebook's pages).
@@ -2263,6 +2469,14 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // The system asked the program to end (a logout, `kill`): nobody
+        // is there to answer for the changes, so closing keeps them as
+        // recovery copies (see `on_exit`).
+        if crate::diag::ending() && !self.recovery.keep {
+            self.recovery.keep = true;
+            self.quit_confirmed = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         fonts::apply(&ctx);
         theme::fade_frame(&ctx);
         crate::window_frame::native(frame);
@@ -2666,6 +2880,7 @@ impl eframe::App for App {
         self.poll_mail();
         self.macro_editor(&ctx);
         self.macro_save_dialog(&ctx);
+        self.lossy_dialog(&ctx);
         self.macro_frame(&ctx);
         self.signature_dialogs(&ctx);
         self.autosave(&ctx);

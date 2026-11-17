@@ -56,6 +56,13 @@ struct Walk {
     weights: HashMap<u32, usize>,
 }
 
+/// Objects being read at once, each for the one before (a stream's
+/// length, the object stream it is in): a chain of streams each giving
+/// the next one's length would otherwise recurse as deep as the file is
+/// long. Past that the object reads as missing (and a length is looked
+/// for in the stream instead).
+const MAX_LOADING: usize = 32;
+
 /// Objects the pages' copies of their resources may have in all.
 const MAX_PAGE_RESOURCES: usize = 1 << 23;
 
@@ -381,7 +388,9 @@ impl<'a> PdfFile<'a> {
         if let Some(o) = self.cache.borrow().get(&n) {
             return o.clone();
         }
-        if !self.loading.borrow_mut().insert(n) {
+        // Not cached: read on its own, it may well be there.
+        let depth = self.loading.borrow().len();
+        if depth >= MAX_LOADING || !self.loading.borrow_mut().insert(n) {
             return Obj::Null;
         }
         let o = self.load(n).unwrap_or(Obj::Null);
@@ -644,7 +653,11 @@ impl<'a> PdfFile<'a> {
             _ => Vec::new(),
         };
         let mut data = raw.to_vec();
+        let mut made = 0usize;
         for (i, f) in filters.iter().enumerate() {
+            if !chain_affordable(&mut made, data.len()) {
+                return Decoded { data: Vec::new(), codec: None };
+            }
             let parm = parms.get(i).cloned().flatten();
             let int = |k: &str, def: i64| parm.as_ref().and_then(|p| p.get(k)).and_then(|o| self.resolve(o).int()).unwrap_or(def);
             data = match &**f {
@@ -659,6 +672,15 @@ impl<'a> PdfFile<'a> {
         }
         Decoded { data, codec: None }
     }
+}
+
+/// Charges a filter of a stream's chain with the `len` bytes it reads;
+/// `false` past what the whole chain may read. Each filter reads what the
+/// one before gave, and a chain of hundreds of filters that each give as
+/// much as they may would otherwise run for minutes.
+pub(super) fn chain_affordable(read: &mut usize, len: usize) -> bool {
+    *read = read.saturating_add(len);
+    *read <= 2 * MAX_DECODED
 }
 
 /// Runs the standard filter `name` (not the image codecs).
@@ -1051,9 +1073,9 @@ impl Crypt {
             if u.len() < 48 || o.len() < 48 {
                 return Err(Error::new("the PDF file is damaged"));
             }
-            let key = if hash_v5(r, &pwb, &u[32..40], &[]) == u[..32] {
+            let key = if crate::crypto::same_digest(&hash_v5(r, &pwb, &u[32..40], &[]), &u[..32]) {
                 aes256_unwrap(&hash_v5(r, &pwb, &u[40..48], &[]), ue)
-            } else if hash_v5(r, &pwb, &o[32..40], &u[..48]) == o[..32] {
+            } else if crate::crypto::same_digest(&hash_v5(r, &pwb, &o[32..40], &u[..48]), &o[..32]) {
                 aes256_unwrap(&hash_v5(r, &pwb, &o[40..48], &u[..48]), oe)
             } else {
                 return Err(fail());
@@ -1081,14 +1103,14 @@ impl Crypt {
         };
         let user_ok = |key: &[u8]| -> bool {
             if r == 2 {
-                rc4(key, &PAD) == u.get(..32).unwrap_or_default()
+                crate::crypto::same_digest(&rc4(key, &PAD), u.get(..32).unwrap_or_default())
             } else {
                 let mut x = md5(&[&PAD, id0]).to_vec();
                 for i in 0..20u8 {
                     let k: Vec<u8> = key.iter().map(|b| b ^ i).collect();
                     x = rc4(&k, &x);
                 }
-                u.len() >= 16 && x[..16] == u[..16]
+                u.len() >= 16 && x.len() >= 16 && crate::crypto::same_digest(&x[..16], &u[..16])
             }
         };
         let latin: Vec<u8> = pw.chars().map(|c| if (c as u32) < 256 { c as u8 } else { b'?' }).collect();
@@ -1293,5 +1315,36 @@ mod tests {
         let codes = vec![0x55u8; 20_000];
         let _ = lzw(&codes, true);
         let _ = lzw(&codes, false);
+    }
+
+    /// A one-page PDF (no cross-references: found by scanning) whose
+    /// content is object 4, with `more` objects after the page.
+    fn page_with(more: &[u8]) -> Vec<u8> {
+        let mut b = b"%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n".to_vec();
+        b.extend_from_slice(b"3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 100 100]/Contents 4 0 R>> endobj\n");
+        b.extend_from_slice(more);
+        b
+    }
+
+    #[test]
+    fn chains_of_lengths_and_filters_stay_bounded() {
+        // Each stream's length is the next stream: the chain is cut and the
+        // lengths are found by `endstream`.
+        let n = 20_000;
+        let mut more = Vec::new();
+        for i in 4..4 + n {
+            more.extend_from_slice(format!("{i} 0 obj <</Length {} 0 R>>stream\nq Q\nendstream endobj\n", i + 1).as_bytes());
+        }
+        more.extend_from_slice(format!("{} 0 obj 3 endobj\n", 4 + n).as_bytes());
+        let d = page_with(&more);
+        let f = PdfFile::open(&d, None).unwrap();
+        assert_eq!(f.contents(&f.pages()[0].dict), b"q Q\n");
+        // Run-length runs that grow 64 times at each of 500 filters.
+        let mut more = b"4 0 obj <</Length 2/Filter[".to_vec();
+        more.extend_from_slice(&b"/RL".repeat(500));
+        more.extend_from_slice(b"]>>stream\n\x81\x81\nendstream endobj\n");
+        let d = page_with(&more);
+        let f = PdfFile::open(&d, None).unwrap();
+        assert_eq!(f.contents(&f.pages()[0].dict), b"\n");
     }
 }

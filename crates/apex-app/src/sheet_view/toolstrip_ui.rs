@@ -924,7 +924,7 @@ impl SheetView {
             });
         });
         b.group("toolstrip.g.zoom", Icon::Zoom100, |ui| {
-            common::zoom_group(ui, &mut self.zoom, a);
+            common::zoom_group_with(ui, &mut self.zoom, a, false);
             if toolstrip::large(ui, Icon::ZoomIn, tr("view.zoom_selection"), tr("view.zoom_selection_tip"), a, false).clicked() {
                 self.zoom_to_selection();
             }

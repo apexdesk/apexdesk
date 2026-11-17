@@ -220,7 +220,7 @@ impl App {
     /// workbook (not while typing): runs its macro. True: it took the key.
     pub(in crate::app) fn macro_keys(&mut self, ctx: &egui::Context) -> bool {
         let Some(id) = self.tabs.get(self.active).map(|t| t.id) else { return false };
-        let own = allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id);
+        let own = allowed(&self.settings, &self.tabs, id) && self.macro_run.is_enabled(id, &self.tabs);
         let shared = self.settings.macros_enabled && !self.macro_run.schedule.shared_keys.is_empty();
         if self.macro_run.job.is_some() || ctx.text_edit_focused() || !(own || shared) || self.is_protected(id) {
             return false;
@@ -273,7 +273,7 @@ impl App {
         if let Some(i) = due.filter(|_| free) {
             let t = self.macro_run.schedule.timers.remove(i);
             // Only while its macros run (else it is dropped, not asked).
-            let own = allowed(&self.settings, &self.tabs, t.tab) && self.macro_run.is_enabled(t.tab);
+            let own = allowed(&self.settings, &self.tabs, t.tab) && self.macro_run.is_enabled(t.tab, &self.tabs);
             if (own || self.is_library_macro(t.tab, &t.procedure)) && !self.is_protected(t.tab) {
                 self.macro_run.queue = Some((t.tab, Entry::Macro(t.procedure)));
             }
@@ -389,6 +389,7 @@ impl App {
         if found.is_none() {
             return;
         }
+        let was = self.macro_run.is_enabled(tab, &self.tabs);
         match project.write() {
             Ok(bin) => {
                 self.hold(idx);
@@ -398,6 +399,8 @@ impl App {
                     v.wb.macros.set_project(bin);
                 }
                 super::super::macros_ui::mark_modified(&mut self.tabs[idx].view, true);
+                // The user's own change (Macro Options).
+                self.macro_run.approve(tab, &self.tabs, was);
             }
             Err(e) => self.notify(super::Notice::error(crate::i18n::trf("macros.bad_project", &[("error", &e)]))),
         }

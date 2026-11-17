@@ -140,7 +140,12 @@ impl PdfView {
         }
         let ppp = ui.ctx().pixels_per_point();
         let ctx = ui.ctx().clone();
+        // The pages' scroll bars always show, as the sheet's; what is on
+        // the pages keeps the usual ones.
+        let normal = ui.spacing().scroll;
+        ui.spacing_mut().scroll = crate::theme::page_scroll_style();
         area.show_viewport(ui, |ui, viewport| {
+            ui.spacing_mut().scroll = normal;
             let origin = ui.max_rect().min;
             let hand = self.tool == Tool::Hand;
             let back = ui.allocate_rect(Rect::from_min_size(origin, total), if hand { Sense::drag() } else { Sense::hover() });
@@ -165,6 +170,7 @@ impl PdfView {
                 self.page_ui(ui, &ctx, i, rect, z, ppp);
             }
         });
+        ui.spacing_mut().scroll = normal;
     }
 
     fn page_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, i: usize, rect: Rect, z: f32, ppp: f32) {

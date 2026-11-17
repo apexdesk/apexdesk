@@ -147,7 +147,8 @@ impl DocView {
         let margin = if v.dark_mode { Color32::from_gray(70) } else { Color32::from_gray(205) };
         let paper = if v.dark_mode { Color32::from_gray(40) } else { Color32::WHITE };
         let zone = if v.dark_mode { Color32::from_gray(90) } else { Color32::from_gray(180) };
-        let ink = v.weak_text_color();
+        // The text color: weak text on the margins' gray reads at under 3:1.
+        let ink = v.text_color();
         let mt = y(geo.text_top) + d(VPart::MarginTop);
         let mb = y(geo.text_bottom) - d(VPart::MarginBottom);
         p.rect_filled(strip, 0.0, margin);

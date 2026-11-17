@@ -239,7 +239,8 @@ impl App {
             cmd = Some(AppCmd::Open);
         }
         if self.tabs.get(self.active).is_some() {
-            if row(ui, Some((Icon::Save, a)), RichText::new(tr("menu.save_as")), w, false).clicked() {
+            let save_as = if self.saves_copy(self.active) { tr("menu.save_copy") } else { tr("menu.save_as") };
+            if row(ui, Some((Icon::Save, a)), RichText::new(save_as), w, false).clicked() {
                 self.save(self.active, true);
                 close = true;
             }

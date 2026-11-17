@@ -430,7 +430,7 @@ def main():
     lines.append(
         "`vendor/epaint` is a local copy of the `epaint` crate (part of the "
         "`egui` project) 0.36.2, used through `[patch.crates-io]` (see "
-        "`vendor/README.md` for the two changes made). Upstream `epaint` is "
+        "`vendor/epaint/PATCHES.md` for the changes made). Upstream `epaint` is "
         "MIT OR Apache-2.0, like the rest of the egui workspace; this local "
         "copy does not bundle a separate LICENSE file, so no crate-specific "
         "copyright line is reproduced here beyond the MIT and Apache-2.0 "
@@ -443,6 +443,13 @@ def main():
     lines.append("")
     lines.append(
         "The program has built in pdfium's fonts for the standard 14 PDF fonts (`crates/apex-io/src/pdf/render/std14`, BSD-3-Clause, Copyright 2014 The PDFium Authors), so that its own PDF renderer draws them as pdfium (the PDF engine of the Chromium project) does. pdfium itself is not distributed: it is only a development tool (`tools/pdfium-fetch.sh`) that pages are compared against."
+    )
+    lines.append("")
+
+    lines.append("## Fonts of the browser version")
+    lines.append("")
+    lines.append(
+        "The browser version (`crates/apex-web/web/build.sh`) ships fonts taken from the build machine: Liberation (SIL Open Font License 1.1, Copyright Red Hat), Carlito (SIL Open Font License 1.1, Copyright tyPoland Łukasz Dziedzic), Caladea (SIL Open Font License 1.1, Copyright Huerta Tipográfica), Noto (SIL Open Font License 1.1, Copyright Google) and DejaVu (Bitstream Vera and DejaVu license). Each font's license or copyright file is copied next to it in the `fonts` folder. The desktop program uses the system's fonts and egui's built-in ones (`epaint_default_fonts`, listed below)."
     )
     lines.append("")
 

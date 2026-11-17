@@ -1,8 +1,11 @@
 //! Digests, public keys and signatures: RSA (PKCS #1 v1.5 and PSS) and
 //! ECDSA on P-256 and P-384, verified and made on precomputed digests.
 
-use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
-use rsa::signature::hazmat::{PrehashSigner, PrehashVerifier};
+// The curves' crates and RSA's are on different versions of the traits
+// that read and use a key: each kind of key has its own.
+use p256::ecdsa::signature::hazmat::{PrehashSigner, PrehashVerifier};
+use p256::pkcs8::DecodePrivateKey as _;
+use rsa::pkcs8::{DecodePrivateKey as _, DecodePublicKey};
 use rsa::traits::PublicKeyParts;
 use sha1::Digest;
 
@@ -289,7 +292,9 @@ impl PrivKey {
         r.req()?;
         let alg = r.req()?;
         let mut ar = alg.children();
-        let bad = |_| Error::new("unreadable private key");
+        fn bad<E>(_: E) -> Error {
+            Error::new("unreadable private key")
+        }
         match ar.req()?.oid().as_str() {
             "1.2.840.113549.1.1.1" | "1.2.840.113549.1.1.10" => rsa::RsaPrivateKey::from_pkcs8_der(der).map(|k| PrivKey::Rsa(Box::new(k))).map_err(bad),
             "1.2.840.10045.2.1" => {

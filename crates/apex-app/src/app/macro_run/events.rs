@@ -64,7 +64,7 @@ impl App {
     /// The handlers of the code of tab `id` that events may run, when
     /// they may run now.
     fn live_handlers(&mut self, id: u64) -> Option<&[String]> {
-        if !allowed(&self.settings, &self.tabs, id) || self.is_protected(id) {
+        if !allowed(&self.settings, &self.tabs, id) || self.is_protected(id) || !self.macro_run.is_enabled(id, &self.tabs) {
             return None;
         }
         let t = self.tabs.iter().find(|t| t.id == id)?;

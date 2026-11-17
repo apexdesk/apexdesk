@@ -111,7 +111,7 @@ pub fn tool_button(ui: &mut egui::Ui, face: Face, selected: bool, hover: &str) -
     let enabled = ui.is_enabled();
     let v = ui.visuals();
     if selected {
-        ui.painter().rect_filled(rect, 4.0, v.selection.bg_fill.gamma_multiply(0.35));
+        ui.painter().rect(rect, 4.0, theme::selected_fill(v), theme::selected_stroke(v), egui::StrokeKind::Inside);
     } else if resp.hovered() && enabled {
         ui.painter().rect_filled(rect, 4.0, v.widgets.hovered.weak_bg_fill);
     }
@@ -142,7 +142,7 @@ fn split_button_dyn(ui: &mut egui::Ui, face: Face, selected: bool, hover: &str, 
     let v = ui.visuals();
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&arrow));
     if selected {
-        ui.painter().rect_filled(main_rect, 4.0, v.selection.bg_fill.gamma_multiply(0.35));
+        ui.painter().rect(main_rect, 4.0, theme::selected_fill(v), theme::selected_stroke(v), egui::StrokeKind::Inside);
     }
     if (main.hovered() || arrow.hovered() || open) && enabled {
         ui.painter().rect_stroke(rect, 4.0, Stroke::new(1.0, v.widgets.hovered.bg_stroke.color.gamma_multiply(0.6)), egui::StrokeKind::Inside);
@@ -394,13 +394,35 @@ pub fn esc_closes(ctx: &egui::Context, id: egui::Id, open: &mut bool) {
 /// A modal dialog with a title, content and OK/Cancel buttons (Enter and
 /// Escape work too).
 pub fn dialog(ctx: &egui::Context, id: &str, title: &str, width: f32, content: impl FnOnce(&mut egui::Ui)) -> DialogResult {
-    dialog_frame(ctx, id, title, width, false, content)
+    dialog_frame(ctx, id, title, width, Buttons::OkCancel, content)
 }
 
 /// A modal dialog that only shows something: one Close button. Returns
 /// whether it was closed.
 pub fn info_dialog(ctx: &egui::Context, id: &str, title: &str, width: f32, content: impl FnOnce(&mut egui::Ui)) -> bool {
-    dialog_frame(ctx, id, title, width, true, content) != DialogResult::None
+    dialog_frame(ctx, id, title, width, Buttons::Close, content) != DialogResult::None
+}
+
+/// [`dialog`] whose buttons say what they do: `ok` (the default, which
+/// Enter presses only while `ok_enabled`) and `cancel`.
+#[allow(clippy::too_many_arguments)]
+pub fn choice_dialog(ctx: &egui::Context, id: &str, title: &str, width: f32, ok: &str, ok_enabled: bool, cancel: &str, content: impl FnOnce(&mut egui::Ui)) -> DialogResult {
+    dialog_frame(ctx, id, title, width, Buttons::Named { ok, ok_enabled, cancel }, content)
+}
+
+/// The buttons at the foot of a dialog.
+#[derive(Clone, Copy)]
+enum Buttons<'a> {
+    OkCancel,
+    Close,
+    Named { ok: &'a str, ok_enabled: bool, cancel: &'a str },
+}
+
+/// The default button of a dialog, the one Enter presses: filled with the
+/// accent so it stands out from the others.
+pub fn primary_button<'a>(text: impl Into<String>) -> egui::Button<'a> {
+    // White on the accent: 4.5:1.
+    egui::Button::new(RichText::new(text).strong().color(Color32::WHITE)).fill(theme::ACCENT)
 }
 
 /// How much smaller than the room a scrolled dialog's content gets before
@@ -466,7 +488,7 @@ impl FitWindow for egui::Window<'_> {
     }
 }
 
-fn dialog_frame(ctx: &egui::Context, id: &str, title: &str, width: f32, info: bool, content: impl FnOnce(&mut egui::Ui)) -> DialogResult {
+fn dialog_frame(ctx: &egui::Context, id: &str, title: &str, width: f32, buttons: Buttons, content: impl FnOnce(&mut egui::Ui)) -> DialogResult {
     let mut res = DialogResult::None;
     // A dialog just opened from a menu (a folded group's) closes it: it
     // would stay open under the dialog.
@@ -529,16 +551,20 @@ fn dialog_frame(ctx: &egui::Context, id: &str, title: &str, width: f32, info: bo
         }
         ui.add_space(10.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if info {
-                if ui.button(RichText::new(tr("dialog.close")).strong()).clicked() {
-                    res = DialogResult::Cancel;
+            let (ok, ok_enabled, cancel) = match buttons {
+                Buttons::Close => {
+                    if ui.add(primary_button(tr("dialog.close"))).clicked() {
+                        res = DialogResult::Cancel;
+                    }
+                    return;
                 }
-                return;
-            }
-            if ui.button(tr("unsaved.cancel")).clicked() {
+                Buttons::OkCancel => (tr("dialog.ok"), true, tr("unsaved.cancel")),
+                Buttons::Named { ok, ok_enabled, cancel } => (ok, ok_enabled, cancel),
+            };
+            if ui.button(cancel).clicked() {
                 res = DialogResult::Cancel;
             }
-            if ui.button(RichText::new(tr("dialog.ok")).strong()).clicked() {
+            if ui.add_enabled(ok_enabled, primary_button(ok)).clicked() {
                 res = DialogResult::Ok;
             }
         });
@@ -555,11 +581,13 @@ fn dialog_frame(ctx: &egui::Context, id: &str, title: &str, width: f32, info: bo
         ctx.request_discard("a dialog changed size");
     }
     // Only the dialog on top (another can open over it) takes the keys.
+    // A click outside does nothing, as in the system's dialogs: a stray
+    // one would throw away what was typed. Escape and Cancel cancel.
+    let ok_enabled = !matches!(buttons, Buttons::Named { ok_enabled: false, .. });
     if res == DialogResult::None && m.is_top_modal {
-        // A click on a list that hangs out of the dialog is not a click outside it.
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) || m.should_close() && !m.any_popup_open && ctx.input(|i| i.pointer.any_click()) {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             res = DialogResult::Cancel;
-        } else if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !ctx.memory(|m| m.focused().is_some_and(|f| ctx.data(|d| d.get_temp::<bool>(f.with("multiline")).unwrap_or(false)))) {
+        } else if ok_enabled && ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !ctx.memory(|m| m.focused().is_some_and(|f| ctx.data(|d| d.get_temp::<bool>(f.with("multiline")).unwrap_or(false)))) {
             res = DialogResult::Ok;
         }
     }

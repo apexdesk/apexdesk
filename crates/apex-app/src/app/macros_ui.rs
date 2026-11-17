@@ -373,7 +373,7 @@ impl App {
     pub(super) fn macro_bar(&mut self, ui: &mut egui::Ui) {
         // Protected View's bar goes first; this one waits for it.
         let Some(id) = self.tabs.get(self.active).map(|t| t.id).filter(|id| self.macros.bars.contains(id) && !self.is_protected(*id)) else { return };
-        if self.macro_run.is_enabled(id) {
+        if self.macro_run.is_enabled(id, &self.tabs) {
             self.macros.bars.remove(&id);
             return;
         }
@@ -539,6 +539,7 @@ impl App {
         }
         let Some(idx) = self.tabs.iter().position(|t| t.id == tab) else { return };
         self.hold(idx);
+        let was = self.macro_run.is_enabled(tab, &self.tabs);
         let Some(e) = self.macros.editor.as_mut() else { return };
         let Source::Vba { project, .. } = &mut e.source else { return };
         e.dirty = false;
@@ -557,6 +558,8 @@ impl App {
             Ok(bin) => {
                 macros_of(view).set_project(bin);
                 mark_modified(view, true);
+                // The user typed it: enabled macros stay enabled.
+                self.macro_run.approve(tab, &self.tabs, was);
             }
             Err(err) => self.notify(Notice::error(trf("macros.bad_project", &[("error", &err)]))),
         }
@@ -835,14 +838,12 @@ impl App {
         let Some(p) = self.macros.prompt.take() else { return };
         match choice {
             1 => {
-                self.save_to(idx, p.path, p.fmt);
+                self.save_from(idx, p.path, p.fmt, super::SaveStep::Props);
             }
             2 => {
                 self.ask_save_path_as(idx, Some(macro_ext), |app, target| {
-                    if let Some((idx, path, fmt)) = target
-                        && app.macros_fit(idx, &path, fmt)
-                    {
-                        app.save_to(idx, path, fmt);
+                    if let Some((idx, path, fmt)) = target {
+                        app.save_from(idx, path, fmt, super::SaveStep::Macros);
                     }
                 });
             }

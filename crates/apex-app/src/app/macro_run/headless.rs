@@ -11,7 +11,7 @@ use std::sync::Arc;
 use apex_sheet::Workbook;
 use apex_vba::{Options, Outcome, Project};
 
-use super::{signed_book, sources, trusted};
+use super::{RevocationCheck, revocation_check, signed_book, sources, trusted};
 
 /// What the command allows beyond running the macro.
 pub(crate) struct Headless<'a> {
@@ -90,6 +90,13 @@ pub(crate) fn refused(path: &Path, wb: &Workbook, allow_suspicious: bool) -> Opt
     if settings.macros_signed_only && !signed_book(wb, &settings.trusted_publishers) {
         return Some("only signed macros may run, and this file's aren't signed by a trusted publisher".into());
     }
+    if settings.macros_signed_only {
+        match revocation_check(&settings.macro_revocation, &settings.trusted_publishers, &wb.macros) {
+            RevocationCheck::Revoked(name) => return Some(format!("the certificate of {name}, which signed these macros, has been revoked: not run")),
+            RevocationCheck::Required => return Some("whether the macros' certificate was revoked couldn't be checked, and your organization requires it: not run".into()),
+            RevocationCheck::Pass | RevocationCheck::Unchecked => {}
+        }
+    }
     let srcs = sources(bin).ok()?;
     let signals = apex_vba::suspicious::scan(srcs.iter().map(|s| (s.name.as_str(), s.code.as_str())));
     if !allow_suspicious && signals.iter().any(|s| s.serious()) {
@@ -103,6 +110,7 @@ pub(crate) fn refused(path: &Path, wb: &Workbook, allow_suspicious: bool) -> Opt
 /// once [`refused`] said nothing. Err: why it couldn't start.
 pub(crate) fn run(path: &Path, wb: &mut Workbook, name: &str, args: &[String], h: Headless<'_>) -> Result<Outcome, String> {
     let settings = crate::settings::Settings::load();
+    super::protect_own_files(&settings);
     let bin = wb.macros.project.clone().ok_or("the file has no macros")?;
     let srcs = Arc::new(sources(&bin).map_err(|e| e.to_string())?);
     let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();

@@ -965,8 +965,14 @@ impl SheetView {
             self.notices.push(Notice::error(tr("sheet.too_big_copy")));
             return;
         }
+        // A copy of a filtered list is the rows it shows. A cut takes the
+        // block whole: the cells it leaves empty are all of them.
+        let shown = !cut;
         let mut text = String::new();
         for row in r.start.row..=r.end.row {
+            if shown && self.wb.filter_hides(self.sheet, row) {
+                continue;
+            }
             for col in r.start.col..=r.end.col {
                 if col > r.start.col {
                     text.push('\t');
@@ -982,7 +988,7 @@ impl SheetView {
             }
             text.push('\n');
         }
-        let mut clip = self.wb.copy(self.sheet, &r);
+        let mut clip = if shown { self.wb.copy_visible(self.sheet, &r) } else { self.wb.copy(self.sheet, &r) };
         // A saved workbook's cells can be linked to from another one.
         clip.source = self.file_dir.as_ref().map(|d| apex_sheet::ClipSource {
             file: d.join(&self.print.file_name).to_string_lossy().into_owned(),
@@ -1000,7 +1006,7 @@ impl SheetView {
     fn to_system_clipboard(&self, ctx: &egui::Context, text: &str, r: &Range, clip: &apex_sheet::Clip) {
         use crate::sysclip;
         let mut formats: Vec<(&str, &[u8])> = vec![(sysclip::TEXT, text.as_bytes())];
-        let rich = (r.cell_count() <= RICH_COPY_CELLS).then(|| (apex_io::cells_clip::html(&self.wb, self.sheet, r), apex_io::cells_clip::xlsx(&self.wb, self.sheet, clip)));
+        let rich = (r.cell_count() <= RICH_COPY_CELLS).then(|| (apex_io::cells_clip::html(&self.wb, self.sheet, clip), apex_io::cells_clip::xlsx(&self.wb, self.sheet, clip)));
         if let Some((html, xlsx)) = &rich {
             formats.push((sysclip::HTML, html.as_bytes()));
             formats.push((sysclip::CELLS, xlsx));
@@ -1918,7 +1924,10 @@ impl SheetView {
             Key::G if cmd => self.dialog = Some(Dialog::GoTo(String::new())),
             Key::Backtick if cmd => self.show_formulas = !self.show_formulas,
             Key::Equals if m.alt => self.auto_sum("SUM"),
-            Key::Plus | Key::Equals if cmd && m.shift => self.dialog = Some(Dialog::Cells { delete: false, choice: 1 }),
+            // Ctrl++ inserts and Ctrl+- deletes, as in Excel: "+" is
+            // Shift+= on some keyboards and a key of its own on others.
+            Key::Plus if cmd => self.dialog = Some(Dialog::Cells { delete: false, choice: 1 }),
+            Key::Equals if cmd && m.shift => self.dialog = Some(Dialog::Cells { delete: false, choice: 1 }),
             Key::Minus if cmd => self.dialog = Some(Dialog::Cells { delete: true, choice: 1 }),
             // Ctrl+Shift+> / < and Ctrl+] / [ resize the font.
             Key::Period if cmd && m.shift => self.grow_font(true),
@@ -2406,8 +2415,7 @@ impl SheetView {
         // "Marching ants" for a pending cut/copy on this sheet.
         if let Some((_, clip, Some(s), _)) = &self.clip {
             if *s == self.sheet && self.marquee {
-                let r = Range::new(clip.origin, CellRef::new(clip.origin.row + clip.rows - 1, clip.origin.col + clip.cols - 1));
-                let rr = g.range_rect(sh, &r).intersect(g.view.expand(4.0));
+                let rr = g.range_rect(sh, &clip.source()).intersect(g.view.expand(4.0));
                 p.add(egui::Shape::dashed_line(&[rr.left_top(), rr.right_top(), rr.right_bottom(), rr.left_bottom(), rr.left_top()], Stroke::new(1.5, accent), 4.0, 3.0));
             }
         }

@@ -169,13 +169,41 @@ pub fn lookup(key: &str) -> Option<&'static str> {
     cur.table().get(key).or_else(|| l[0].table().get(key)).map(|s| s.as_str())
 }
 
-/// Translates a key and fills `{name}` placeholders.
+/// Translates a key and fills `{name}` placeholders. `{name|one|other}`
+/// is the word that goes with the number `name` in the current language:
+/// `{n} {n|word|words}` reads "1 word", "2 words".
 pub fn trf(key: &'static str, args: &[(&str, &dyn std::fmt::Display)]) -> String {
-    let mut s = tr(key).to_string();
+    fill(tr(key), args, current())
+}
+
+fn fill(text: &str, args: &[(&str, &dyn std::fmt::Display)], lang: &str) -> String {
+    let mut s = text.to_string();
     for (name, value) in args {
-        s = s.replace(&format!("{{{name}}}"), &value.to_string());
+        let value = value.to_string();
+        s = s.replace(&format!("{{{name}}}"), &value);
+        let open = format!("{{{name}|");
+        while let Some(i) = s.find(&open) {
+            let Some(len) = s[i..].find('}') else { break };
+            let forms = &s[i + open.len()..i + len];
+            let (one, other) = forms.split_once('|').unwrap_or((forms, forms));
+            let word = if is_one(lang, &value) { one } else { other }.to_string();
+            s.replace_range(i..=i + len, &word);
+        }
     }
     s
+}
+
+/// Whether `n` takes the singular form ("one") in language `lang`, after
+/// the Unicode plural rules of the languages shipped: French says "0 or
+/// 1" (pt.txt is European Portuguese, which says 1); Chinese, Japanese
+/// and Korean have a single form.
+fn is_one(lang: &str, n: &str) -> bool {
+    let Ok(v) = n.trim().parse::<f64>() else { return false };
+    match lang.split(['-', '_']).next().unwrap_or("") {
+        "fr" => (0.0..2.0).contains(&v),
+        "ja" | "ko" | "zh" => false,
+        _ => v == 1.0,
+    }
 }
 
 #[cfg(test)]
@@ -196,6 +224,25 @@ mod tests {
         assert_eq!(cjk_region("zh_TW"), Some("tc"));
         assert_eq!(cjk_region("zh"), Some("sc"));
         assert_eq!(cjk_region("fr_FR"), None);
+    }
+
+    #[test]
+    fn plural_forms() {
+        let words = |lang: &str, n: usize| fill("{n} {n|palabra|palabras}", &[("n", &n)], lang);
+        assert_eq!(words("es", 1), "1 palabra");
+        assert_eq!(words("es", 0), "0 palabras");
+        assert_eq!(words("es", 2), "2 palabras");
+        assert_eq!(words("fr", 0), "0 palabra");
+        assert_eq!(words("pt", 1), "1 palabra");
+        assert_eq!(words("pt", 0), "0 palabras");
+        assert_eq!(words("de", 1), "1 palabra");
+        assert_eq!(words("ja", 1), "1 palabras");
+        // A form for each of two numbers; text without forms is as it was.
+        let two = fill("{n} {n|page|pages}, {m} {m|word|words}", &[("n", &1), ("m", &5)], "en");
+        assert_eq!(two, "1 page, 5 words");
+        assert_eq!(fill("{n} (s)", &[("n", &1)], "en"), "1 (s)");
+        // Without an "other" form, the one form serves for every number.
+        assert_eq!(fill("{n|x}", &[("n", &3)], "en"), "x");
     }
 
     #[test]

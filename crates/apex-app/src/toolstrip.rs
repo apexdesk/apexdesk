@@ -731,7 +731,7 @@ fn small_face(icon: Option<Icon>, label: &str) -> Face<'static> {
 fn hover_fill(ui: &egui::Ui, rect: Rect, selected: bool, hot: bool) {
     let v = ui.visuals();
     if selected {
-        ui.painter().rect_filled(rect, 4.0, v.selection.bg_fill.gamma_multiply(0.3));
+        ui.painter().rect(rect, 4.0, crate::theme::selected_fill(v), crate::theme::selected_stroke(v), egui::StrokeKind::Inside);
     }
     if hot && ui.is_enabled() {
         ui.painter().rect_filled(rect, 4.0, v.widgets.hovered.weak_bg_fill);

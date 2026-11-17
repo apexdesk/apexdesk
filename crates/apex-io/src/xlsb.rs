@@ -617,7 +617,8 @@ fn read_sheet(z: &ZipReader, part: &str, d: &[u8], wb: &mut Workbook, si: usize,
             },
             _ => (None, false),
         };
-        let expr = text.and_then(|t| parse_canonical(&t).ok()).map(|e| Arc::new(if array { e } else { e.legacy() }));
+        // A formula read but not understood is kept as its text.
+        let expr = text.map(|t| Arc::new(parse_canonical(&t).map_or_else(|_| crate::xlsx::kept_formula(&t, &value, false), |e| if array { e } else { e.legacy() })));
         let content = match expr {
             Some(expr) => Content::Formula { expr: expr.into(), value },
             None if value == Value::Empty => Content::Empty,

@@ -114,14 +114,25 @@ fn written_anew(path: &str) -> bool {
 }
 
 /// Keeps the part at `path` and what its relationships reach; false if
-/// the package has no such part.
+/// the package has no such part. Each part once however its name is
+/// written (`/x.xml`, `X.xml`... are the same part to the package), in the
+/// order a walk down the relationships meets them; walked with a list of
+/// its own, not by recursion: a chain of thousands of parts each related
+/// to the next would overflow the stack.
 pub(crate) fn collect(z: &ZipReader, ct: &ContentTypes, path: &str, kept: &mut KeptParts) -> bool {
-    collect_once(z, ct, path, kept, &mut std::collections::HashSet::new())
+    let mut seen = std::collections::HashSet::new();
+    let mut todo = vec![path.to_string()];
+    let mut first = None;
+    while let Some(path) = todo.pop() {
+        let found = keep_one(z, ct, &path, kept, &mut seen, &mut todo);
+        first.get_or_insert(found);
+    }
+    first.unwrap_or(false)
 }
 
-/// [`collect`], each part once however its name is written (`/x.xml`,
-/// `X.xml`... are the same part to the package).
-fn collect_once(z: &ZipReader, ct: &ContentTypes, path: &str, kept: &mut KeptParts, seen: &mut std::collections::HashSet<String>) -> bool {
+/// Keeps one part of [`collect`] and adds the parts it relates to to
+/// `todo` (the first last, to be taken next).
+fn keep_one(z: &ZipReader, ct: &ContentTypes, path: &str, kept: &mut KeptParts, seen: &mut std::collections::HashSet<String>, todo: &mut Vec<String>) -> bool {
     if kept.part(path).is_some() {
         return true;
     }
@@ -139,11 +150,9 @@ fn collect_once(z: &ZipReader, ct: &ContentTypes, path: &str, kept: &mut KeptPar
     let rp = rels_path(path);
     if let Ok(rels) = z.read(&rp) {
         kept.add(KeptPart { path: rp, content_type: String::new(), data: Arc::from(rels) });
-        for (_, _, target, external) in read_rels(z, path) {
-            if !external {
-                collect_once(z, ct, &target, kept, seen);
-            }
-        }
+        let at = todo.len();
+        todo.extend(read_rels(z, path).into_iter().filter(|r| !r.3).map(|r| r.2));
+        todo[at..].reverse();
     }
     true
 }
@@ -368,5 +377,23 @@ mod tests {
         let l = read_labels(x);
         assert_eq!(l.len(), 1);
         assert_eq!((l[0].id.as_str(), l[0].site.as_str(), l[0].enabled), ("{A}", "{S}", true));
+    }
+
+    #[test]
+    fn long_chains_of_related_parts_are_kept_without_recursion() {
+        // 5000 parts, each related to the next and the last to the first.
+        let n = 5000;
+        let mut w = ZipWriter::new();
+        for i in 0..n {
+            w.add(&format!("x/p{i}.xml"), b"<a/>", false);
+            let rels = format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="t" Target="p{}.xml"/></Relationships>"#, (i + 1) % n);
+            w.add(&format!("x/_rels/p{i}.xml.rels"), rels.as_bytes(), false);
+        }
+        let data = w.finish();
+        let z = ZipReader::new(&data).unwrap();
+        let mut kept = KeptParts::default();
+        assert!(collect(&z, &ContentTypes::read(&z), "x/p0.xml", &mut kept));
+        assert!(kept.part("x/p4999.xml").is_some() && kept.part("x/_rels/p4999.xml.rels").is_some());
+        assert!(!collect(&z, &ContentTypes::read(&z), "x/none.xml", &mut KeptParts::default()));
     }
 }

@@ -91,11 +91,33 @@ const MAX_WRITTEN: u64 = 1 << 30;
 const MAX_READ: u64 = 256 << 20;
 const MAX_LISTED: usize = 100_000;
 
-/// Never written: what runs (programs, scripts, shortcuts, launchers).
-const RUNNABLE: &[&str] = &[
-    "app", "appimage", "appinstaller", "application", "appref-ms", "appx", "bash", "bat", "chm", "cjs", "cmd", "com", "command", "cpl", "csh", "desktop", "dll", "dylib", "exe", "fish", "gadget", "hta", "inf", "jar", "jnlp", "js", "jse", "ksh", "library-ms", "lnk", "mjs", "msc", "msi", "msix", "msp", "pif", "pl", "ps1", "ps1xml", "psd1", "psm1", "py", "pyw", "rb", "reg", "run", "scf", "scr", "service", "settingcontent-ms", "sh", "so", "url", "vb", "vbe", "vbs", "website", "wll", "ws", "wsc", "wsf", "wsh", "xbap", "xll", "zsh",
+/// Extensions of files that run something when opened, on any system:
+/// programs, scripts, shortcuts, launchers, installers, disk images,
+/// add-ins, and the files Windows, macOS or Office act on by themselves.
+/// Links to them never open and macros never write them (lower case).
+pub const RUNS: &[&str] = &[
+    // Windows programs, libraries, installers and shortcuts.
+    "exe", "com", "scr", "pif", "cpl", "msi", "msp", "mst", "msc", "msix", "msixbundle", "appx", "appxbundle", "appinstaller", "application", "appref-ms", "gadget", "lnk", "url", "scf", "inf", "reg", "settingcontent-ms", "library-ms", "search-ms", "searchconnector-ms", "diagcab", "diagcfg", "diagpkg", "dll", "ocx", "sys", "drv", "msu", "cab", "xbap", "website", "chm", "hlp",
+    // Windows scripts.
+    "bat", "cmd", "ps1", "ps1xml", "ps2", "ps2xml", "psc1", "psc2", "psd1", "psm1", "vb", "vbe", "vbs", "vbscript", "js", "jse", "ws", "wsc", "wsf", "wsh", "hta", "sct", "msh", "msh1", "msh2", "mshxml", "msh1xml", "msh2xml", "shs", "shb", "ahk", "au3", "a3x",
+    // Scripts and programs of any system.
+    "jar", "jnlp", "cjs", "mjs", "py", "pyw", "pyc", "pyz", "pyzw", "pl", "rb", "php", "lua", "tcl", "tk", "sh", "bash", "zsh", "csh", "ksh", "fish", "command", "tool", "run", "bin", "so",
+    // Linux and Android packages and launchers.
+    "desktop", "service", "appimage", "deb", "rpm", "snap", "flatpak", "flatpakref", "flatpakrepo", "apk", "xapk",
+    // macOS bundles, packages, scripts, links and profiles.
+    "app", "dylib", "pkg", "mpkg", "dmg", "action", "workflow", "scpt", "applescript", "terminal", "kext", "prefpane", "fileloc", "inetloc", "webloc", "mobileconfig",
+    // Disk images and browser extensions.
+    "iso", "img", "vhd", "vhdx", "crx", "xpi",
+    // Office files with macros, add-ins and Access databases.
+    "docm", "dotm", "xlsm", "xltm", "xlsb", "xla", "xlam", "xll", "xlm", "wll", "pptm", "potm", "ppsm", "sldm", "ppa", "ppam", "vsto", "accdb", "accde", "accda", "mdb", "mde", "ade", "adp", "mda", "mdt", "mdw", "mdz",
+    // Files Office or Windows act on when opened: queries, remote desktop,
+    // themes, web archives, sandboxes, notebooks, certificates, contacts,
+    // playlists and data links that reach other machines, and more of
+    // what Windows blocks as attachments.
+    "iqy", "slk", "dqy", "rqy", "oqy", "rdp", "ica", "theme", "themepack", "deskthemepack", "mht", "mhtml", "wsb", "one", "onepkg", "cer", "crt", "der", "contact", "vcf", "wab", "m3u", "m3u8", "asx", "wax", "wvx", "wpl", "udl", "ins", "isp", "its", "job", "prf", "xnk", "printerexport", "mam", "maq", "mar", "mas", "mat", "mav", "maw", "maf", "htc", "bas", "mcf", "vsmacros", "plg", "osd",
 ];
-/// Never written raw: documents that can hold macros.
+/// Never written raw: documents that can hold macros (links to them ask:
+/// they open with macros off).
 const MACRO_DOCS: &[&str] = &[
     "accdb", "accde", "doc", "docm", "dot", "dotm", "fodp", "fods", "fodt", "iqy", "mdb", "mde", "odb", "odp", "ods", "odt", "otp", "ots", "ott", "pot", "potm", "ppa", "ppam", "pps", "ppsm", "ppt", "pptm", "slk", "xla", "xlam", "xls", "xlsb", "xlsm", "xlt", "xltm",
 ];
@@ -223,6 +245,46 @@ pub fn canonical(p: impl AsRef<Path>) -> std::io::Result<PathBuf> {
     Ok(real)
 }
 
+/// Whether path text (with `/` for `\`) names another machine or a device
+/// the Windows way: `//host/share`, `//./`, `//?/`, `/??/`.
+fn remote_or_device(t: &str) -> bool {
+    let t = t.trim_start();
+    t.starts_with("//") || t.starts_with("/??/")
+}
+
+/// The `host/share` (lower case) of a network path: `\\host\share\…` or
+/// `\\?\UNC\host\share\…`, with either slash.
+fn share_of(path: &str) -> Option<String> {
+    let t = path.trim_start().replace('\\', "/").to_lowercase();
+    let rest = t.strip_prefix("//?/unc/").or_else(|| t.strip_prefix("//").filter(|r| !r.starts_with(['?', '.', '/'])))?;
+    let mut parts = rest.split('/');
+    let (host, share) = (parts.next()?, parts.next()?);
+    (!host.is_empty() && !share.is_empty()).then(|| format!("{host}/{share}"))
+}
+
+/// ApexDesk's own folders and files: its settings, the personal macro
+/// workbook, add-ins, recovery copies, policies. Macros never reach them,
+/// wherever the workbook is (see [`protect`]).
+static PROTECTED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// The program's own folders and files, which macros never read nor
+/// change (a macro writing them would run its code at every start).
+pub fn protect(paths: impl IntoIterator<Item = PathBuf>) {
+    let list: Vec<String> = paths.into_iter().filter(|p| p.is_absolute() && p.parent().is_some()).map(|p| fold(&canonical(&p).unwrap_or(p))).collect();
+    *PROTECTED.lock().unwrap_or_else(|e| e.into_inner()) = list;
+}
+
+/// A path to compare as Windows and macOS do, ignoring case.
+fn fold(p: &Path) -> String {
+    p.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+/// Whether `p` (resolved) is one of the program's own, or in one.
+fn is_protected(p: &Path) -> bool {
+    let p = fold(p);
+    PROTECTED.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|d| p == *d || p.strip_prefix(d.trim_end_matches('/')).is_some_and(|r| r.starts_with('/')))
+}
+
 /// Whether macros only reach the files right in folder `r` (not below):
 /// the home folder or a top one.
 fn shallow(r: &Path) -> bool {
@@ -345,6 +407,13 @@ impl Files {
             return Err(err(52));
         }
         let t = text.replace('\\', "/");
+        // `\\host\share` reaches another machine (Windows hands it the
+        // user's credentials just to look) and `\\.\`, `\\?\`, `\??\` name
+        // devices: refused before anything touches them, unless the
+        // workbook, or a folder or file the user picked, is on that share.
+        if remote_or_device(&t) && !share_of(&t).is_some_and(|s| self.known_shares().any(|k| k == s)) {
+            return Err(denied("macros don't reach network or device paths"));
+        }
         let p = Path::new(&t);
         let mut out = if p.is_absolute() {
             PathBuf::new()
@@ -388,8 +457,17 @@ impl Files {
         }
     }
 
+    /// The network shares the workbook and what the user picked are on.
+    fn known_shares(&self) -> impl Iterator<Item = String> + '_ {
+        let picked = self.picked.iter().map(|(p, _)| p).chain(self.folders.iter().map(|(p, _)| p));
+        self.root.iter().chain(self.book.iter()).chain(picked).filter_map(|p| share_of(&p.to_string_lossy()))
+    }
+
     /// Whether macros may reach `p` (resolved).
     fn reach(&self, p: &Path, write: bool) -> R<()> {
+        if is_protected(p) {
+            return Err(denied("macros don't reach ApexDesk's own settings, add-ins and macros"));
+        }
         if self.picked.iter().any(|(f, save)| f == p && (*save || !write)) {
             return Ok(());
         }
@@ -435,7 +513,9 @@ impl Files {
         let ext = name.rsplit_once('.').map_or("", |(_, e)| e);
         // The workbook saved as itself (the formats SaveAs writes).
         let own_kind = book && matches!(ext, "xlsm" | "xltm" | "ods" | "ots" | "fods" | "docm" | "dotm" | "odt" | "ott");
-        if RUNNABLE.contains(&ext) || MACRO_DOCS.contains(&ext) && !own_kind {
+        // .bin is what Open For Binary usually writes, and nothing runs it
+        // when opened; links to one still ask.
+        if ((RUNS.contains(&ext) && ext != "bin") || MACRO_DOCS.contains(&ext)) && !own_kind {
             return Err(denied(&format!("macros don't write .{ext} files")));
         }
         if let Ok(m) = fs::symlink_metadata(p) {
@@ -1544,6 +1624,58 @@ mod tests {
         assert!(shallow(Path::new("/")));
         assert!(shallow(Path::new("/home/someone")));
         assert!(!shallow(Path::new("/home/someone/Documents")));
+    }
+
+    #[test]
+    fn network_and_device_paths_are_refused_before_any_look() {
+        assert_eq!(share_of(r"\\Host\Share\a.txt").as_deref(), Some("host/share"));
+        assert_eq!(share_of(r"\\?\UNC\host\share\x").as_deref(), Some("host/share"));
+        assert_eq!(share_of(r"\\.\pipe\x"), None);
+        assert_eq!(share_of("/home/x"), None);
+        let dir = apex_fs::temp_dir().join(format!("apexvba-unc-{}", apex_fs::process_id()));
+        fs::create_dir_all(&dir).unwrap();
+        let files = Files::new(&dir.display().to_string(), "Book1.xlsm", &FileAccess { trusted: true, write: Some(true) });
+        // Refused while reading the text: no lookup reaches the host, not
+        // even for a workbook in a trusted location.
+        for text in [r"\\attacker\share\x.txt", "//attacker/share/x.txt", r"\\?\UNC\attacker\s\x", r"\\.\PhysicalDrive0", r"\??\C:\x", r" \\attacker\s\x"] {
+            let e = files.absolute(text).unwrap_err();
+            assert_eq!(e.number, 70, "{text}");
+            assert!(files.resolve(text).is_err(), "{text}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_programs_own_files_are_out_of_reach() {
+        let dir = canonical(apex_fs::temp_dir()).unwrap().join(format!("apexvba-own-{}", apex_fs::process_id()));
+        let (own, book) = (dir.join("Config"), dir.join("work"));
+        fs::create_dir_all(&own).unwrap();
+        fs::create_dir_all(&book).unwrap();
+        protect([own.clone()]);
+        // A workbook in a trusted location reaches any file, but these.
+        let files = Files::new(&book.display().to_string(), "Book1.xlsm", &FileAccess { trusted: true, write: Some(true) });
+        for p in [own.join("settings"), own.join("personal.xlsm"), own.join("recovery/x"), own.clone(), dir.join("config/settings")] {
+            assert!(files.reach(&p, true).is_err() && files.reach(&p, false).is_err(), "{}", p.display());
+        }
+        assert!(files.reach(&dir.join("Config2/x"), true).is_ok());
+        assert!(files.reach(&book.join("out.txt"), true).is_ok());
+        protect([]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn what_runs_is_never_written() {
+        let files = Files::new("", "", &FileAccess::default());
+        for name in ["a.exe", "a.ps1", "a.desktop", "a.lnk", "a.iso", "a.xlam", "a.vbs.", "a.SH", "a.dylib", "a.docm", "a.xls", "a.odt", "a.apk", "a.command"] {
+            assert!(files.writable(Path::new("/w").join(name).as_path()).is_err(), "{name}");
+        }
+        for name in ["a.txt", "a.csv", "a.xlsx", "a.json", "a"] {
+            assert!(files.writable(Path::new("/w").join(name).as_path()).is_ok(), "{name}");
+        }
+        // The workbook saved as itself.
+        assert!(files.writable_as(Path::new("/w/b.xlsm"), true).is_ok());
+        let mut seen = std::collections::HashSet::new();
+        assert!(RUNS.iter().all(|e| seen.insert(*e) && *e == e.to_lowercase()), "one entry each, lower case");
     }
 
     #[test]

@@ -248,7 +248,9 @@ impl AccessFile {
             return charged(self.row_at(ptr).map(|b| b[..len.min(b.len())].to_vec()).unwrap_or_default());
         }
         // A chain of rows, each starting with the pointer to the next.
-        let mut out = Vec::with_capacity(len.min(1 << 24));
+        // Grown as the rows come, not sized by the length claimed: a cell
+        // keeps what it was given, and each of many would hold 16 MiB.
+        let mut out = Vec::new();
         // A row met again is a loop: the chain ends there.
         let mut seen = std::collections::HashSet::new();
         while ptr != 0 && out.len() < len && seen.insert(ptr) {

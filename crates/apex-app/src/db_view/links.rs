@@ -24,7 +24,7 @@ pub struct Link {
 
 impl Default for Link {
     fn default() -> Link {
-        Link { kind: DbKind::Postgres, host: "localhost".into(), port: DbKind::Postgres.default_port(), database: String::new(), user: String::new(), table: String::new(), tls: false }
+        Link { kind: DbKind::Postgres, host: "localhost".into(), port: DbKind::Postgres.default_port(), database: String::new(), user: String::new(), table: String::new(), tls: true }
     }
 }
 

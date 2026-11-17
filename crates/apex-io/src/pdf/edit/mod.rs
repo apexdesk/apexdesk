@@ -573,7 +573,11 @@ impl PdfDoc {
             _ => Vec::new(),
         };
         let mut data = raw.to_vec();
+        let mut read = 0usize;
         for (i, f) in filters.iter().enumerate() {
+            if !super::file::chain_affordable(&mut read, data.len()) {
+                return Vec::new();
+            }
             let parm = parms.get(i).cloned().flatten();
             let int = |k: &str, def: i64| parm.as_ref().and_then(|p| p.get(k)).and_then(|o| self.resolve(o).int()).unwrap_or(def);
             data = match &**f {

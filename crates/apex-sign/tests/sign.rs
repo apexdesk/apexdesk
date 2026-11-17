@@ -518,6 +518,16 @@ fn pdf_signing_a_visible_field() {
 }
 
 #[test]
+fn malformed_revocation_data_is_a_bad_signature() {
+    // A changed package whose signature keeps a CRL in PEM with its end
+    // marker on the first line: the checks used to panic on it, and the
+    // file showed as not signed.
+    let sigs = apex_sign::verify(&data("pem-poison.docx"));
+    assert_eq!(sigs.len(), 1);
+    assert_eq!(sigs[0].status(), Status::Invalid);
+}
+
+#[test]
 fn packages_pdf_readers_take_for_pdfs() {
     trust_test_root();
     // A part stored first whose bytes start a PDF.

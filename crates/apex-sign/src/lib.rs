@@ -234,7 +234,8 @@ impl Signature {
             self.chain = chain;
             self.trust = self.fit(&cert, trust);
         }
-        let rev = kept.assess(&self.chain);
+        let at = self.trusted_time();
+        let rev = kept.assess(&self.chain, at);
         self.revocation = rev;
         if let Revocation::Revoked(t) = rev
             && self.time.filter(|_| self.timestamped).is_none_or(|s| t <= s)
@@ -244,7 +245,7 @@ impl Signature {
         let own = self.kind == Kind::PdfTimestamp;
         let has_time = self.timestamped || archive.is_some();
         let lt = has_time && matches!(rev, Revocation::Good(_));
-        let covered = archive.is_some_and(|a| matches!(a.kept.assess(&self.chain), Revocation::Good(_)));
+        let covered = archive.is_some_and(|a| matches!(a.kept.assess(&self.chain, at), Revocation::Good(_)));
         self.level = if lt && covered {
             Level::Lta
         } else if lt {
@@ -319,6 +320,24 @@ fn is_pdf(data: &[u8]) -> bool {
 /// Checks the signatures of a file: a PDF, or an OOXML or ODF package
 /// (decrypted if it was encrypted).
 pub fn verify(data: &[u8]) -> Vec<Signature> {
+    // Signature data a check trips over is the signer's or an attacker's
+    // doing: the file must show a bad signature, never none at all.
+    std::panic::catch_unwind(|| verify_unguarded(data)).unwrap_or_else(|_| {
+        let kind = if is_pdf(data) {
+            Kind::Pdf
+        } else if apex_io::zip::ZipReader::new(data).is_ok_and(|z| z.contains(package::ODF_SIGNATURES)) {
+            Kind::Odf
+        } else {
+            Kind::Ooxml
+        };
+        let mut s = Signature::new(kind);
+        s.valid = Check::Failed;
+        s.note = Some("the signature's data is malformed: it couldn't be checked".into());
+        vec![s]
+    })
+}
+
+fn verify_unguarded(data: &[u8]) -> Vec<Signature> {
     if is_pdf(data) {
         return pdf::verify(data);
     }

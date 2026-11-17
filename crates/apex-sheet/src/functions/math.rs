@@ -781,10 +781,10 @@ mod tests {
         close(&wb, "=SIN(RADIANS(30))", 0.5);
         close(&wb, "=COS(1.047)", 0.500171075);
         close(&wb, "=TAN(0.785)", 0.99920399);
-        close(&wb, "=ASIN(-0.5)", -0.523598776);
+        close(&wb, "=ASIN(-0.5)", -std::f64::consts::FRAC_PI_6);
         close(&wb, "=ACOS(-0.5)", 2.094395102);
-        close(&wb, "=ATAN(1)", 0.785398163);
-        close(&wb, "=ATAN2(1,1)", 0.785398163);
+        close(&wb, "=ATAN(1)", std::f64::consts::FRAC_PI_4);
+        close(&wb, "=ATAN2(1,1)", std::f64::consts::FRAC_PI_4);
         close(&wb, "=ATAN2(-1,-1)", -2.35619449);
         assert_eq!(err(&wb, "=ATAN2(0,0)"), "#DIV/0!");
         close(&wb, "=SINH(1)", 1.175201194);

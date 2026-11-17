@@ -653,6 +653,22 @@ pub fn can_encrypt(fmt: Format) -> bool {
     matches!(fmt, Format::Xlsx | Format::Docx | Format::Ods | Format::Odt | Format::Pptx | Format::Odp)
 }
 
+/// What a file kept for its next save that saving it as `fmt` leaves out:
+/// the parts of an Office package ApexDesk doesn't edit (custom XML, data
+/// connections, the data model, the sensitivity label list...) go only to
+/// Office files, and LibreOffice's data pilots ApexDesk can't recalculate
+/// only to OpenDocument ones. Nothing on screen shows they are gone, so
+/// the caller says so. Paths or slot names, empty when nothing is lost.
+pub fn kept_left_out(kept: &apex_doc::KeptParts, fmt: Format) -> Vec<String> {
+    let ooxml = matches!(fmt, Format::Xlsx | Format::Docx | Format::Pptx);
+    let odf = matches!(fmt, Format::Ods | Format::Fods);
+    let mut out: Vec<String> = if ooxml { Vec::new() } else { kept.parts.iter().filter(|p| !p.path.ends_with(".rels")).map(|p| p.path.clone()).collect() };
+    if !odf {
+        out.extend(kept.xml.iter().filter(|(slot, _)| slot == ods::pivot::KEPT_SLOT).map(|(slot, _)| slot.clone()));
+    }
+    out
+}
+
 fn encrypted(bytes: Vec<u8>, fmt: Format, password: Option<&str>) -> Vec<u8> {
     match password.filter(|p| !p.is_empty()) {
         Some(pw) if matches!(fmt, Format::Ods | Format::Odt | Format::Odp) => odf_crypto::encrypt(&bytes, pw),
@@ -680,18 +696,28 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     // everybody is in.
     #[cfg(unix)]
     let group = kept.as_ref().map(std::os::unix::fs::MetadataExt::gid);
-    let perms = kept.map(|m| {
+    let perms = kept.as_ref().map(|m| {
         #[cfg_attr(not(unix), allow(unused_mut))]
         let mut p = m.permissions();
         #[cfg(unix)]
         {
-            let mode = std::os::unix::fs::PermissionsExt::mode(&p) & if owned(&m) { 0o777 } else { 0o666 };
+            let mode = std::os::unix::fs::PermissionsExt::mode(&p) & if owned(m) { 0o777 } else { 0o666 };
             std::os::unix::fs::PermissionsExt::set_mode(&mut p, mode);
         }
         p
     });
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let name = path.file_name().map_or_else(|| "file".into(), |n| n.to_string_lossy().into_owned());
+    // The folder would let a new file take its place, but the file says
+    // it is not to be changed.
+    if kept.as_ref().is_some_and(|m| !writable(&path, m)) {
+        return Err(Error::new(format!("{} is read-only", path.display())));
+    }
+    // Its other names (hard links) are to see the new document too.
+    #[cfg(unix)]
+    if kept.as_ref().is_some_and(|m| std::os::unix::fs::MetadataExt::nlink(m) > 1) {
+        return Ok(write_in_place(&path, dir, &name, bytes)?);
+    }
     let mut made = None;
     for _ in 0..8 {
         let tmp = dir.join(format!(".{name}.{:016x}.tmp~", safe_path::random_token()));
@@ -712,8 +738,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
         }
     }
     let Some((tmp, mut f)) = made else {
-        write_no_follow(&path, bytes)?;
-        return Ok(());
+        return Ok(write_in_place(&path, dir, &name, bytes)?);
     };
     let written = f.write_all(bytes).and_then(|()| {
         if let Some(p) = perms {
@@ -738,7 +763,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     }
     apex_fs::rename(&tmp, &path).or_else(|_| {
         let _ = apex_fs::remove_file(&tmp);
-        write_no_follow(&path, bytes)
+        write_in_place(&path, dir, &name, bytes)
     })?;
     // The rename itself reaches the disk.
     #[cfg(unix)]
@@ -789,6 +814,96 @@ pub fn write_no_follow(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
     f.set_len(0)?;
     f.write_all(bytes)
+}
+
+/// Writes `bytes` over the file itself, where a new file can't take its
+/// place (a folder we may not create files in) or must not (hard links).
+/// A copy of what it had is made first, next to it or else in the
+/// temporary folder, and put back if the writing fails: a crash halfway
+/// leaves that copy, not only a half-written file.
+fn write_in_place(path: &Path, dir: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    let mut o = apex_fs::OpenOptions::new();
+    o.read(true).write(true).create(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut o, libc::O_NOFOLLOW);
+    #[cfg(not(unix))]
+    if apex_fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(std::io::Error::other("the file is a link"));
+    }
+    let mut f = o.open(path)?;
+    // Checked on the file opened, before anything in it changes.
+    if !owned(&f.metadata()?) {
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the file belongs to another user"));
+    }
+    let mut old = Vec::new();
+    f.read_to_end(&mut old)?;
+    let backup = if old.is_empty() { None } else { Some(backup_copy(dir, name, &old)?) };
+    let put = |f: &mut apex_fs::File, b: &[u8]| f.seek(SeekFrom::Start(0)).and_then(|_| f.set_len(0)).and_then(|()| f.write_all(b)).and_then(|()| f.sync_all());
+    let written = put(&mut f, bytes);
+    let Some(backup) = backup else { return written };
+    match written {
+        Ok(()) => {
+            let _ = apex_fs::remove_file(&backup);
+            Ok(())
+        }
+        Err(e) if put(&mut f, &old).is_ok() => {
+            let _ = apex_fs::remove_file(&backup);
+            Err(e)
+        }
+        Err(e) => Err(std::io::Error::new(e.kind(), format!("{e}; the previous version is in {}", backup.display()))),
+    }
+}
+
+/// A copy of `data` on disk, readable only by the user: next to the
+/// document when the folder allows it, else in the temporary folder.
+fn backup_copy(dir: &Path, name: &str, data: &[u8]) -> std::io::Result<std::path::PathBuf> {
+    use std::io::Write;
+    let mut last = std::io::Error::other("no place for a copy of the file");
+    for place in [dir.to_path_buf(), apex_fs::temp_dir()] {
+        for _ in 0..4 {
+            let p = place.join(format!(".{name}.{:016x}.bak~", safe_path::random_token()));
+            let mut o = apex_fs::OpenOptions::new();
+            o.write(true).create_new(true);
+            #[cfg(unix)]
+            std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+            match o.open(&p) {
+                Ok(mut f) => {
+                    if let Err(e) = f.write_all(data).and_then(|()| f.sync_all()) {
+                        let _ = apex_fs::remove_file(&p);
+                        last = e;
+                        break;
+                    }
+                    return Ok(p);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => {
+                    last = e;
+                    break;
+                }
+            }
+        }
+    }
+    Err(last)
+}
+
+/// Whether this user may change the file at `path` (whose metadata is
+/// `m`): a read-only file is not replaced by saving over it.
+fn writable(path: &Path, m: &apex_fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let _ = m;
+        let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else { return true };
+        // SAFETY: `c` is a valid C string for the length of the call.
+        let r = unsafe { libc::access(c.as_ptr(), libc::W_OK) };
+        r == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::EACCES)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        !m.permissions().readonly()
+    }
 }
 
 /// Whether the file is this user's (always so off Unix).
@@ -890,6 +1005,35 @@ pub(crate) fn highlight_color(name: &str) -> Option<u32> {
 #[cfg(test)]
 mod format_tests {
     use super::*;
+
+    /// Saving never replaces a read-only file, keeps hard links joined,
+    /// and writing in place leaves no copy behind.
+    #[cfg(unix)]
+    #[test]
+    fn saving_over_read_only_and_hard_links() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = apex_fs::temp_dir().join(format!("apex_save_{}", apex_fs::process_id()));
+        apex_fs::create_dir_all(&dir).unwrap();
+        let ro = dir.join("ro.txt");
+        apex_fs::write(&ro, b"old").unwrap();
+        apex_fs::set_permissions(&ro, apex_fs::Permissions::from_mode(0o444)).unwrap();
+        // (root may write anything.)
+        if safe_path::current_uid() != 0 {
+            assert!(write_atomic(&ro, b"new").unwrap_err().0.contains("read-only"));
+            assert_eq!(apex_fs::read(&ro).unwrap(), b"old");
+        }
+        let a = dir.join("a.txt");
+        let b = dir.join("b.txt");
+        apex_fs::write(&a, b"old").unwrap();
+        apex_fs::hard_link(&a, &b).unwrap();
+        write_atomic(&a, b"newer").unwrap();
+        assert_eq!(apex_fs::read(&b).unwrap(), b"newer");
+        write_in_place(&a, &dir, "a.txt", b"x").unwrap();
+        assert_eq!(apex_fs::read(&b).unwrap(), b"x");
+        assert_eq!(apex_fs::read_dir(&dir).unwrap().count(), 3);
+        apex_fs::set_permissions(&ro, apex_fs::Permissions::from_mode(0o644)).unwrap();
+        apex_fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn templates_open_as_their_format() {

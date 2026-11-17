@@ -8,10 +8,12 @@
 //! rustls when given a certificate. Kept in `<dir>`: `users` (one
 //! `name:argon2-hash` a line) and `files/<name>/`.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
@@ -40,6 +42,12 @@ Options:
       --key FILE         its private key (PEM)
       --db-hosts LIST    database servers that Get Data may reach through
                          this server, comma separated (default: none)
+      --host LIST        the names the server is reached by, comma
+                         separated: requests for other names are refused
+                         (default: on 127.0.0.1 localhost only, else any)
+      --proxied          an HTTPS proxy on this computer passes the
+                         requests on: the client's address is the last of
+                         X-Forwarded-For, and X-Forwarded-Proto says https
       --add-user NAME    add a user, or change their password (asked for;
                          the first line of the standard input when it is
                          not a terminal)
@@ -52,6 +60,19 @@ so only on this computer (127.0.0.1) or behind an HTTPS proxy.
 
 /// Connections served at once; more wait to be accepted.
 const MAX_OPEN: usize = 256;
+/// Connections from one address at once, so that one client can't take
+/// them all.
+const MAX_PER_ADDRESS: usize = 32;
+/// Time for a request's line and headers (and, the first time, the TLS
+/// handshake), and for an idle connection to send its next request.
+const HEAD_TIME: Duration = Duration::from_secs(20);
+/// Time for a body of up to `MAX_BODY`; larger ones (files) are read only
+/// from signed-in users, with `IDLE_READ` between packets.
+const BODY_TIME: Duration = Duration::from_secs(60);
+const IDLE_READ: Duration = Duration::from_secs(30);
+/// Addresses whose failed sign-ins are remembered at once; past it the
+/// oldest is forgotten.
+const MAX_TRACKED: usize = 4096;
 /// The largest file a user may save.
 const MAX_FILE: u64 = 1 << 30;
 /// The largest other request (sign-in, database query).
@@ -125,23 +146,47 @@ pub fn serve(a: &Parsed) -> Res<i32> {
     if tls.is_none() && !bind.is_loopback() {
         say("Warning: without --cert and --key, passwords and files travel unencrypted on the network.");
     }
-    let srv = Arc::new(Server { dir, web, db_hosts, secure: tls.is_some(), sessions: Mutex::default(), failures: Mutex::default(), open: AtomicUsize::new(0) });
+    let hosts = a.value("host").map(|l| l.split(',').map(|h| h.trim().trim_end_matches('.').to_ascii_lowercase()).filter(|h| !h.is_empty()).collect()).unwrap_or_default();
+    let proxied = a.flag("proxied");
+    let srv = Arc::new(Server { dir, web, db_hosts, hosts, any_host: !bind.is_loopback(), proxied, secure: tls.is_some(), sessions: Mutex::default(), failures: Mutex::default(), open: AtomicUsize::new(0), per_address: Mutex::default() });
     for stream in listener.incoming() {
         let Ok(tcp) = stream else { continue };
         if srv.open.load(Ordering::Relaxed) >= MAX_OPEN {
             continue;
         }
         let Ok(peer) = tcp.peer_addr() else { continue };
-        let _ = tcp.set_read_timeout(Some(Duration::from_secs(30)));
+        // Through the proxy, every client comes from this computer.
+        let counted = !(proxied && peer.ip().is_loopback());
+        if counted {
+            let mut per = srv.per_address.lock().unwrap_or_else(|e| e.into_inner());
+            let n = per.entry(peer.ip()).or_insert(0);
+            if *n >= MAX_PER_ADDRESS {
+                continue;
+            }
+            *n += 1;
+        }
+        let _ = tcp.set_read_timeout(Some(IDLE_READ));
         let _ = tcp.set_write_timeout(Some(Duration::from_secs(60)));
         let (conn, tls) = (srv.clone(), tls.clone());
         srv.open.fetch_add(1, Ordering::Relaxed);
+        let done = move |srv: &Server| {
+            srv.open.fetch_sub(1, Ordering::Relaxed);
+            if counted {
+                let mut per = srv.per_address.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(n) = per.get_mut(&peer.ip()) {
+                    *n -= 1;
+                    if *n == 0 {
+                        per.remove(&peer.ip());
+                    }
+                }
+            }
+        };
         let spawned = std::thread::Builder::new().name("serve".into()).spawn(move || {
             connection(&conn, tcp, tls, peer.ip());
-            conn.open.fetch_sub(1, Ordering::Relaxed);
+            done(&conn);
         });
         if spawned.is_err() {
-            srv.open.fetch_sub(1, Ordering::Relaxed);
+            done(&srv);
         }
     }
     Ok(0)
@@ -243,12 +288,21 @@ struct Server {
     dir: PathBuf,
     web: PathBuf,
     db_hosts: Vec<String>,
+    /// The names requests may be for (`--host`), besides addresses and
+    /// localhost; with none, `any_host` says whether any name goes.
+    hosts: Vec<String>,
+    any_host: bool,
+    /// Behind a proxy on this computer (`--proxied`).
+    proxied: bool,
     secure: bool,
     /// Signed-in users by their cookie.
     sessions: Mutex<HashMap<String, Session>>,
-    /// Failed sign-ins by address: how many, the last one.
+    /// Sign-ins tried by client (see [`client`]): how many failed or are
+    /// being checked, the last one.
     failures: Mutex<HashMap<IpAddr, (u32, Instant)>>,
     open: AtomicUsize,
+    /// Open connections by address.
+    per_address: Mutex<HashMap<IpAddr, usize>>,
 }
 
 struct Session {
@@ -256,18 +310,48 @@ struct Session {
     last: Instant,
 }
 
+/// A connection's socket, whose reads fail past a deadline: a client
+/// sending a byte now and then can't hold a connection for ever.
+struct Timed {
+    tcp: TcpStream,
+    until: Rc<Cell<Option<Instant>>>,
+}
+
+impl Read for Timed {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let wait = match self.until.get() {
+            Some(u) => u.checked_duration_since(Instant::now()).filter(|d| !d.is_zero()).ok_or(io::ErrorKind::TimedOut)?.min(IDLE_READ),
+            None => IDLE_READ,
+        };
+        self.tcp.set_read_timeout(Some(wait))?;
+        self.tcp.read(buf)
+    }
+}
+
+impl Write for Timed {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.tcp.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.tcp.flush()
+    }
+}
+
 fn connection(srv: &Server, tcp: TcpStream, tls: Option<Arc<rustls::ServerConfig>>, ip: IpAddr) {
+    let until = Rc::new(Cell::new(Some(Instant::now() + HEAD_TIME)));
+    let timed = Timed { tcp, until: until.clone() };
     match tls {
         Some(cfg) => {
             let Ok(conn) = rustls::ServerConnection::new(cfg) else { return };
-            let mut s = rustls::StreamOwned::new(conn, tcp);
-            requests(srv, &mut s, ip);
+            let mut s = rustls::StreamOwned::new(conn, timed);
+            requests(srv, &mut s, ip, &until);
             s.conn.send_close_notify();
             let _ = s.flush();
         }
         None => {
-            let mut tcp = tcp;
-            requests(srv, &mut tcp, ip);
+            let mut timed = timed;
+            requests(srv, &mut timed, ip, &until);
         }
     }
 }
@@ -287,17 +371,21 @@ impl Request {
 }
 
 /// The requests of a connection, kept open between them.
-fn requests<S: Read + Write>(srv: &Server, stream: &mut S, ip: IpAddr) {
+fn requests<S: Read + Write>(srv: &Server, stream: &mut S, ip: IpAddr, until: &Cell<Option<Instant>>) {
     let mut r = BufReader::new(stream);
     loop {
+        until.set(Some(Instant::now() + HEAD_TIME));
         let req = match read_head(&mut r) {
             Ok(Some(req)) => req,
             Ok(None) => return,
             Err(status) => {
-                let _ = write_reply(r.get_mut(), Reply::text(status, reason(status)), false);
+                let _ = write_reply(r.get_mut(), Reply::text(status, reason(status)), false, srv.secure);
                 return;
             }
         };
+        // A large body is only read for a signed-in user (a file): it may
+        // take long.
+        until.set((req.length <= MAX_BODY).then(|| Instant::now() + BODY_TIME));
         let mut keep = !req.header("connection").is_some_and(|c| c.eq_ignore_ascii_case("close"));
         let mut body = (&mut r).take(req.length);
         let reply = route(srv, &req, &mut body, ip);
@@ -307,7 +395,7 @@ fn requests<S: Read + Write>(srv: &Server, stream: &mut S, ip: IpAddr) {
         if left > 0 && (left > MAX_BODY || io::copy(&mut body, &mut io::sink()).ok() != Some(left)) {
             keep = false;
         }
-        if write_reply(r.get_mut(), reply, keep).is_err() || !keep {
+        if write_reply(r.get_mut(), reply, keep, srv.secure || forwarded_https(srv, &req, ip)).is_err() || !keep {
             return;
         }
     }
@@ -347,8 +435,15 @@ fn read_head<R: BufRead>(r: &mut R) -> Result<Option<Request>, u16> {
     if req.header("transfer-encoding").is_some() {
         return Err(411);
     }
-    if let Some(l) = req.header("content-length") {
-        req.length = l.trim().parse().map_err(|_| 400u16)?;
+    // Lengths that disagree would be read one way here and another by a
+    // proxy in front.
+    let mut lengths = req.headers.iter().filter(|(n, _)| n.eq_ignore_ascii_case("content-length")).map(|(_, v)| v.trim().parse::<u64>());
+    if let Some(l) = lengths.next() {
+        let l = l.map_err(|_| 400u16)?;
+        if lengths.any(|o| o != Ok(l)) {
+            return Err(400);
+        }
+        req.length = l;
     }
     Ok(Some(req))
 }
@@ -408,6 +503,7 @@ fn reason(status: u16) -> &'static str {
         409 => "Conflict",
         411 => "Length Required",
         413 => "Content Too Large",
+        421 => "Misdirected Request",
         429 => "Too Many Requests",
         431 => "Request Header Fields Too Large",
         502 => "Bad Gateway",
@@ -415,15 +511,19 @@ fn reason(status: u16) -> &'static str {
     }
 }
 
-fn write_reply<W: Write>(w: &mut W, reply: Reply, keep: bool) -> io::Result<()> {
+fn write_reply<W: Write>(w: &mut W, reply: Reply, keep: bool, https: bool) -> io::Result<()> {
     let len = match &reply.body {
         Body::Bytes(b) => b.len() as u64,
         Body::File(_, n) => *n,
     };
     let mut head = format!("HTTP/1.1 {} {}\r\n", reply.status, reason(reply.status));
     // The page runs only its own scripts and talks only to this server.
-    head.push_str("Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'\r\n");
-    head.push_str("X-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\nX-Frame-Options: DENY\r\n");
+    head.push_str("Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'\r\n");
+    head.push_str("X-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\nX-Frame-Options: DENY\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin\r\n");
+    // Once on HTTPS, the browser doesn't try plain HTTP again.
+    if https {
+        head.push_str("Strict-Transport-Security: max-age=31536000\r\n");
+    }
     for (k, v) in &reply.headers {
         head.push_str(&format!("{k}: {v}\r\n"));
     }
@@ -445,6 +545,11 @@ fn write_reply<W: Write>(w: &mut W, reply: Reply, keep: bool) -> io::Result<()> 
 fn route(srv: &Server, req: &Request, body: &mut dyn Read, ip: IpAddr) -> Reply {
     let path = req.path.as_str();
     let m = req.method.as_str();
+    // A page of another site whose name was made to lead here (DNS
+    // rebinding) asks for its own name.
+    if !host_ok(srv, req) {
+        return Reply::text(421, "This server isn't reached by that name (see apexdesk serve --host).");
+    }
     // Changes only from this server's own pages (the cookie is SameSite
     // too).
     if m != "GET" && !same_origin(req) {
@@ -457,7 +562,7 @@ fn route(srv: &Server, req: &Request, body: &mut dyn Read, ip: IpAddr) -> Reply 
             if let Some(t) = cookie(req) {
                 srv.sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(&t);
             }
-            return Reply::redirect("/login").with("Set-Cookie", format!("{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict{}", if srv.secure { "; Secure" } else { "" }));
+            return Reply::redirect("/login").with("Set-Cookie", format!("{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict{}", if srv.secure || forwarded_https(srv, req, ip) { "; Secure" } else { "" }));
         }
         _ => {}
     }
@@ -478,6 +583,47 @@ fn route(srv: &Server, req: &Request, body: &mut dyn Read, ip: IpAddr) -> Reply 
         ("GET", p) if !p.starts_with("/api/") => page(srv, p, req.header("if-none-match")),
         _ => Reply::fail(if path.starts_with("/api/") { 404 } else { 405 }, "no such request"),
     }
+}
+
+/// Whether the request is for a name this server goes by: an address
+/// (never another site's), localhost, a `--host` name, or any when
+/// listening on the network without `--host`.
+fn host_ok(srv: &Server, req: &Request) -> bool {
+    let Some(host) = req.header("host") else { return true };
+    let host = host.trim().to_ascii_lowercase();
+    let name = match host.strip_prefix('[') {
+        Some(r) => r.split(']').next().unwrap_or(""),
+        None => host.rsplit_once(':').map_or(host.as_str(), |(h, _)| h),
+    };
+    let name = name.trim_end_matches('.');
+    name.parse::<IpAddr>().is_ok() || name == "localhost" || srv.hosts.iter().any(|h| h == name) || (srv.hosts.is_empty() && srv.any_host)
+}
+
+/// Who signs in, for counting failed sign-ins: the address, or the last
+/// of `X-Forwarded-For` (the one the proxy adds) behind `--proxied`. An
+/// IPv6 client has a whole /64 network to itself: it counts as one.
+fn client(srv: &Server, req: &Request, ip: IpAddr) -> IpAddr {
+    let ip = if srv.proxied && ip.is_loopback() {
+        let last = req.headers.iter().rev().find(|(n, _)| n.eq_ignore_ascii_case("x-forwarded-for")).and_then(|(_, v)| v.rsplit(',').next());
+        last.and_then(|a| a.trim().trim_start_matches('[').split(']').next()?.parse().ok()).unwrap_or(ip)
+    } else {
+        ip
+    };
+    match ip {
+        IpAddr::V6(v) => match v.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let s = v.segments();
+                IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
+        v4 => v4,
+    }
+}
+
+/// Whether the proxy says the browser's connection is HTTPS.
+fn forwarded_https(srv: &Server, req: &Request, ip: IpAddr) -> bool {
+    srv.proxied && ip.is_loopback() && req.header("x-forwarded-proto").is_some_and(|p| p.trim().eq_ignore_ascii_case("https"))
 }
 
 /// Whether the request's `Origin` (when the browser sends one) is this
@@ -528,12 +674,9 @@ h1{{margin:0 0 8px;font-size:20px}}input{{padding:8px;font-size:15px;border:1px 
 }
 
 fn login(srv: &Server, req: &Request, body: &mut dyn Read, ip: IpAddr) -> Reply {
-    {
-        let mut f = srv.failures.lock().unwrap_or_else(|e| e.into_inner());
-        f.retain(|_, (_, last)| last.elapsed() < FAILURE_WAIT);
-        if f.get(&ip).is_some_and(|(n, _)| *n >= MAX_FAILURES) {
-            return Reply::text(429, "Too many failed sign-ins: try again in 15 minutes.");
-        }
+    let who = client(srv, req, ip);
+    if !count_try(&mut srv.failures.lock().unwrap_or_else(|e| e.into_inner()), who, Instant::now()) {
+        return Reply::text(429, "Too many failed sign-ins: try again in 15 minutes.");
     }
     let Some(form) = read_body(body, req.length, 4096) else { return Reply::text(413, reason(413)) };
     let form = String::from_utf8_lossy(&form);
@@ -543,13 +686,10 @@ fn login(srv: &Server, req: &Request, body: &mut dyn Read, ip: IpAddr) -> Reply 
     let hash = users.iter().find(|(u, _)| *u == user).map(|(_, h)| h.as_str());
     let ok = verify(&pw, hash.unwrap_or(dummy_hash())) && hash.is_some();
     if !ok {
-        let mut f = srv.failures.lock().unwrap_or_else(|e| e.into_inner());
-        let e = f.entry(ip).or_insert((0, Instant::now()));
-        *e = (e.0 + 1, Instant::now());
-        say(&format!("{ip}: failed sign-in"));
+        say(&format!("{who}: failed sign-in"));
         return Reply::redirect("/login?failed");
     }
-    srv.failures.lock().unwrap_or_else(|e| e.into_inner()).remove(&ip);
+    srv.failures.lock().unwrap_or_else(|e| e.into_inner()).remove(&who);
     let mut t = [0u8; 32];
     if getrandom::fill(&mut t).is_err() {
         return Reply::fail(500, "no random numbers");
@@ -557,7 +697,26 @@ fn login(srv: &Server, req: &Request, body: &mut dyn Read, ip: IpAddr) -> Reply 
     let token: String = t.iter().map(|b| format!("{b:02x}")).collect();
     srv.sessions.lock().unwrap_or_else(|e| e.into_inner()).insert(token.clone(), Session { user: user.clone(), last: Instant::now() });
     say(&format!("{ip}: {user} signed in"));
-    Reply::redirect("/").with("Set-Cookie", format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict{}", if srv.secure { "; Secure" } else { "" }))
+    Reply::redirect("/").with("Set-Cookie", format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict{}", if srv.secure || forwarded_https(srv, req, ip) { "; Secure" } else { "" }))
+}
+
+/// Counts a sign-in by `who` before it is checked (so that many sent at
+/// once can't all pass the limit), or says no when `who` has failed too
+/// often lately. A success takes the count away. Only so many clients are
+/// remembered, the oldest forgotten first.
+fn count_try(f: &mut HashMap<IpAddr, (u32, Instant)>, who: IpAddr, now: Instant) -> bool {
+    f.retain(|_, (_, last)| now.duration_since(*last) < FAILURE_WAIT);
+    if f.get(&who).is_some_and(|(n, _)| *n >= MAX_FAILURES) {
+        return false;
+    }
+    if f.len() >= MAX_TRACKED && !f.contains_key(&who) {
+        if let Some(oldest) = f.iter().min_by_key(|(_, (_, last))| *last).map(|(k, _)| *k) {
+            f.remove(&oldest);
+        }
+    }
+    let e = f.entry(who).or_insert((0, now));
+    *e = (e.0 + 1, now);
+    true
 }
 
 /// The body of a request when it isn't longer than `max`.
@@ -656,7 +815,11 @@ fn file(root: &Path, method: &str, rel: &str, body: &mut dyn Read, length: u64) 
                 return Reply::fail(413, "the file is too big");
             }
             let parent = path.parent().unwrap_or(root);
-            if std::fs::create_dir_all(parent).is_err() || !inside(root, parent) || path.is_dir() || path.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+            // Checked before folders are made: a link in the user's folder
+            // must not have them made elsewhere.
+            let _ = std::fs::create_dir_all(root);
+            let made = parent.ancestors().find(|a| a.exists()).unwrap_or(root);
+            if !inside(root, made) || std::fs::create_dir_all(parent).is_err() || !inside(root, parent) || path.is_dir() || path.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
                 return Reply::fail(409, "the file can't be saved there");
             }
             match save(parent, &path, body, length) {
@@ -712,6 +875,12 @@ fn db(srv: &Server, body: &mut dyn Read, length: u64) -> Reply {
     if !srv.db_hosts.contains(&host.trim().to_ascii_lowercase()) {
         return Reply::fail(403, &format!("this server doesn't reach the database server '{host}'"));
     }
+    // No user would sign in as this server's own account (SQL Server's
+    // Windows sign-in) or as whoever the database lets in without one.
+    let apex_sheet::query::Source::Database { user, .. } = &src else { return Reply::fail(400, "not a database query") };
+    if user.trim().is_empty() || pw.is_empty() {
+        return Reply::fail(403, "a database user and password are needed here");
+    }
     match apex_query::sources::db::server(&src, &pw) {
         Ok(t) => Reply::new(200, "application/json", crate::db_wire::table(&t).into_bytes()).with("Cache-Control", "no-store"),
         Err(e) => Reply::fail(502, &e.to_string()),
@@ -759,6 +928,69 @@ mod tests {
         }
         assert_eq!(decode("a+b%21", true).as_deref(), Some("a b!"));
         assert_eq!(decode("%zz", false), None);
+    }
+
+    fn server(proxied: bool) -> Server {
+        Server { dir: PathBuf::new(), web: PathBuf::new(), db_hosts: Vec::new(), hosts: vec!["office.example.com".into()], any_host: false, proxied, secure: false, sessions: Mutex::default(), failures: Mutex::default(), open: AtomicUsize::new(0), per_address: Mutex::default() }
+    }
+
+    fn request(headers: &[(&str, &str)]) -> Request {
+        Request { method: "POST".into(), path: "/login".into(), query: String::new(), headers: headers.iter().map(|(n, v)| (n.to_string(), v.to_string())).collect(), length: 0 }
+    }
+
+    /// Failed sign-ins are counted by client, before they are checked; a
+    /// flood of clients forgets the oldest and doesn't grow without end.
+    #[test]
+    fn sign_in_limits_by_client() {
+        let (mut f, now) = (HashMap::new(), Instant::now());
+        let a: IpAddr = "203.0.113.5".parse().unwrap();
+        let b: IpAddr = "198.51.100.7".parse().unwrap();
+        for _ in 0..MAX_FAILURES {
+            assert!(count_try(&mut f, a, now));
+        }
+        assert!(!count_try(&mut f, a, now));
+        // Another client isn't locked out by it.
+        assert!(count_try(&mut f, b, now));
+        // After the wait, a again.
+        assert!(count_try(&mut f, a, now + FAILURE_WAIT));
+        for i in 0..(MAX_TRACKED as u32 + 100) {
+            count_try(&mut f, IpAddr::V4(std::net::Ipv4Addr::from(0x0A00_0000 + i)), now + FAILURE_WAIT);
+        }
+        assert!(f.len() <= MAX_TRACKED);
+        // An IPv6 client counts by its /64; a proxy's client by the address
+        // it forwards, and only behind --proxied.
+        let srv = server(false);
+        let r = request(&[("X-Forwarded-For", "203.0.113.9")]);
+        assert_eq!(client(&srv, &r, "2001:db8:1:2:aaaa::1".parse().unwrap()), client(&srv, &r, "2001:db8:1:2:bbbb::9".parse().unwrap()));
+        assert_eq!(client(&srv, &r, "127.0.0.1".parse().unwrap()), "127.0.0.1".parse::<IpAddr>().unwrap());
+        let srv = server(true);
+        let r = request(&[("X-Forwarded-For", "6.6.6.6, 203.0.113.9")]);
+        assert_eq!(client(&srv, &r, "127.0.0.1".parse().unwrap()), "203.0.113.9".parse::<IpAddr>().unwrap());
+        assert_eq!(client(&srv, &r, "198.51.100.1".parse().unwrap()), "198.51.100.1".parse::<IpAddr>().unwrap());
+    }
+
+    /// Another site's name (DNS rebinding) is refused; addresses,
+    /// localhost and the --host names are not.
+    #[test]
+    fn host_names() {
+        let srv = server(false);
+        for (host, ok) in [("127.0.0.1:8080", true), ("[::1]:8080", true), ("localhost:8080", true), ("Office.Example.com.", true), ("evil.example:8080", false)] {
+            assert_eq!(host_ok(&srv, &request(&[("Host", host)])), ok, "{host}");
+        }
+    }
+
+    /// A slow client runs out of time instead of holding the connection.
+    #[test]
+    fn reads_end_at_the_deadline() {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let _client = TcpStream::connect(l.local_addr().unwrap()).unwrap();
+        let (tcp, _) = l.accept().unwrap();
+        let until = Rc::new(Cell::new(Some(Instant::now() + Duration::from_millis(200))));
+        let mut t = Timed { tcp, until };
+        let start = Instant::now();
+        assert!(t.read(&mut [0u8; 16]).is_err());
+        assert!(start.elapsed() < Duration::from_secs(5));
+        assert_eq!(t.read(&mut [0u8; 16]).unwrap_err().kind(), io::ErrorKind::TimedOut);
     }
 
     #[test]

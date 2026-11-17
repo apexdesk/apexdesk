@@ -362,6 +362,7 @@ impl App {
     fn record_into_tab(&mut self, idx: usize, rec: &Recording, code: &str) -> Result<(), String> {
         let id = self.tabs[idx].id;
         self.flush_macros(id);
+        let was = self.macro_run.is_enabled(id, &self.tabs);
         let View::Sheet(v) = &mut self.tabs[idx].view else { return Err(String::new()) };
         let had = v.wb.macros.project.is_some();
         let mut project = match &v.wb.macros.project {
@@ -393,6 +394,7 @@ impl App {
         if !had {
             self.enable_macros(id);
         }
+        self.macro_run.approve(id, &self.tabs, was);
         Ok(())
     }
 }

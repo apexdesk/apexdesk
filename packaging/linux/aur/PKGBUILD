@@ -1,6 +1,6 @@
 # Maintainer: ApexDesk <50219414+apexdesk@users.noreply.github.com>
 pkgname=apexdesk-bin
-pkgver=1.2.0
+pkgver=1.2.1
 pkgrel=1
 pkgdesc="Free office suite: documents, spreadsheets, presentations, PDF, databases and notebooks"
 arch=('x86_64')

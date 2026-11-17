@@ -28,8 +28,9 @@ impl Document {
         let (sel_before, sel_after, kind) = (first.sel_before, last.sel_after, first.kind);
         // What each step saved is the state before it: the earliest one is
         // the state before the group.
-        let mut e = crate::Edit { start: 0, before: mark.paragraphs, after_len: self.paragraphs.len(), sel_before, sel_after, kind, merge_closed: true, styles: None, comments: None, page: None, parts: None };
+        let mut e = crate::Edit { start: 0, before: mark.paragraphs, after_len: self.paragraphs.len(), sel_before, sel_after, kind, merge_closed: true, styles: None, comments: None, page: None, parts: None, review: None };
         for s in steps {
+            e.review = e.review.or(s.review);
             e.styles = e.styles.or(s.styles);
             e.comments = e.comments.or(s.comments);
             e.page = e.page.or(s.page);
@@ -54,11 +55,12 @@ impl Document {
         let comments = std::mem::replace(&mut self.comments, new.comments);
         let page = self.swap_page_state(page);
         let parts = self.swap_parts(parts);
-        self.track_changes = new.track_changes;
+        let review = std::mem::replace(&mut self.track_changes, new.track_changes);
         self.protection = new.protection;
         let after_len = self.paragraphs.len();
         self.record(0, before, after_len, sel_before, sel_after, kind);
         if let Some(e) = self.undo.last_mut() {
+            e.review = Some(review);
             e.styles = Some(Box::new(styles));
             e.comments = Some(comments);
             e.page = Some(Box::new(page));
@@ -99,6 +101,29 @@ mod tests {
         let steps = d.undo_len();
         d.take_changed(copy, sel, sel, EditKind::Replace);
         assert_eq!(d.undo_len(), steps);
+    }
+
+    #[test]
+    fn undoing_a_macro_puts_track_changes_back() {
+        let mut d = Document::from_plain_text("one");
+        let sel = Selection::caret(Pos::new(0, 0));
+        let mut copy = d.clone();
+        copy.track_changes = true;
+        copy.revision += 1;
+        d.take_changed(copy, sel, sel, EditKind::Replace);
+        assert!(d.track_changes);
+        d.undo();
+        assert!(!d.track_changes);
+        d.redo();
+        assert!(d.track_changes);
+        // Accepting is a step of its own, undone with the text.
+        d.insert_text(Selection::caret(Pos::new(0, 3)), " two", None);
+        let end = d.end();
+        assert_eq!(d.resolve_changes(Pos::new(0, 0), end, false, sel), 1);
+        assert_eq!(d.to_plain_text(), "one");
+        d.undo();
+        assert_eq!(d.to_plain_text(), "one two");
+        assert!(d.has_revisions());
     }
 
     #[test]

@@ -53,7 +53,7 @@ pub fn table(wb: &Workbook, sheet: usize, r: Range, rows: &[Vec<String>]) -> Str
     let mut widths: Vec<usize> = (0..ncols).map(|i| col_name(r.start.col + i as u32).len()).collect();
     for row in rows {
         for (i, t) in row.iter().enumerate() {
-            widths[i] = widths[i].max(t.width()).min(60);
+            widths[i] = widths[i].max(t.replace('\n', " ").width()).min(60);
         }
     }
     let mut out = String::new();
@@ -73,7 +73,7 @@ pub fn table(wb: &Workbook, sheet: usize, r: Range, rows: &[Vec<String>]) -> Str
         out.push_str(&format!("{:>head_w$}", rn + 1));
         for (i, t) in row.iter().enumerate() {
             let t = clip(t, widths[i]);
-            let pad = " ".repeat(widths[i] - t.width());
+            let pad = " ".repeat(widths[i].saturating_sub(t.width()));
             let right = matches!(sh.value(CellRef::new(rn, r.start.col + i as u32)), Value::Number(_));
             if right {
                 out.push_str(&format!(" | {pad}{t}"));
@@ -88,18 +88,22 @@ pub fn table(wb: &Workbook, sheet: usize, r: Range, rows: &[Vec<String>]) -> Str
     out
 }
 
-/// `t` cut to `w` columns (with an ellipsis).
+/// `t` cut to `w` columns (with an ellipsis). The width of text is not the
+/// sum of its characters' (a heart and U+FE0F take two columns, each alone
+/// one and none): the text so far is measured, not counted.
 fn clip(t: &str, w: usize) -> String {
+    let t = t.replace('\n', " ");
     if t.width() <= w {
-        return t.replace('\n', " ");
+        return t;
     }
     let mut s = String::new();
-    for ch in t.chars() {
-        let ch = if ch == '\n' { ' ' } else { ch };
-        if s.width() + unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0) + 1 > w {
+    // Zero-width characters would otherwise be measured without end.
+    for ch in t.chars().take(w.saturating_mul(4)) {
+        s.push(ch);
+        if s.width() + 1 > w {
+            s.pop();
             break;
         }
-        s.push(ch);
     }
     s.push('…');
     s
@@ -194,5 +198,17 @@ mod tests {
         assert_eq!(json_str("a\"\n"), "\"a\\\"\\n\"");
         assert_eq!(json_value(&Value::Number(2.5)), "2.5");
         assert_eq!(raw(&Value::Number(3.0)), "3");
+    }
+
+    #[test]
+    fn table_of_emoji_and_newlines_does_not_panic() {
+        let hearts = "\u{2764}\u{FE0F}".repeat(40);
+        assert!(clip(&hearts, 60).width() <= 60);
+        assert!(clip("a\nb", 2).width() <= 2);
+        let mut wb = Workbook::new();
+        wb.set_inputs(0, vec![(CellRef::new(0, 0), hearts), (CellRef::new(1, 0), "=\"x\"&CHAR(10)&\"y\"".into())]);
+        let r = Range::new(CellRef::new(0, 0), CellRef::new(1, 0));
+        let t = table(&wb, 0, r, &grid(&wb, 0, r, Shown::Display));
+        assert!(t.lines().all(|l| l.width() <= 70), "{t}");
     }
 }

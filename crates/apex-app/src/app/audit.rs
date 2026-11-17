@@ -1275,6 +1275,152 @@ fn save_as_writes_file() {
     });
 }
 
+/// After "Save As" the tab is the new file: its path, format and title,
+/// nothing left to save, the old file's lock let go, and a plain Save
+/// writes the new file and leaves the old one alone.
+#[test]
+fn save_as_moves_the_tab() {
+    isolated("save_as_moves_the_tab", || {
+        for (i, state) in [State::Doc, State::Sheet, State::Slides].into_iter().enumerate() {
+            let mut rig = Rig::new(state, 540 + i as u64);
+            let dir = apex_fs::temp_dir().join(format!("apexdesk-audit-moves-{}-{i}", apex_fs::process_id()));
+            let _ = apex_fs::remove_dir_all(&dir);
+            apex_fs::create_dir_all(&dir).unwrap();
+            let stem = std::rc::Rc::new(std::cell::RefCell::new(String::from("a")));
+            let (into, name) = (dir.clone(), stem.clone());
+            dialogs::set_hook(Some(Box::new(move |r| {
+                let ext = r.exts.first().cloned().unwrap_or_default();
+                (r.kind == dialogs::Kind::Save).then(|| vec![into.join(format!("{}.{ext}", name.borrow()))])
+            })));
+            dialogs::take_requests();
+            let save = |rig: &mut Rig, save_as: bool| {
+                let saved = std::rc::Rc::new(std::cell::Cell::new(false));
+                let s = saved.clone();
+                rig.app.save_then(0, save_as, move |_, ok| s.set(ok));
+                crate::file_dialog::poll(&mut rig.app);
+                rig.frame(Vec::new());
+                saved.get()
+            };
+            assert!(save(&mut rig, true), "{state:?}: first save as failed");
+            let a = rig.app.tabs[0].path.clone().expect("saved");
+            let me = crate::lockfile::me(&crate::doc_view::user_name());
+            let locking = rig.app.settings.lock_files && crate::lockfile::lockable(&a);
+            if locking {
+                assert!(matches!(crate::lockfile::check(&a, &me), crate::lockfile::State::Mine), "{state:?}: no lock on {a:?}");
+            }
+            super::macros_ui::mark_modified(&mut rig.app.tabs[0].view, true);
+            *stem.borrow_mut() = "b".into();
+            assert!(save(&mut rig, true), "{state:?}: second save as failed");
+            let tab = &rig.app.tabs[0];
+            let b = tab.path.clone().expect("saved");
+            assert_eq!(b.file_stem().and_then(|s| s.to_str()), Some("b"), "{state:?}");
+            assert_eq!(b, b.fs_canonicalize().unwrap(), "{state:?}");
+            assert_eq!(tab.format, apex_io::Format::from_path(&b), "{state:?}");
+            assert_eq!(tab.name(), b.file_name().unwrap().to_string_lossy(), "{state:?}");
+            assert!(tab.embed.is_none(), "{state:?}");
+            assert!(!rig.app.tab_modified(0), "{state:?}: still modified");
+            if locking {
+                assert!(!matches!(crate::lockfile::check(&a, &me), crate::lockfile::State::Mine), "{state:?}: old lock kept");
+                assert!(matches!(crate::lockfile::check(&b, &me), crate::lockfile::State::Mine), "{state:?}: new file not locked");
+            }
+            let old = apex_fs::read(&a).unwrap();
+            apex_fs::remove_file(&b).unwrap();
+            super::macros_ui::mark_modified(&mut rig.app.tabs[0].view, true);
+            assert!(save(&mut rig, false), "{state:?}: plain save failed");
+            assert!(b.fs_exists(), "{state:?}: plain save missed the new file");
+            assert_eq!(apex_fs::read(&a).unwrap(), old, "{state:?}: old file written");
+            assert!(dialogs::take_requests().len() == 2, "{state:?}: plain save asked for a path");
+            dialogs::set_hook(None);
+            drop(rig);
+            let _ = apex_fs::remove_dir_all(&dir);
+        }
+    });
+}
+
+/// Databases and notebooks are kept where they are: "Save As" makes a copy
+/// and says so.
+#[test]
+fn save_as_is_a_copy_for_databases_and_notebooks() {
+    isolated("save_as_is_a_copy_for_databases_and_notebooks", || {
+        for (i, state) in [State::Db, State::Note].into_iter().enumerate() {
+            let rig = Rig::new(state, 550 + i as u64);
+            assert!(rig.app.saves_copy(rig.app.active), "{state:?}");
+            assert_ne!(tr("menu.save_copy"), tr("menu.save_as"));
+        }
+        let rig = Rig::new(State::Doc, 552);
+        assert!(!rig.app.saves_copy(0));
+    });
+}
+
+/// Saving a workbook of several sheets as CSV asks first; keeping the
+/// format writes it and is not asked again for that document.
+#[test]
+fn lossy_format_asks_once() {
+    isolated("lossy_format_asks_once", || {
+        let mut rig = Rig::open(false, |app| {
+            let mut wb = sample_book();
+            wb.sheets.push(apex_sheet::Sheet::new("Sheet2"));
+            app.push_tab(View::Sheet(Box::new(crate::sheet_view::SheetView::new(wb))), None, None);
+        });
+        let dir = apex_fs::temp_dir().join(format!("apexdesk-audit-lossy-{}", apex_fs::process_id()));
+        let _ = apex_fs::remove_dir_all(&dir);
+        apex_fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("x.csv");
+        let to = out.clone();
+        dialogs::set_hook(Some(Box::new(move |r| (r.kind == dialogs::Kind::Save).then(|| vec![to.clone()]))));
+        let idx = rig.app.active;
+        let saved = std::rc::Rc::new(std::cell::Cell::new(None));
+        let s = saved.clone();
+        rig.app.save_then(idx, true, move |_, ok| s.set(Some(ok)));
+        crate::file_dialog::poll(&mut rig.app);
+        assert!(!out.fs_exists(), "written without asking");
+        assert!(rig.app.answer_lossy_for_test(1), "not asked");
+        assert!(out.fs_exists(), "keeping the format did not write");
+        assert_eq!(rig.app.tabs[idx].path.as_deref(), out.fs_canonicalize().ok().as_deref());
+        apex_fs::remove_file(&out).unwrap();
+        super::macros_ui::mark_modified(&mut rig.app.tabs[idx].view, true);
+        rig.app.save_then(idx, false, |_, _| {});
+        assert!(!rig.app.answer_lossy_for_test(1), "asked twice");
+        assert!(out.fs_exists(), "second save not written");
+        dialogs::set_hook(None);
+        drop(rig);
+        let _ = apex_fs::remove_dir_all(&dir);
+    });
+}
+
+/// Copies left unchecked in the recovery dialog stay on disk, whatever is
+/// done with the checked ones.
+#[test]
+fn unchecked_recovery_copies_are_kept() {
+    isolated("unchecked_recovery_copies_are_kept", || {
+        let dir = apex_fs::temp_dir().join(format!("apexdesk-audit-recover-{}", apex_fs::process_id()));
+        let _ = apex_fs::remove_dir_all(&dir);
+        apex_fs::create_dir_all(&dir).unwrap();
+        let dead = u32::MAX - 9;
+        for n in 1..=2 {
+            apex_fs::write(dir.join(format!("{dead}-{n}.txt")), b"x").unwrap();
+            apex_fs::write(dir.join(format!("{dead}-{n}.info")), format!("file={dead}-{n}.txt\nname=Copy {n}\npath=\nformat=\n")).unwrap();
+        }
+        let mut rig = Rig::new(State::Start, 553);
+        let found = |checked: bool| {
+            let mut f = super::recovery::scan_for_test(&dir);
+            assert_eq!(f.len(), 2);
+            f.sort_by(|a, b| a.file().cmp(b.file()));
+            f[1].set_keep(checked);
+            f
+        };
+        rig.app.recovery.found = found(false);
+        rig.app.answer_recovery(super::recovery::Answer::Later);
+        assert_eq!(super::recovery::scan_for_test(&dir).len(), 2, "later lost copies");
+        rig.app.recovery.found = found(false);
+        rig.app.answer_recovery(super::recovery::Answer::Discard);
+        assert!(!dir.join(format!("{dead}-1.txt")).fs_exists(), "checked copy not discarded");
+        assert!(dir.join(format!("{dead}-2.txt")).fs_exists(), "unchecked copy discarded");
+        drop(rig);
+        let _ = apex_fs::remove_dir_all(&dir);
+    });
+}
+
 /// "Save As" offers PDF, as Office does: the file is exported and the tab
 /// stays the file it was, still to be saved.
 #[test]
@@ -2110,5 +2256,66 @@ fn phone_dialogs_fit() {
             let _ = crate::common::write_out(PathBuf::from(dir).join("phone_dialogs_fit.txt"), out.join("\n"));
         }
         assert!(out.is_empty(), "{} commands open something wider or taller than a phone:\n{}", out.len(), out.join("\n"));
+    });
+}
+
+fn escape(rig: &mut Rig) {
+    for pressed in [true, false] {
+        rig.frame(vec![Event::Key { key: egui::Key::Escape, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE }]);
+    }
+    rig.settle();
+}
+
+/// A click outside a dialog leaves it open, with what was typed in it;
+/// Escape cancels it.
+#[test]
+fn click_outside_keeps_dialog() {
+    isolated("click_outside_keeps_dialog", || {
+        let mut rig = Rig::new(State::Doc, 0);
+        click_path(&mut rig, State::Doc, &["File"]);
+        let options = rig.controls.iter().find(|c| c.key.1.trim_end_matches('…') == tr("options.title")).cloned().expect("File > Options");
+        assert!(rig.click(&options));
+        assert!(rig.app.options.is_some(), "File > Options opens the dialog");
+        // The window's bottom left corner: under the dialog's backdrop.
+        click_at(&mut rig, pos2(4.0, SCREEN.y - 4.0));
+        assert!(rig.app.options.is_some(), "a click outside closed the dialog");
+        escape(&mut rig);
+        assert!(rig.app.options.is_none(), "Escape leaves the dialog open");
+    });
+}
+
+/// Errors stay until closed (with their Close button) and can be copied;
+/// the rest go by themselves; a failed save is a dialog.
+#[test]
+fn error_notices_stay() {
+    isolated("error_notices_stay", || {
+        use super::Notice;
+        let mut rig = Rig::new(State::Doc, 0);
+        rig.app.notify(Notice::info("Saved"));
+        rig.app.notify(Notice::refused("Not a number"));
+        rig.app.notify(Notice::error("Disk full"));
+        let long_ago = Instant::now().checked_sub(Duration::from_secs(60)).unwrap();
+        for t in &mut rig.app.toasts {
+            t.at = long_ago;
+        }
+        rig.settle();
+        let said = |rig: &Rig| rig.app.toasts.iter().map(|t| t.notice.text.clone()).collect::<Vec<_>>();
+        assert_eq!(said(&rig), ["Disk full"]);
+        // Its buttons are the toast's, at the window's bottom right.
+        let area = rig.ctx.memory(|m| m.area_rect(egui::Id::new("toasts"))).expect("the notices show");
+        let button = |rig: &Rig, name: &str| rig.controls.iter().find(|c| c.key.1 == name && area.contains_rect(c.rect)).cloned().unwrap_or_else(|| panic!("no {name} on the notice"));
+        button(&rig, tr("edit.copy"));
+        let close = button(&rig, tr("dialog.close"));
+        assert!(rig.click(&close));
+        assert!(said(&rig).is_empty(), "Close leaves it: {:?}", said(&rig));
+        // A failed save: a dialog, which a click outside doesn't close.
+        rig.app.notify(Notice::alert("Could not save: disk full"));
+        rig.settle();
+        let open = |rig: &Rig| rig.ctx.memory(|m| m.top_modal_layer().is_some()) && rig.app.toasts.iter().any(|t| t.notice.alert);
+        assert!(open(&rig), "no dialog");
+        click_at(&mut rig, pos2(4.0, SCREEN.y - 4.0));
+        assert!(open(&rig), "a click outside closed it");
+        escape(&mut rig);
+        assert!(!open(&rig) && rig.app.toasts.is_empty(), "Escape leaves it");
     });
 }
