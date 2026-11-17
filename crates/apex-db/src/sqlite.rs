@@ -496,7 +496,7 @@ impl Db {
         use rusqlite::OpenFlags as F;
         let flags = F::SQLITE_OPEN_READ_WRITE | F::SQLITE_OPEN_CREATE | F::SQLITE_OPEN_NOFOLLOW | F::SQLITE_OPEN_URI | F::SQLITE_OPEN_NO_MUTEX;
         check_journal(path)?;
-        let conn = Connection::open_with_flags(path, flags).map_err(err)?;
+        let conn = Connection::open_with_flags(in_real_folder(path), flags).map_err(err)?;
         let db = Db::watched(conn, path.to_path_buf())?;
         db.setup()?;
         Ok(db)
@@ -1322,6 +1322,20 @@ pub fn check_journal(path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// `path` with its folder resolved. SQLite's "no links" refuses a link
+/// anywhere on the way (a home folder on another disk, the temporary
+/// folder of macOS), and only the file itself must not be one.
+pub fn in_real_folder(path: &Path) -> PathBuf {
+    #[cfg(unix)]
+    if let Some(name) = path.file_name() {
+        let parent = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        if let Ok(dir) = apex_fs::canonicalize(parent) {
+            return dir.join(name);
+        }
+    }
+    path.to_path_buf()
+}
+
 /// Removes the file or link at `path`, if any, for a new file there.
 pub fn clear(path: &Path) -> std::io::Result<()> {
     match apex_fs::symlink_metadata(path) {
@@ -1367,6 +1381,29 @@ pub fn write_new(path: &Path, make: impl FnOnce(&Path) -> std::io::Result<()>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A new database goes into a folder reached through a link, and
+    /// takes the place of a link left where the file goes.
+    #[cfg(unix)]
+    #[test]
+    fn a_new_database_goes_through_a_linked_folder_but_not_a_linked_file() {
+        let dir = apex_fs::temp_dir().join(format!("apex-db-links-{}", apex_fs::process_id()));
+        let _ = apex_fs::remove_dir_all(&dir);
+        apex_fs::create_dir_all(dir.join("real")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("way")).unwrap();
+        let db = dir.join("way/a.apexdb");
+        drop(Db::create(&db).unwrap());
+        assert!(dir.join("real/a.apexdb").is_file());
+        apex_fs::write(dir.join("other.txt"), b"mine").unwrap();
+        let linked = dir.join("way/b.apexdb");
+        std::os::unix::fs::symlink(dir.join("other.txt"), &linked).unwrap();
+        drop(Db::create(&linked).unwrap());
+        assert_eq!(apex_fs::read(dir.join("other.txt")).unwrap(), b"mine");
+        assert!(!apex_fs::symlink_metadata(&linked).unwrap().file_type().is_symlink());
+        std::os::unix::fs::symlink(dir.join("other.txt"), dir.join("way/c.apexdb")).unwrap();
+        assert!(Db::open_no_follow(&dir.join("way/c.apexdb")).is_err());
+        apex_fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn a_journal_naming_another_file_is_refused() {

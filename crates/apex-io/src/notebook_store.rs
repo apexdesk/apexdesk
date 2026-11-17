@@ -308,7 +308,7 @@ impl NoteStore {
         apex_db::sqlite::clear(path).map_err(|e| NoteError::Other(e.to_string()))?;
         use rusqlite::OpenFlags as F;
         let flags = F::SQLITE_OPEN_READ_WRITE | F::SQLITE_OPEN_CREATE | F::SQLITE_OPEN_NOFOLLOW | F::SQLITE_OPEN_URI | F::SQLITE_OPEN_NO_MUTEX;
-        let mut conn = Connection::open_with_flags(path, flags).map_err(other)?;
+        let mut conn = Connection::open_with_flags(apex_db::sqlite::in_real_folder(path), flags).map_err(other)?;
         let deadline = Deadline::of(&mut conn);
         harden(&conn).map_err(other)?;
         conn.execute_batch(SCHEMA).map_err(other)?;
