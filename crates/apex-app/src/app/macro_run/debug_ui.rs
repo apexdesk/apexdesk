@@ -738,8 +738,9 @@ mod tests {
         // As macros see it: links followed (macOS's /var), long names (Windows').
         let dir = apex_vba::files::canonical(&dir).unwrap();
         let (app, _) = run_in(&dir, "Sub Main()\n    Range(\"A1\").Value = 5\n    ThisWorkbook.SaveCopyAs ThisWorkbook.Path & \"/copy.xlsx\"\n    ThisWorkbook.SaveAs ThisWorkbook.Path & \"/new.ods\"\nEnd Sub\n");
-        // The tab is the new file, saved; the copy is a workbook too.
-        assert_eq!(app.tabs[0].path.as_deref(), Some(dir.join("new.ods").as_path()));
+        // The tab is the new file, saved (its path as an opened file's:
+        // resolved); the copy is a workbook too.
+        assert_eq!(app.tabs[0].path.as_deref(), apex_fs::canonicalize(dir.join("new.ods")).ok().as_deref());
         assert_eq!(app.tabs[0].format, Some(apex_io::Format::Ods));
         assert!(!app.tab_modified(0));
         let Ok((apex_io::Loaded::Sheet(copy), _)) = apex_io::open(&dir.join("copy.xlsx")) else { panic!("no copy") };

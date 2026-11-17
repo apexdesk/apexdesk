@@ -1103,7 +1103,11 @@ pub(super) fn isolated_at(path: &str, f: impl FnOnce()) {
     let out = std::process::Command::new(exe).args([path, "--exact", "--nocapture", "--test-threads=1"]).env(CHILD, &path).output().unwrap();
     let text = String::from_utf8_lossy(&out.stderr);
     eprint!("{text}");
-    assert!(out.status.success() && String::from_utf8_lossy(&out.stdout).contains("1 passed"), "{path} failed:\n{text}");
+    // How it ended and what the test runner said: a process that dies
+    // at once leaves nothing else to go by.
+    let said = String::from_utf8_lossy(&out.stdout);
+    let last: Vec<&str> = said.lines().rev().take(12).collect();
+    assert!(out.status.success() && said.contains("1 passed"), "{path} failed ({}):\n{text}\n{}", out.status, last.into_iter().rev().collect::<Vec<_>>().join("\n"));
 }
 
 macro_rules! audit {
