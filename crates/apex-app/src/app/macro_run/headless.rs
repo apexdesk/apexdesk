@@ -114,7 +114,7 @@ pub(crate) fn run(path: &Path, wb: &mut Workbook, name: &str, args: &[String], h
     let bin = wb.macros.project.clone().ok_or("the file has no macros")?;
     let srcs = Arc::new(sources(&bin).map_err(|e| e.to_string())?);
     let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let file_path = apex_fs::canonicalize(path).ok().and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned())).unwrap_or_default();
+    let file_path = apex_vba::files::canonical(path).ok().and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned())).unwrap_or_default();
     let opts = Options {
         active_sheet: wb.sheets.iter().position(|s| !s.hidden).unwrap_or(0),
         file_name,

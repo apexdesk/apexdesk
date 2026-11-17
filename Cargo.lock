@@ -524,6 +524,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "skrifa",
+ "sqlite-wasm-rs",
  "tiff",
  "unicode-width",
  "wasm-bindgen",
@@ -5333,7 +5334,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cd504cecbfe7eef649988840f9a6cb768d11085efec138f8e99f160632d867"
 dependencies = [
  "cc",
+ "js-sys",
  "rsqlite-vfs",
+ "wasm-bindgen",
 ]
 
 [[package]]

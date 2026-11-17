@@ -252,6 +252,14 @@ fn remote_or_device(t: &str) -> bool {
     t.starts_with("//") || t.starts_with("/??/")
 }
 
+/// `//?/C:/x` as `C:/x`: a disk path said the long way, as Windows gives
+/// the resolved ones (the workbook's own folder among them).
+fn plain_disk(t: &str) -> Option<&str> {
+    let rest = t.trim_start().strip_prefix("//?/")?;
+    let b = rest.as_bytes();
+    (b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/').then_some(rest)
+}
+
 /// The `host/share` (lower case) of a network path: `\\host\share\…` or
 /// `\\?\UNC\host\share\…`, with either slash.
 fn share_of(path: &str) -> Option<String> {
@@ -407,6 +415,7 @@ impl Files {
             return Err(err(52));
         }
         let t = text.replace('\\', "/");
+        let t = plain_disk(&t).map(str::to_string).unwrap_or(t);
         // `\\host\share` reaches another machine (Windows hands it the
         // user's credentials just to look) and `\\.\`, `\\?\`, `\??\` name
         // devices: refused before anything touches them, unless the
@@ -1642,6 +1651,11 @@ mod tests {
             assert_eq!(e.number, 70, "{text}");
             assert!(files.resolve(text).is_err(), "{text}");
         }
+        // A disk path the long way is that disk path, not a device.
+        assert_eq!(plain_disk("//?/C:/data/out.txt"), Some("C:/data/out.txt"));
+        assert_eq!(plain_disk("//?/UNC/host/share/x"), None);
+        assert_eq!(plain_disk("//?/C:"), None);
+        assert!(files.absolute(r"\\?\C:\data\out.txt").is_ok());
         let _ = fs::remove_dir_all(&dir);
     }
 
