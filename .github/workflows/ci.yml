@@ -83,6 +83,17 @@ jobs:
       - run: cargo test --locked --no-fail-fast -p apex-vba -p apex-sign
       - run: cargo test --locked --no-fail-fast -p apex-app --test cli
       - run: cargo test --locked --no-fail-fast -p apex-app --bin apexdesk -- macro
+      # What the system wrote about a test that crashed (macOS keeps a
+      # report with the stack of each thread).
+      - if: failure() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          sleep 20
+          for f in ~/Library/Logs/DiagnosticReports/*; do
+            [ -f "$f" ] || continue
+            echo "=== $f"
+            head -c 60000 "$f"
+          done
 
   linux:
     name: Linux ${{ matrix.arch }}

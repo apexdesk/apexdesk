@@ -1100,14 +1100,28 @@ pub(super) fn isolated_at(path: &str, f: impl FnOnce()) {
         return;
     }
     let exe = std::env::current_exe().unwrap();
-    let out = std::process::Command::new(exe).args([path, "--exact", "--nocapture", "--test-threads=1"]).env(CHILD, &path).output().unwrap();
+    // The steps it takes, kept in a file: what a process that dies at
+    // once was doing.
+    const STEPS: &str = "APEXDESK_AUDIT_PROGRESS";
+    let steps = std::env::var_os(STEPS).is_none().then(|| apex_fs::temp_dir().join(format!("apexdesk-audit-{}-{}.txt", apex_fs::process_id(), path.replace("::", "-"))));
+    let mut child = std::process::Command::new(exe);
+    child.args([path, "--exact", "--nocapture", "--test-threads=1"]).env(CHILD, path);
+    if let Some(steps) = &steps {
+        child.env(STEPS, steps);
+    }
+    let out = child.output().unwrap();
     let text = String::from_utf8_lossy(&out.stderr);
     eprint!("{text}");
-    // How it ended and what the test runner said: a process that dies
-    // at once leaves nothing else to go by.
-    let said = String::from_utf8_lossy(&out.stdout);
-    let last: Vec<&str> = said.lines().rev().take(12).collect();
-    assert!(out.status.success() && said.contains("1 passed"), "{path} failed ({}):\n{text}\n{}", out.status, last.into_iter().rev().collect::<Vec<_>>().join("\n"));
+    let tail = |t: &str| {
+        let last: Vec<&str> = t.lines().rev().take(12).collect();
+        last.into_iter().rev().collect::<Vec<_>>().join("\n")
+    };
+    let said = tail(&String::from_utf8_lossy(&out.stdout));
+    let done = steps.as_ref().and_then(|f| apex_fs::read_to_string(f).ok()).map(|t| tail(&t)).unwrap_or_default();
+    if let Some(steps) = &steps {
+        let _ = apex_fs::remove_file(steps);
+    }
+    assert!(out.status.success() && said.contains("1 passed"), "{path} failed ({}):\n{text}\n{said}\nlast steps:\n{done}", out.status);
 }
 
 macro_rules! audit {
