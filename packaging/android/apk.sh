@@ -57,6 +57,10 @@ work=target/android-apk
 rm -rf "$work"
 mkdir -p "$work" dist
 
+# The library names source files in its error messages: the folders of the
+# machine that builds (its home folder, with the user's name) stay out.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup --remap-path-prefix=$(pwd)=/apexdesk"
+
 for target in ${APEXDESK_ANDROID_TARGETS:-aarch64-linux-android armv7-linux-androideabi}; do
     # The NDK names its 32-bit ARM compiler armv7a-, not armv7-.
     clang=$target

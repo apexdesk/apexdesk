@@ -19,7 +19,7 @@ source=("https://github.com/apexdesk/apexdesk/releases/download/v${pkgver}/apexd
         'apexdesk.desktop'
         'apexdesk-mime.xml'
         'apexdesk.svg')
-sha256sums=('461102b61589fc3d375911bae564308b7e66ce85304dd9b932dc2564c32eb96c'
+sha256sums=('46de6550b3e79458936d5cd745d91cf88394f5a9f90f1df90266de3408a62704'
             '5d414a55f644196c05626b5353a0cb1bf17d6ada790a911cc79e9e0cd949741c'
             '0f5f53b985ccced98108aeeb978f29779f7141bda5a4de58e12b46a9b85d5d11'
             '68d0cbf0878537b3dc66c5c7e515182554e01b593bfd0ad0c2fbae74df84ad9e')
