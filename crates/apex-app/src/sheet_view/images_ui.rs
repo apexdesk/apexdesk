@@ -634,15 +634,7 @@ impl SheetView {
         if self.images.incoming.is_some() {
             return;
         }
-        let (tx, rx) = mpsc::channel();
-        let ctx = ctx.clone();
-        let started = apex_fs::thread::Builder::new().name("apex-clipboard".into()).spawn(move || {
-            let _ = tx.send(images::read_clipboard_image());
-            ctx.request_repaint();
-        });
-        if started.is_ok() {
-            self.images.incoming = Some(rx);
-        }
+        self.images.incoming = images::clipboard_image_later(ctx);
     }
 
     /// Takes a picture read from the clipboard, if one arrived.

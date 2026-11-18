@@ -870,15 +870,7 @@ impl DocView {
         if self.pics.pasted_picture.take().is_some_and(|t| t.elapsed() < web_time::Duration::from_secs(2)) || self.pics.incoming.is_some() {
             return;
         }
-        let (tx, rx) = std::sync::mpsc::channel();
-        let ctx = ctx.clone();
-        let started = apex_fs::thread::Builder::new().name("apex-clipboard".into()).spawn(move || {
-            let _ = tx.send(crate::images::read_clipboard_image());
-            ctx.request_repaint();
-        });
-        if started.is_ok() {
-            self.pics.incoming = Some(rx);
-        }
+        self.pics.incoming = crate::images::clipboard_image_later(ctx);
     }
 
     /// Inserts the picture read from the clipboard, once it arrives.

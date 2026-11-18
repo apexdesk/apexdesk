@@ -731,18 +731,7 @@ impl NoteView {
             if let Some(t) = pasted.filter(|t| !t.trim().is_empty()) {
                 b.add_note(b.spot, t.trim());
             } else if ctrl_v && b.incoming.is_none() {
-                let (tx, rx) = std::sync::mpsc::channel();
-                let ctx = ui.ctx().clone();
-                if apex_fs::thread::Builder::new()
-                    .name("apex-clipboard".into())
-                    .spawn(move || {
-                        let _ = tx.send(crate::images::read_clipboard_image());
-                        ctx.request_repaint();
-                    })
-                    .is_ok()
-                {
-                    b.incoming = Some(rx);
-                }
+                b.incoming = crate::images::clipboard_image_later(ui.ctx());
             }
         }
         if let Some(rx) = &b.incoming {

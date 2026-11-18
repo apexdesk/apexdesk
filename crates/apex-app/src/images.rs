@@ -773,11 +773,35 @@ pub fn pixel_hash(rgba: &[u8]) -> u64 {
     h.finish()
 }
 
+/// Looks for a picture on the system clipboard; it comes through the
+/// channel. A thread of its own reads it, so that an owner slow to answer
+/// doesn't hold the window. Not on macOS: its pasteboard can't be read by
+/// two threads at once (the program ends), and the window's thread reads
+/// the text of the same paste, so that thread reads the picture too.
+pub fn clipboard_image_later(ctx: &Context) -> Option<std::sync::mpsc::Receiver<Option<Vec<u8>>>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    if cfg!(target_os = "macos") {
+        let _ = tx.send(read_clipboard_image());
+        ctx.request_repaint();
+        return Some(rx);
+    }
+    let ctx = ctx.clone();
+    let read = move || {
+        let _ = tx.send(read_clipboard_image());
+        ctx.request_repaint();
+    };
+    apex_fs::thread::Builder::new().name("apex-clipboard".into()).spawn(read).ok().map(|_| rx)
+}
+
 /// Reads a picture from the system clipboard, as PNG. `None` when it holds
 /// text (a text paste handles it) or no picture. The text of a picture
 /// copied in Word is the object mark: no text.
 #[cfg(any(windows, target_os = "macos"))]
 pub fn read_clipboard_image() -> Option<Vec<u8>> {
+    // Tests never touch the desktop's clipboard.
+    if cfg!(test) {
+        return crate::charts::app_clip().map(|b| b.to_vec());
+    }
     let mut cb = arboard::Clipboard::new().ok()?;
     if cb.get_text().is_ok_and(|t| t.chars().any(|c| !c.is_whitespace() && c != apex_doc::OBJECT)) {
         return None;
